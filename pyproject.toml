@@ -1,0 +1,11 @@
+[project]
+name = "oszilab"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "loguru>=0.7.3",
+    "pyqt6>=6.11.0",
+    "pyqtgraph>=0.14.0",
+]
