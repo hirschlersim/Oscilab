@@ -1,0 +1,51 @@
+/* style.qss */
+
+/* Global window backgrounds and text */
+QWidget {
+    background-color: #1e1e1e;
+    color: #aaaaaa;
+    font-family: "Segoe UI", sans-serif;
+    font-size: 12px;
+}
+
+/* Sidebar and control groupings */
+QGroupBox {
+    font-weight: bold;
+    border: 2px solid #333333;
+    border-radius: 6px;
+    margin-top: 12px;
+    padding-top: 16px;
+}
+
+QGroupBox::title {
+    subcontrol-origin: margin;
+    left: 10px;
+    padding: 0 3px 0 3px;
+}
+
+/* Buttons */
+QPushButton {
+    background-color: #007acc;
+    color: #ffffff;
+    border: none;
+    border-radius: 4px;
+    padding: 6px 12px;
+    min-width: 60px;
+}
+
+QPushButton:hover {
+    background-color: #0098ff;
+}
+
+QPushButton:pressed {
+    background-color: #005a9e;
+}
+
+/* Status Bar styling */
+QStatusBar {
+    background-color: #3aac2f;
+    border-top: 1px solid #943030;
+    color: #ffffff;
+}
+
+
