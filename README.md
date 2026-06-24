@@ -76,6 +76,8 @@
   - [ ] Complete full layout and styling setup for the bottom status bar.
   - [ ] Implement a unified `oszi.log()` function acting as a pipeline routing messages directly to a status bar text panel while simultaneously committing detailed system events via `loguru`.
   - [ ] Ensure user feedback notifications (e.g., "File Saved Successfully" messages) display on the status bar.
+  - [ ] How much time is left in the UI update loop? as a Progressbar
+  - [ ] Centrall Logging for the Application, is done via Loguru AND the statusbar where everything is updated
 - [ ] **Performance & Resource Instrumentation**
   - [ ] Implement diagnostic readouts directly within the status bar to show:
     - [ ] Frames Per Second (FPS)

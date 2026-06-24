@@ -10,7 +10,7 @@ from oszilab.signal_controller import SignalController
 from oszilab.signal_model import SignalModel
 
 from loguru import logger
-from importlib import resources
+from importlib import resources, metadata
 import numpy as np
 
 
@@ -65,7 +65,7 @@ class Oscilab(qtw.QMainWindow):
         self.csv_action = qtg.QAction(".csv", self)
         self.csv_action.triggered.connect(lambda: print("save csv"))
         self.csv_action.setShortcut("Ctrl+D")
-            # Start-Stop Display 
+            # Start-Stop Display
         self.start_stop_action = qtg.QAction(self)
         self.start_stop_action.setCheckable(True)
         self.__start_stop(checked=False)
@@ -85,7 +85,7 @@ class Oscilab(qtw.QMainWindow):
         file_menu.addAction(self.csv_action)
         view_menu = self.menuBar().addMenu("View")
         view_menu.addAction(self.reset_views_action)
-        help_menu = self.menuBar().addMenu("Help") 
+        help_menu = self.menuBar().addMenu("Help")
         help_menu.addAction(self.about_action)
         help_menu.addSeparator()
         help_menu.addAction(self.about_qt_action)
@@ -137,6 +137,9 @@ class Oscilab(qtw.QMainWindow):
         self.sidebar.setAlignment(qtc.Qt.AlignmentFlag.AlignTop)
         self.sidebar.addWidget(qtw.QLabel("<h3>Signal Controls:</h3>"))
         self.sidebar.addWidget(SignalController())
+        from oszilab.signal_controller import ScalingDialog, FilterDialog  # TODO i need a buttn which then calls the widget
+        self.sidebar.addWidget(ScalingDialog(label="Test"))
+        self.sidebar.addWidget(FilterDialog(label="Test"))
 
         # Main layout
         self.setCentralWidget(qtw.QWidget())
@@ -172,7 +175,7 @@ class Oscilab(qtw.QMainWindow):
         super().show()
         self.splash.finish(self)
         self.app.exec()
-    
+
     def __refresh_ui_canvas(self):
         for plot in self.plots:
             plot.update()
@@ -182,20 +185,26 @@ class Oscilab(qtw.QMainWindow):
             plot.reset_view()
 
     def __show_about(self):
+
+        try:
+            version = metadata.version("oszilab")
+        except metadata.PackageNotFoundError:
+            version = "unknown (local development)"
+
         qtw.QMessageBox.about(
             self,
             "About Oscilab",
-            """
+            f"""
             <h3>Oscilab</h3>
 
-            Version: 0.1.0
+            Version: {version}
 
             Signal visualization and analysis software.
 
             © 2026
             """
         )
-    
+
     def __start_stop(self, checked):
         def colored_icon(color):
             pixmap = qtg.QPixmap(24, 24)
@@ -206,7 +215,7 @@ class Oscilab(qtw.QMainWindow):
             painter.drawEllipse(2, 2, 20, 20)
             painter.end()
             return qtg.QIcon(pixmap)
-        
+
         if checked:
             self.start_stop_action.setText("Stopped")
             self.start_stop_action.setIcon(colored_icon("red"))
