@@ -1,3 +1,25 @@
+- FFT
+- PSD
+- Butterworth filters
+- FIR filters
+- Wavelet transform
+- spectrogram
+- oscilloscope
+- trigger
+- recording
+- can bus decoding / best to test for also
+
+---
+
+- np roll class
+
+time vektor const as option i.e. -T - 0 for plot
+
+downsampling
+color the subplots via a spinner
+cursor keyboard shortcuts
+
+
 ## 1. Architecture & Core Structure
 - [ ] **Modularization & Refactoring**
   - [ ] Extract `SignalModel` and `SignalController` into an isolated, dedicated file/module.
@@ -21,7 +43,6 @@
   - [ ] Benchmark whether it is faster to collect streaming data using a `deque` and convert to a NumPy array, or manage a pre-allocated/dynamic NumPy array straight away.
 - [ ] **Spectral Analysis Integration**
   - [ ] Investigate the best way to calculate spectral metrics (e.g., FFT/Spectrum extraction).
-  - [ ] Evaluate performance: Is a standard `QTimer` sufficient, or do we need a high-speed approach to keep it fast?
 - [ ] **Rendering Optimization**
   - [ ] Implement min-max downsampling (e.g., dynamically downsampling to plot only a representative 70% of data points rather than the full, raw buffer length to preserve rendering performance).
 
@@ -45,10 +66,6 @@
     - [ ] Trigger Edge (Rising/Falling)
 
 ## 5. UI/UX, Styling & Application Configuration
-- [ ] **UI Construction Methodology**
-  - [ ] Research and establish best practice: Use Qt Designer `.ui` files vs. pure programmatic layout generation.
-- [ ] **Theming & Styling**
-  - [ ] Determine overarching style guidelines for the application.
   - [ ] Implement dynamic Theme Switching (Dark Theme vs. Light Theme).
   - [ ] Investigate scope of capabilities allowed within a external `.qss` stylesheet file.
       in python code:
@@ -63,8 +80,6 @@
 
 
 ## 6. Execution Control & Data Persistence
-- [ ] **Acquisition Controls**
-  - [ ] Implement global Start/Stop functionality managed via the primary application `QTimer` (e.g., wrapping `timer.stop()` and `timer.start(30)`).
 - [ ] **Data Logging & Persistence**
   - [ ] Allow seamless data saving operations while the acquisition engine is running.
   - [ ] Develop comprehensive multi-format exporters supporting:
@@ -76,12 +91,4 @@
   - [ ] Complete full layout and styling setup for the bottom status bar.
   - [ ] Implement a unified `oszi.log()` function acting as a pipeline routing messages directly to a status bar text panel while simultaneously committing detailed system events via `loguru`.
   - [ ] Ensure user feedback notifications (e.g., "File Saved Successfully" messages) display on the status bar.
-  - [ ] How much time is left in the UI update loop? as a Progressbar
   - [ ] Centrall Logging for the Application, is done via Loguru AND the statusbar where everything is updated
-- [ ] **Performance & Resource Instrumentation**
-  - [ ] Implement diagnostic readouts directly within the status bar to show:
-    - [ ] Frames Per Second (FPS)
-    - [ ] Plot Update Time / Latency (ms)
-    - [ ] Buffer Size / Current Capacity
-    - [ ] System Memory Usage
-    - [ ] Samples Plotted Per Iteration

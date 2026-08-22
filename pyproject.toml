@@ -4,14 +4,23 @@ version = "0.1.0"
 description = "Oscilloscope laboratory application"
 readme = "README.md"
 requires-python = ">=3.12"
+
 dependencies = [
     "loguru>=0.7.3",
     "pyqt6>=6.11.0",
     "pyqtgraph>=0.14.0",
+    "scipy>=1.18.0",
 ]
+
+[project.scripts]
+demo = "oscilab.demo:run"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
-[project.scripts]
-oszilab_demo = "oszilab.demo:run"
+[tool.uv]
+package = true
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"

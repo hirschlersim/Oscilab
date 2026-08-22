@@ -43,8 +43,8 @@ QPushButton:pressed {
 
 /* Status Bar styling */
 QStatusBar {
-    background-color: #3aac2f;
-    border-top: 1px solid #943030;
+    background-color: #2f46ac;
+    border-top: 1px solid #943083;
     color: #ffffff;
 }
 
