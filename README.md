@@ -1,12 +1,128 @@
-- Mypy
-- pydantic(documentation)
+# Oscilab
 
-- There's still no automated test suite — everything in this whole conversation has been verified via one-off scripts. A tests/ directory covering the cheap, high-value cases (RingBuffer vs deque equivalence, MathSignal operators, the STFT cache correctness check I wrote by hand, CSV/mat/h5 round-trips) would catch regressions for free instead of relying on me re-deriving correctness each time something nearby changes.
+A desktop oscilloscope / signal-visualization application built with
+PyQt6 and pyqtgraph. Stream live or replayed signals into scrolling
+time-series plots and live STFT spectrograms, with per-signal filtering,
+scaling, derived (math) channels, and export to PNG/SVG/PDF/CSV/MAT/HDF5.
 
-- 100% Test coverage
+Started as a way to explore real-time DSP visualization and signal-chain
+architecture in Python; still under active development (see
+[TODO.md](TODO.md)).
 
-- Session save/load: persist signals, plot layout, links, colors, filter/scaling, storage backend, theme, cursor state to JSON and reload it — set up a layout once via the GUI instead of writing Python each time.
+## Features
 
-- can the producers push multiple signals via vektors?
+- **Time-series plots** — multi-signal, auto-scrolling, with global or
+  "relative to now" time modes, peak-preserving downsampling for large
+  buffers, manual or auto Y-ranging, and classic two-cursor (ΔT, 1/ΔT,
+  per-signal value) measurement.
+- **Live spectrograms** — STFT view per signal, computed incrementally
+  (only new samples are transformed each tick, not the whole rolling
+  buffer — see [Notable implementation details](#notable-implementation-details)).
+- **Per-signal controls** — visibility, IIR filtering, offset/gain
+  scaling, curve color, and live Min/Mean/Max/Peak-to-Peak/RMS metrics.
+- **Signal math** — derive a new signal as `A op B` (`+ - * /`) from two
+  existing signals.
+- **Pluggable data producers** — background `QThread`-based producers
+  with a synchronous or `asyncio` base class; ships with a synthetic
+  signal generator, a file-replay producer, and templates for serial
+  and (soon) network sources.
+- **Two storage backends** — a plain `collections.deque` or a
+  thread-safe, pre-allocated numpy ring buffer, selectable per signal
+  (see `scripts/benchmark_buffers.py` for the throughput difference).
+- **Light/dark theming**, tooltips throughout, and export to
+  PNG/SVG/PDF/CSV/MAT/HDF5.
 
-- A network/UDP producer template, same shape.
+## Architecture
+
+```
+producers.py        Background QThread data sources (Sync/Async base classes)
+    │
+signal_model.py      Rolling buffer, filtering, scaling, metrics per signal
+math_signal.py        └─ derived signal (A op B)
+    │
+timeseries_plot.py   pyqtgraph-based plot widgets, reading model.snapshot()
+spectrogram_plot.py
+axis_dialog.py
+    │
+signal_controller.py  Per-signal sidebar controls (SignalRow / SignalController)
+    │
+workspace.py          Domain layer: owns all registries, wiring, export
+    │
+oscilab.py             QMainWindow: menus, toolbar, window chrome
+    │
+demo.py                Example usage / entry point
+```
+
+Roughly bottom-up: data model → producers → plots → per-signal controls →
+the `Workspace` layer that wires everything together → the `QMainWindow`
+shell on top.
+
+## Getting started
+
+Requires Python 3.12+ and [uv](https://docs.astral.sh/uv/).
+
+```bash
+uv sync
+uv run demo
+```
+
+`demo.py` is a good starting point for the public API:
+
+```python
+from oscilab.oscilab import Oscilab
+from oscilab.producers import SyntheticProducer
+
+oszi = Oscilab()
+
+oszi.addTimeSeriesPlot("Sensors")
+oszi.regSignal(label="channel-1", fs=100, storage=oszi.storage.deque)
+oszi.regSignal(label="channel-2", fs=1_000, storage=oszi.storage.ring)
+oszi.link(plot="Sensors", label="channel-1")
+oszi.link(plot="Sensors", label="channel-2")
+
+oszi.addSpectrogramPlot(label="channel-2")
+
+oszi.attachProducer(label="channel-1", producer=SyntheticProducer(fs=100, freq=5.0))
+oszi.attachProducer(label="channel-2", producer=SyntheticProducer(fs=1_000, freq=1.0))
+
+oszi.show()
+```
+
+To feed your own hardware or file source, subclass `SyncDataProducer` (for
+blocking APIs) or `AsyncDataProducer` (for `asyncio`-based ones) in
+`producers.py` and implement its one abstract method.
+
+## Notable implementation details
+
+A few things worth reading the source for if you're interested in the DSP
+or real-time-systems side rather than the UI:
+
+- **Incremental STFT caching** ([spectrogram_plot.py](src/oscilab/spectrogram_plot.py)) —
+  recomputing `scipy.signal.stft` over the entire rolling buffer every
+  frame doesn't scale, so only the new samples (plus enough context for
+  window overlap) are transformed each tick and merged into a persistent
+  column cache. Getting this right required hop-aligning the recompute
+  window to match a full-buffer STFT's time grid, and permanently
+  excluding the last `ceil(nperseg / hop)` columns of any partial slice
+  from the cache — `scipy`'s edge zero-padding (`padded=True`) silently
+  corrupts them otherwise. A separate, non-cached "preview tail" recomputed
+  every tick keeps the display caught up to "now" without ever caching a
+  wrong value.
+- **Wall-clock-corrected producer pacing** ([producers.py](src/oscilab/producers.py)) —
+  a naive fixed `sleep(interval)` loop drifts badly under OS timer
+  granularity (Windows' default ~15 ms in particular); producers instead
+  track elapsed wall-clock time and emit however many samples are due,
+  self-correcting each iteration.
+- **Thread-safe ring buffer** ([ring_buffer.py](src/oscilab/ring_buffer.py)) —
+  a pre-allocated numpy circular buffer as a drop-in for
+  `deque(maxlen=...)`, guarded by a lock since producers run on their own
+  `QThread`.
+
+## Status
+
+No automated tests yet and documentation is a work in progress — see
+[TODO.md](TODO.md) for the running list of what's next.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
