@@ -1,5 +1,5 @@
 [project]
-name = "oszilab"
+name = "oscilab"
 version = "0.1.0"
 description = "Oscilloscope laboratory application"
 readme = "README.md"
