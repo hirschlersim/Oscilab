@@ -1,0 +1,123 @@
+/* style_light.qss */
+
+/* Global window backgrounds and text */
+QWidget {
+    background-color: #f2f2f2;
+    color: #202020;
+    font-family: "Segoe UI", sans-serif;
+    font-size: 9pt;  /* pt, not px: a px-only font-size leaves QFont::pointSize() at -1,
+                         which crashes any Qt/pyqtgraph code doing relative point-size math */
+}
+
+/* Sidebar and control groupings */
+QGroupBox {
+    font-weight: bold;
+    border: 2px solid #cccccc;
+    border-radius: 6px;
+    margin-top: 12px;
+    padding-top: 16px;
+}
+
+QGroupBox::title {
+    subcontrol-origin: margin;
+    left: 10px;
+    padding: 0 3px 0 3px;
+}
+
+/* Buttons */
+QPushButton {
+    background-color: #007acc;
+    color: #ffffff;
+    border: none;
+    border-radius: 4px;
+    padding: 6px 12px;
+    min-width: 60px;
+}
+
+QPushButton:hover {
+    background-color: #0098ff;
+}
+
+QPushButton:pressed {
+    background-color: #005a9e;
+}
+
+/* Disabled state — without this, disabled widgets look identical to enabled
+   ones, since the explicit colors above override Qt's native dimming.
+   Covers e.g. Auto-locked Min/Max spinboxes and derived-signal buttons. */
+QPushButton:disabled {
+    background-color: #cccccc;
+    color: #888888;
+}
+
+QDoubleSpinBox:disabled,
+QSpinBox:disabled {
+    background-color: #e6e6e6;
+    color: #999999;
+}
+
+QRadioButton:disabled,
+QCheckBox:disabled {
+    color: #999999;
+}
+
+/* Menu bar (File/View/Math/Help) — the same dark navy as the dark theme,
+   as a consistent accent regardless of the overall light/dark body. */
+QMenuBar {
+    background-color: #202f46;
+    color: #ffffff;
+    border-bottom: 1px solid #007acc;
+}
+
+QMenuBar::item {
+    background: transparent;
+    padding: 4px 10px;
+}
+
+QMenuBar::item:selected {
+    background-color: #007acc;
+}
+
+QMenu {
+    background-color: #202f46;
+    color: #ffffff;
+    border: 1px solid #007acc;
+}
+
+QMenu::item:selected {
+    background-color: #007acc;
+}
+
+/* Status Bar styling */
+QStatusBar {
+    background-color: #e4e9f5;
+    border-top: 1px solid #007acc;
+    color: #202020;
+}
+
+/* Without this, native styles (e.g. windows11) draw a sunken frame around
+   each status bar item, which reads as a stray black box around the text. */
+QStatusBar::item {
+    border: none;
+}
+
+/* Permanent widgets (e.g. the "Load [%]:" label) are plain QWidgets, so
+   without this they'd fall back to QWidget's #f2f2f2 background above —
+   a mismatched box sitting on the status bar's own background. */
+QStatusBar QLabel {
+    background: transparent;
+}
+
+QProgressBar {
+    border: 1px solid #cccccc;
+    border-radius: 4px;
+    background-color: #ffffff;
+    color: #202020;
+    text-align: center;
+}
+
+QProgressBar::chunk {
+    background-color: #007acc;
+    border-radius: 3px;
+}
+
