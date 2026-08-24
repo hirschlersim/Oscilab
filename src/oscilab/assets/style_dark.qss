@@ -5,7 +5,8 @@ QWidget {
     background-color: #1e1e1e;
     color: #aaaaaa;
     font-family: "Segoe UI", sans-serif;
-    font-size: 12px;
+    font-size: 9pt;  /* pt, not px: a px-only font-size leaves QFont::pointSize() at -1,
+                         which crashes any Qt/pyqtgraph code doing relative point-size math */
 }
 
 /* Sidebar and control groupings */
@@ -41,11 +42,82 @@ QPushButton:pressed {
     background-color: #005a9e;
 }
 
+/* Disabled state — without this, disabled widgets look identical to enabled
+   ones, since the explicit colors above override Qt's native dimming.
+   Covers e.g. Auto-locked Min/Max spinboxes and derived-signal buttons. */
+QPushButton:disabled {
+    background-color: #3a3a3a;
+    color: #777777;
+}
+
+QDoubleSpinBox:disabled,
+QSpinBox:disabled {
+    background-color: #171717;
+    color: #555555;
+}
+
+QRadioButton:disabled,
+QCheckBox:disabled {
+    color: #555555;
+}
+
+/* Menu bar (File/View/Math/Help) */
+QMenuBar {
+    background-color: #202f46;
+    color: #ffffff;
+    border-bottom: 1px solid #007acc;
+}
+
+QMenuBar::item {
+    background: transparent;
+    padding: 4px 10px;
+}
+
+QMenuBar::item:selected {
+    background-color: #007acc;
+}
+
+QMenu {
+    background-color: #202f46;
+    color: #ffffff;
+    border: 1px solid #007acc;
+}
+
+QMenu::item:selected {
+    background-color: #007acc;
+}
+
 /* Status Bar styling */
 QStatusBar {
-    background-color: #2f46ac;
-    border-top: 1px solid #943083;
+    background-color: #202f46;
+    border-top: 1px solid #007acc;
     color: #ffffff;
+}
+
+/* Without this, native styles (e.g. windows11) draw a sunken frame around
+   each status bar item, which reads as a stray black box around the text. */
+QStatusBar::item {
+    border: none;
+}
+
+/* Permanent widgets (e.g. the "Load [%]:" label) are plain QWidgets, so
+   without this they'd fall back to QWidget's #1e1e1e background above —
+   a solid near-black box sitting on the status bar's navy. */
+QStatusBar QLabel {
+    background: transparent;
+}
+
+QProgressBar {
+    border: 1px solid #333333;
+    border-radius: 4px;
+    background-color: #1e1e1e;
+    color: #ffffff;
+    text-align: center;
+}
+
+QProgressBar::chunk {
+    background-color: #007acc;
+    border-radius: 3px;
 }
 
 
