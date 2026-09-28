@@ -33,6 +33,22 @@ def _safe_name(name: str) -> str:
     return re.sub(r"[^\w\-]+", "_", name).strip("_") or "signal"
 
 
+def _ask_range(
+    parent, title: str, auto: bool, pinned: tuple[float, float], live: tuple[float, float], unit: str = ""
+) -> tuple[bool, float, float] | None:
+    """
+    Ask for an Auto/Min/Max range, pre-filled with what's in effect right
+    now — the `live` auto-fitted range while in Auto, else the `pinned` one —
+    so there's always a real number to start adjusting from, not a stale
+    placeholder. Returns `(auto, lo, hi)`, or None if cancelled.
+    """
+    lo, hi = live if auto else pinned
+    dialog = RangeDialog(title=title, current_auto=auto, current_min=lo, current_max=hi, unit=unit, parent=parent)
+    if dialog.exec() != qtw.QDialog.DialogCode.Accepted:
+        return None
+    return dialog.get_values()
+
+
 class _PdfExporter(pg_exporters.Exporter):
     """
     pyqtgraph ships Image/SVG/HDF5 exporters plus a `PrintExporter` that
@@ -89,23 +105,15 @@ class Workspace:
         controller = SignalController(title="Plot:")
 
         def open_y_axis_dialog():
-            # Pre-fill with whatever's actually in effect right now — the
-            # live auto-fit range if still in Auto, not a stale placeholder —
-            # so there's always a real number to start adjusting from.
-            if plot.y_range_auto:
-                current_min, current_max = plot.getViewBox().viewRange()[1]
-            else:
-                current_min, current_max = plot.y_range_min, plot.y_range_max
-
-            dialog = RangeDialog(
-                title=f"Y-Axis | {title}",
-                current_auto=plot.y_range_auto,
-                current_min=current_min,
-                current_max=current_max,
-                parent=controller,
+            chosen = _ask_range(
+                controller,
+                f"Y-Axis | {title}",
+                auto=plot.y_range_auto,
+                pinned=(plot.y_range_min, plot.y_range_max),
+                live=tuple(plot.getViewBox().viewRange()[1]),
             )
-            if dialog.exec() == qtw.QDialog.DialogCode.Accepted:
-                auto, lo, hi = dialog.get_values()
+            if chosen:
+                auto, lo, hi = chosen
                 plot.set_y_range(auto, lo, hi)
                 self._log(f"Y-axis for '{title}' set to {'Auto' if auto else f'[{lo:g}, {hi:g}]'}")
 
@@ -152,48 +160,31 @@ class Workspace:
         controller = SignalController(title="Plot:")
 
         def open_y_axis_dialog():
-            # Pre-fill with the live auto-fit frequency range if still in
-            # Auto, not a stale placeholder.
-            if spectrogram.freq_range_auto:
-                current_min, current_max = spectrogram.plot.getViewBox().viewRange()[1]
-            else:
-                current_min, current_max = spectrogram.freq_range_min, spectrogram.freq_range_max
-
-            dialog = RangeDialog(
-                title=f"Y-Axis | {label}",
-                current_auto=spectrogram.freq_range_auto,
-                current_min=current_min,
-                current_max=current_max,
+            chosen = _ask_range(
+                controller,
+                f"Y-Axis | {label}",
+                auto=spectrogram.freq_range_auto,
+                pinned=(spectrogram.freq_range_min, spectrogram.freq_range_max),
+                live=tuple(spectrogram.plot.getViewBox().viewRange()[1]),
                 unit="Hz",
-                parent=controller,
             )
-            if dialog.exec() == qtw.QDialog.DialogCode.Accepted:
-                auto, lo, hi = dialog.get_values()
+            if chosen:
+                auto, lo, hi = chosen
                 spectrogram.set_y_range(auto, lo, hi)
                 self._log(f"Frequency axis for '{label}' set to {'Auto' if auto else f'[{lo:g}, {hi:g}] Hz'}")
 
         def open_color_dialog():
-            # Pre-fill with the actual levels currently painted on screen —
-            # the auto-snapshotted ones if still in Auto — instead of a
-            # stale placeholder. This is the fix for "no information about
-            # the current values": the dialog now always opens showing
-            # exactly what's in effect right now.
-            if spectrogram.color_levels_auto:
-                levels = spectrogram.img.getLevels()
-                current_min, current_max = (float(levels[0]), float(levels[1])) if levels is not None else (0.0, 1.0)
-            else:
-                current_min, current_max = spectrogram.color_levels_min, spectrogram.color_levels_max
-
-            dialog = RangeDialog(
-                title=f"Color Levels | {label}",
-                current_auto=spectrogram.color_levels_auto,
-                current_min=current_min,
-                current_max=current_max,
+            levels = spectrogram.img.getLevels()  # None until the first STFT frame is drawn
+            chosen = _ask_range(
+                controller,
+                f"Color Levels | {label}",
+                auto=spectrogram.color_levels_auto,
+                pinned=(spectrogram.color_levels_min, spectrogram.color_levels_max),
+                live=(float(levels[0]), float(levels[1])) if levels is not None else (0.0, 1.0),
                 unit="dB",
-                parent=controller,
             )
-            if dialog.exec() == qtw.QDialog.DialogCode.Accepted:
-                auto, lo, hi = dialog.get_values()
+            if chosen:
+                auto, lo, hi = chosen
                 spectrogram.set_color_levels(auto, lo, hi)
                 self._log(f"Color levels for '{label}' set to {'Auto' if auto else f'[{lo:g}, {hi:g}] dB'}")
 

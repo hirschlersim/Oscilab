@@ -1,8 +1,8 @@
 import ctypes
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from importlib import metadata, resources
-from typing import ClassVar
+from typing import ClassVar, Literal, NamedTuple
 
 from loguru import logger
 from PyQt6 import QtCore as qtc
@@ -13,6 +13,62 @@ from oscilab.math_signal import OPERATORS, MathDialog
 from oscilab.producers import DataProducer
 from oscilab.storage import Storage
 from oscilab.workspace import Workspace
+
+
+class _Export(NamedTuple):
+    """One File-menu export format."""
+
+    suffix: str  # Menu entry, e.g. ".png"
+    tooltip: str
+    file_filter: str  # QFileDialog filter, e.g. "PNG Image (*.png)"
+    content: Literal["plots", "signals"]  # What gets exported (and must exist)
+    write: Callable[[Workspace, str], object]  # The Workspace method that writes it
+
+
+_EXPORTS = (
+    _Export(
+        ".png",
+        "Export every plot as a PNG image (raster)",
+        "PNG Image (*.png)",
+        "plots",
+        Workspace.export_png,
+    ),
+    _Export(
+        ".svg",
+        "Export every plot as an SVG image (vector)",
+        "SVG Image (*.svg)",
+        "plots",
+        Workspace.export_svg,
+    ),
+    _Export(
+        ".pdf",
+        "Export every plot as a PDF (vector)",
+        "PDF File (*.pdf)",
+        "plots",
+        Workspace.export_pdf,
+    ),
+    _Export(
+        ".csv",
+        "Export every signal's data as CSV — one file per signal",
+        "CSV File (*.csv)",
+        "signals",
+        Workspace.export_csv,
+    ),
+    _Export(
+        ".mat",
+        "Export every signal's data into one MATLAB .mat file",
+        "MATLAB File (*.mat)",
+        "signals",
+        Workspace.export_mat,
+    ),
+    _Export(
+        ".h5",
+        "Export every signal's data into one HDF5 .h5 file",
+        "HDF5 File (*.h5)",
+        "signals",
+        Workspace.export_h5,
+    ),
+)
 
 
 class Oscilab(qtw.QMainWindow):
@@ -117,36 +173,11 @@ class Oscilab(qtw.QMainWindow):
 
     def __build_file_menu(self):
         file_menu = self.menuBar().addMenu("File")
-        # Save - png
-        png_action = qtg.QAction(".png", self)
-        png_action.setToolTip("Export every plot as a PNG image (raster)")
-        png_action.triggered.connect(self.__save_png)
-        file_menu.addAction(png_action)
-        # Save - svg
-        svg_action = qtg.QAction(".svg", self)
-        svg_action.setToolTip("Export every plot as an SVG image (vector)")
-        svg_action.triggered.connect(self.__save_svg)
-        file_menu.addAction(svg_action)
-        # Save - pdf
-        pdf_action = qtg.QAction(".pdf", self)
-        pdf_action.setToolTip("Export every plot as a PDF (vector)")
-        pdf_action.triggered.connect(self.__save_pdf)
-        file_menu.addAction(pdf_action)
-        # Save - csv
-        csv_action = qtg.QAction(".csv", self)
-        csv_action.setToolTip("Export every signal's data as CSV — one file per signal")
-        csv_action.triggered.connect(self.__save_csv)
-        file_menu.addAction(csv_action)
-        # Save - mat
-        mat_action = qtg.QAction(".mat", self)
-        mat_action.setToolTip("Export every signal's data into one MATLAB .mat file")
-        mat_action.triggered.connect(self.__save_mat)
-        file_menu.addAction(mat_action)
-        # Save - h5
-        h5_action = qtg.QAction(".h5", self)
-        h5_action.setToolTip("Export every signal's data into one HDF5 .h5 file")
-        h5_action.triggered.connect(self.__save_h5)
-        file_menu.addAction(h5_action)
+        for export in _EXPORTS:
+            action = qtg.QAction(export.suffix, self)
+            action.setToolTip(export.tooltip)
+            action.triggered.connect(lambda _checked=False, e=export: self.__export(e))
+            file_menu.addAction(action)
 
     def __build_view_menu(self):
         view_menu = self.menuBar().addMenu("View")
@@ -339,65 +370,18 @@ class Oscilab(qtw.QMainWindow):
         progress = int((timer.elapsed() / self.refresh_timer.interval()) * 100)
         self.load_bar.setValue(min(progress, 100))
 
-    def __save_png(self):
-        if not self.workspace.plots and not self.workspace.spectrograms:
-            self.log("No plots to export", level="warning")
+    def __export(self, export: _Export):
+        workspace = self.workspace
+        has_content = (workspace.plots or workspace.spectrograms) if export.content == "plots" else workspace.signals
+        if not has_content:
+            self.log(f"No {export.content} to export", level="warning")
             return
 
-        path, _ = qtw.QFileDialog.getSaveFileName(self, "Save Plots as PNG", "", "PNG Image (*.png)")
-        if not path:
-            return
-        self.workspace.export_png(path)
-
-    def __save_svg(self):
-        if not self.workspace.plots and not self.workspace.spectrograms:
-            self.log("No plots to export", level="warning")
-            return
-
-        path, _ = qtw.QFileDialog.getSaveFileName(self, "Save Plots as SVG", "", "SVG Image (*.svg)")
-        if not path:
-            return
-        self.workspace.export_svg(path)
-
-    def __save_pdf(self):
-        if not self.workspace.plots and not self.workspace.spectrograms:
-            self.log("No plots to export", level="warning")
-            return
-
-        path, _ = qtw.QFileDialog.getSaveFileName(self, "Save Plots as PDF", "", "PDF File (*.pdf)")
-        if not path:
-            return
-        self.workspace.export_pdf(path)
-
-    def __save_csv(self):
-        if not self.workspace.signals:
-            self.log("No signals to export", level="warning")
-            return
-
-        path, _ = qtw.QFileDialog.getSaveFileName(self, "Save Signals as CSV", "", "CSV File (*.csv)")
-        if not path:
-            return
-        self.workspace.export_csv(path)
-
-    def __save_mat(self):
-        if not self.workspace.signals:
-            self.log("No signals to export", level="warning")
-            return
-
-        path, _ = qtw.QFileDialog.getSaveFileName(self, "Save Signals as MATLAB .mat", "", "MATLAB File (*.mat)")
-        if not path:
-            return
-        self.workspace.export_mat(path)
-
-    def __save_h5(self):
-        if not self.workspace.signals:
-            self.log("No signals to export", level="warning")
-            return
-
-        path, _ = qtw.QFileDialog.getSaveFileName(self, "Save Signals as HDF5 .h5", "", "HDF5 File (*.h5)")
-        if not path:
-            return
-        self.workspace.export_h5(path)
+        path, _ = qtw.QFileDialog.getSaveFileName(
+            self, f"Save {export.content.capitalize()} as {export.suffix}", "", export.file_filter
+        )
+        if path:
+            export.write(workspace, path)
 
     def __load_qss(self, theme: str) -> str:
         with resources.files("oscilab.assets").joinpath(f"style_{theme}.qss").open("r") as f:
