@@ -6,9 +6,9 @@ working list.
 - Mypy
 - pydantic (documentation)
 - Tests: covered are RingBuffer, SignalModel, MathSignal, the STFT cache,
-  Workspace rules, CSV/mat/h5 round-trips and the producer base classes.
-  Still untested: SyncDataProducer pacing accuracy, cursor readout,
-  PNG/SVG/PDF export.
+  the producer base classes, Workspace rules and the File-menu exports
+  (CSV/mat/h5 round-trips, PNG). Still untested: producer pacing accuracy,
+  cursor readout, SVG/PDF export.
 - Restarting a producer that stopped with an error (today it stays stopped
   until the app restarts).
 - `.mat` export names variables `<label>_time`; labels like `channel-1`

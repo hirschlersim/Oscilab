@@ -13,7 +13,13 @@ import numpy as np
 import pytest
 from PyQt6 import QtWidgets as qtw
 
-from oscilab.producers import AsyncDataProducer, FileReplayProducer, SyncDataProducer, SyntheticProducer
+from oscilab.producers import (
+    AsyncDataProducer,
+    AsyncSyntheticProducer,
+    FileReplayProducer,
+    SyncDataProducer,
+    SyntheticProducer,
+)
 
 MAIN_THREAD = threading.get_ident()
 
@@ -309,3 +315,17 @@ def test_file_replay_loop_keeps_time_increasing(qapp, tmp_path):  # noqa: ARG001
 
     np.testing.assert_allclose(np.diff(times), 0.1)  # continues across passes, never jumps back
     assert times[-1] > 1.0
+
+
+def test_async_synthetic_reset_phase_keeps_time_running(qapp, workspace):
+    producer = AsyncSyntheticProducer(fs=1_000, freq=3.0, chunk_size=10)
+    (model,) = workspace.attach_producer(producer, "s")
+    wait_until(qapp, lambda: len(model.data) >= 50)
+    producer.queue_action(producer.reset_phase)
+    wait_until(qapp, lambda: producer._phase_origin > 0)
+    wait_until(qapp, lambda: model.snapshot()[0][-1] > producer._phase_origin)
+
+    t, x = model.snapshot()
+    assert np.all(np.diff(t) > 0)  # never jumps back
+    restart = int(np.flatnonzero(np.isclose(t, producer._phase_origin))[0])
+    assert x[restart] == pytest.approx(0.0)  # sine restarts at phase 0 there

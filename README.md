@@ -23,9 +23,10 @@ architecture in Python; still under active development (see
 - **Signal math** — derive a new signal as `A op B` (`+ - * /`) from two
   existing signals.
 - **Pluggable data producers** — background `QThread`-based producers
-  with a synchronous or `asyncio` base class; ships with a synthetic
-  signal generator, a file-replay producer, and templates for serial
-  and (soon) network sources.
+  with a synchronous or `asyncio` base class, multi-channel, with their
+  own buttons on the signal rows; an error stops only the producer that
+  hit it. Ships with a synthetic signal generator, a CSV file-replay
+  producer, and templates for serial and `asyncio` sources.
 - **Two storage backends** — a plain `collections.deque` or a
   thread-safe, pre-allocated numpy ring buffer, selectable per signal
   (see `scripts/benchmark_buffers.py` for the throughput difference).
@@ -66,25 +67,33 @@ uv sync
 uv run demo
 ```
 
-`demo.py` is a good starting point for the public API:
+If `uv run demo` says `program not found` in an environment that also had
+the project installed under its old name (`oszilab`), uninstalling that
+took the shared `demo` launcher with it —
+`uv sync --reinstall-package oscilab` puts it back.
+
+[`demo.py`](src/oscilab/demo.py) is a good starting point for the public
+API:
 
 ```python
 from oscilab.oscilab import Oscilab
-from oscilab.producers import SyntheticProducer
+from oscilab.producers import AsyncSyntheticProducer, SyntheticProducer
 
 oszi = Oscilab()
 
 # Each producer registers its own signals, one per channel, at its own fs
 oszi.attach_producer(SyntheticProducer(fs=100, freq=5.0), "channel-1", storage=oszi.storage.deque)
 oszi.attach_producer(SyntheticProducer(fs=1_000, freq=(1.0, 10.0)), ["channel-2", "channel-3"])
+oszi.attach_producer(AsyncSyntheticProducer(fs=200, freq=2.0), "async")  # has a "Reset Phase" button
 
 oszi.add_timeseries_plot("Sensors")
 oszi.link(plot="Sensors", label="channel-1")
 oszi.link(plot="Sensors", label="channel-2")
+oszi.link(plot="Sensors", label="async")
 
 oszi.add_spectrogram_plot(label="channel-3")
 
-oszi.show()
+oszi.show()  # blocks until the window is closed
 ```
 
 ### Writing a producer
@@ -128,11 +137,12 @@ or real-time-systems side rather than the UI:
   recomputing `scipy.signal.stft` over the entire rolling buffer every
   frame doesn't scale, so only the new samples (plus enough context for
   window overlap) are transformed each tick and merged into a persistent
-  column cache. Getting this right required hop-aligning the recompute
-  window to match a full-buffer STFT's time grid, and permanently
-  excluding the last `ceil(nperseg / hop)` columns of any partial slice
-  from the cache — `scipy`'s edge zero-padding (`padded=True`) silently
-  corrupts them otherwise. A separate, non-cached "preview tail" recomputed
+  column cache. Getting this right required anchoring each recompute a
+  whole number of hops before the last cached column, so new columns land
+  on the same time grid even after the rolling buffer wraps and its
+  indices shift, and permanently excluding the last `ceil(nperseg / hop)`
+  columns of any partial slice from the cache — `scipy`'s edge
+  zero-padding (`padded=True`) silently corrupts them otherwise. A separate, non-cached "preview tail" recomputed
   every tick keeps the display caught up to "now" without ever caching a
   wrong value.
 - **Wall-clock-corrected producer pacing** ([producers.py](src/oscilab/producers.py)) —
@@ -142,8 +152,9 @@ or real-time-systems side rather than the UI:
   self-correcting each iteration.
 - **Thread-safe ring buffer** ([ring_buffer.py](src/oscilab/ring_buffer.py)) —
   a pre-allocated numpy circular buffer as a drop-in for
-  `deque(maxlen=...)`, guarded by a lock since producers run on their own
-  `QThread`.
+  `deque(maxlen=...)`, guarded by a lock. Producer data is delivered on
+  the GUI thread via queued Qt signals, but a signal fed by hand may be
+  written from any thread.
 
 ## Testing
 
@@ -159,10 +170,11 @@ uv run ruff format
 ```
 
 Tests run headless (Qt's offscreen platform), so they work without a
-display. They cover the data side — ring buffer, signal model
-(filter/scaling/resize), math signals, the spectrogram's incremental STFT
-cache, workspace rules, and CSV/.mat/.h5 round-trips. Producers and the
-image exports aren't covered yet — see [TODO.md](TODO.md).
+display, and CI runs them plus ruff on every pull request. They cover the
+ring buffer, signal model (filter/scaling/resize), math signals, the
+spectrogram's incremental STFT cache, the producer base classes (threads,
+errors, actions, multi-channel data), workspace rules, and the File-menu
+exports — see [TODO.md](TODO.md) for what isn't covered yet.
 
 ## Status
 

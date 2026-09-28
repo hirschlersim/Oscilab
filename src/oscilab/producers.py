@@ -465,21 +465,27 @@ class AsyncSyntheticProducer(AsyncDataProducer):
         self.amplitude = amplitude
         self.chunk_size = chunk_size
         self._sample_index = 0
+        self._phase_origin = 0.0  # Time at which the sine's phase is zero
 
     async def _run(self):
-        interval_s = self.chunk_size / self.fs
+        # Emit whatever's due by the wall clock rather than a fixed chunk per
+        # sleep: sleeps overshoot (see SyncDataProducer), and a fixed chunk
+        # would let this signal fall further and further behind real time.
+        start = time.perf_counter()
         while self._running:
-            n = np.arange(self._sample_index, self._sample_index + self.chunk_size)
-            self._sample_index += self.chunk_size
-            t = n / self.fs
-            x = self.amplitude * np.sin(2 * np.pi * self.freq * t)
-            self.emit_data(t, x)
-            await asyncio.sleep(interval_s)  # Real code: `await client.read_chunk()` etc.
+            due = int((time.perf_counter() - start) * self.fs) - self._sample_index
+            if due > 0:
+                n = np.arange(self._sample_index, self._sample_index + due)
+                self._sample_index += due
+                t = n / self.fs
+                self.emit_data(t, self.amplitude * np.sin(2 * np.pi * self.freq * (t - self._phase_origin)))
+            await asyncio.sleep(self.chunk_size / self.fs)  # Real code: `await client.read_chunk()` etc.
 
     def actions(self):
         return {"Reset Phase": self.reset_phase}
 
     def reset_phase(self):
         # Illustrative custom action — a real one might re-sync a device's
-        # onboard clock, send a calibration command, etc.
-        self._sample_index = 0
+        # onboard clock, send a calibration command, etc. Restarts the sine
+        # at phase 0 from the next sample; time itself keeps running.
+        self._phase_origin = self._sample_index / self.fs
