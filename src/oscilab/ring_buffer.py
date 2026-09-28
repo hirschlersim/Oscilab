@@ -8,9 +8,11 @@ signal via `SignalModel(..., _storage="ring")` / `Workspace.reg_signal(...,
 storage="ring")`. See `scripts/benchmark_buffers.py` for a deque-vs-ring
 throughput comparison.
 
-Thread-safe: a producer thread's `extend()` (see `oscilab.producers`) races
-against the GUI thread reading via `to_array()`/`__array__` every refresh
-tick. `deque.append`/`extend` are atomic under the GIL, but writing into a
+Thread-safe: producer data attached via `Workspace.attach_producer` arrives
+on the GUI thread, but a signal fed by hand (`reg_signal` + `add_data`) may
+be written from any thread while the GUI thread reads it via
+`to_array()`/`__array__` every refresh tick. `deque.append`/`extend` are
+atomic under the GIL, but writing into a
 pre-allocated array is several separate steps (slice assignment, then
 `_start`/`_count` bookkeeping) that a reader could observe mid-update — so
 every public method here holds `self._lock` for its whole body.

@@ -8,6 +8,7 @@ to test linking/producer logic without spinning up a full window.
 
 import csv
 import re
+from collections.abc import Sequence
 from pathlib import Path
 
 import h5py
@@ -69,7 +70,9 @@ class Workspace:
         self.spectrograms: dict[str, SpectrogramPlot] = {}
         self.signal_list = SignalController(title="Signals:")  # ONE flat row per signal, however many plots use it
         self.controllers: dict[str, SignalController] = {}  # per-plot: header buttons only (Y-Axis/Color), no rows
-        self.producers: dict[str, DataProducer] = {}
+        self.producers: dict[str, DataProducer] = {}  # signal label -> the producer feeding it
+        self._producer_errors: dict[str, str] = {}  # signal label -> why its producer stopped
+        self._producers_with_buttons: set[DataProducer] = set()  # action buttons placed already
         self._plot_theme = ("#202f46", "#ffffff")  # (background, foreground), applied to new plots too
         self._duration = 10.0  # seconds of history kept/displayed, applied to new signals too
         self._time_mode = "global"  # "global" or "relative", applied to new plots too
@@ -210,6 +213,10 @@ class Workspace:
         return spectrogram, controller
 
     def reg_signal(self, label: str, fs: float, storage: Storage = Storage.ring) -> SignalModel:
+        """
+        Register a signal you feed yourself, via its `SignalModel.add_data`.
+        Producer-fed signals are registered by `attach_producer` instead.
+        """
         if label in self.signals:
             raise ValueError(f"Signal '{label}' already registered")
 
@@ -264,28 +271,78 @@ class Workspace:
             if has_curve:
                 row.enable_curve()  # e.g. was spectrogram-only, now also plotted as a curve
             return row
-        return self.signal_list.add_signal(label=label, model=model, derived=derived, has_curve=has_curve)
 
-    def attach_producer(self, label: str, producer: DataProducer):
-        if label not in self.signals:
-            raise ValueError(f"Unknown signal '{label}'")
+        row = self.signal_list.add_signal(label=label, model=model, derived=derived, has_curve=has_curve)
+        if label in self._producer_errors:
+            row.set_error(self._producer_errors[label])
 
-        model = self.signals[label]
-        producer.data_ready.connect(model.add_data)
-        self.producers[label] = producer
+        # A producer's buttons (e.g. "Reconnect") act on the whole producer,
+        # not one channel — so they go on the first of its signals to get a row.
+        producer = self.producers.get(label)
+        if producer is not None and producer not in self._producers_with_buttons:
+            self._producers_with_buttons.add(producer)
+            for text, action in producer.actions().items():
+                row.add_action_button(
+                    text,
+                    f"{type(producer).__name__}: {text}",
+                    lambda _checked=False, p=producer, a=action, n=text: self.__queue_action(p, a, n),
+                )
+        return row
 
-        # Custom producer buttons (e.g. "Reconnect") land on the signal's
-        # one flat row — requires reg_signal()/link() to have run first.
-        row = self.signal_list.rows.get(label)
-        if row is not None:
-            for text, callback in producer.actions().items():
-                row.add_action_button(text, f"'{label}' producer action: {text}", callback)
+    def attach_producer(
+        self, producer: DataProducer, signals: str | Sequence[str], storage: Storage = Storage.ring
+    ) -> list[SignalModel]:
+        """
+        Register one signal per producer channel, at the producer's `fs`, and
+        start the producer feeding them.
+
+        `signals` names them in `producer.channels` order: a single label for
+        a single-channel producer, otherwise one label per channel.
+        """
+        labels = [signals] if isinstance(signals, str) else list(signals)
+        if len(labels) != len(producer.channels):
+            raise ValueError(
+                f"{type(producer).__name__} has {len(producer.channels)} channel(s) {producer.channels}, "
+                f"but {len(labels)} signal name(s) were given"
+            )
+        # Check every name up front, so a bad call leaves nothing half-registered.
+        if len(set(labels)) != len(labels):
+            raise ValueError(f"Duplicate signal names in {labels}")
+        for label in labels:
+            if label in self.signals:
+                raise ValueError(f"Signal '{label}' already registered")
+
+        models = [self.reg_signal(label, fs=producer.fs, storage=storage) for label in labels]
+
+        def deliver(t, x):
+            # Runs on the GUI thread: Qt queues signals emitted from the
+            # producer's thread, so this never races the refresh loop.
+            for model, row in zip(models, x, strict=True):
+                model.add_data(t, row)
+
+        producer.data_ready.connect(deliver)
+        producer.error.connect(lambda message: self.__on_producer_error(labels, message))
+        for label in labels:
+            self.producers[label] = producer
 
         producer.start()
-        self._log(f"Started producer for '{label}'")
+        self._log(f"Started {type(producer).__name__} for {', '.join(repr(label) for label in labels)}")
+        return models
+
+    def __on_producer_error(self, labels: list[str], message: str):
+        names = ", ".join(repr(label) for label in labels)
+        self._log(f"Producer for {names} stopped: {message}", level="error")
+        for label in labels:
+            self._producer_errors[label] = message
+            if label in self.signal_list.rows:
+                self.signal_list.rows[label].set_error(message)
+
+    def __queue_action(self, producer: DataProducer, action, name: str):
+        if not producer.queue_action(action):
+            self._log(f"'{name}' ignored: {type(producer).__name__} isn't running", level="warning")
 
     def stop_producers(self):
-        for producer in self.producers.values():
+        for producer in dict.fromkeys(self.producers.values()):  # a multi-channel producer is listed once per signal
             producer.stop()
 
     def refresh(self):

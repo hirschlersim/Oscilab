@@ -9,19 +9,18 @@ working list.
   snake_case. Pick one before add-ons start coding against it —
   `ruff.toml` exempts these four names from N802 until then.
 - pydantic (documentation)
-- Tests: the data side is covered (RingBuffer, SignalModel, MathSignal,
-  STFT cache, Workspace rules, CSV/mat/h5 round-trips). Still untested:
-  producers (pacing, FileReplayProducer, stop()), cursor readout,
+- Tests: covered are RingBuffer, SignalModel, MathSignal, the STFT cache,
+  Workspace rules, CSV/mat/h5 round-trips and the producer base classes.
+  Still untested: SyncDataProducer pacing accuracy, cursor readout,
   PNG/SVG/PDF export.
-- Bug: `FileReplayProducer(loop=True)` re-emits the file's original
-  timestamps on every pass, so time jumps backwards at each loop.
+- Restarting a producer that stopped with an error (today it stays stopped
+  until the app restarts).
 - `.mat` export names variables `<label>_time`; labels like `channel-1`
   aren't valid MATLAB variable names. Check how MATLAB loads them and
   sanitize to `[A-Za-z]\w*` if needed.
 - Session save/load: persist signals, plot layout, links, colors,
   filter/scaling, storage backend, theme, cursor state to JSON and reload
   it — set up a layout once via the GUI instead of writing Python each time.
-- Can the producers push multiple signals via vectors?
 - A network/UDP producer template, same shape as the existing producers.
 
 

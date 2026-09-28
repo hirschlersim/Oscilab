@@ -3,27 +3,26 @@ from oscilab.producers import SyntheticProducer
 
 
 def run():
-
     oszi = Oscilab()
 
-    # Time series plot with two signals — one on each storage backend, to
-    # show both work identically. "ring" (a pre-allocated numpy circular
-    # buffer) is far cheaper per refresh tick than "deque" at scale; see
-    # scripts/benchmark_buffers.py for the numbers.
+    # Three signals from two producers. Each producer registers its own
+    # signals, at its own sampling rate.
+    #   - "channel-1" is stored in a deque, the others in the (default) ring
+    #     buffer, to show both work identically. "ring" (a pre-allocated numpy
+    #     circular buffer) is far cheaper per refresh tick at scale; see
+    #     scripts/benchmark_buffers.py for the numbers.
+    #   - "channel-2"/"channel-3" come from ONE two-channel producer (a 1 Hz
+    #     and a 10 Hz sine, sampled together), like a multi-channel DAQ.
+    oszi.attachProducer(SyntheticProducer(fs=100, freq=5.0), "channel-1", storage=oszi.storage.deque)
+    oszi.attachProducer(SyntheticProducer(fs=1_000, freq=(1.0, 10.0)), ["channel-2", "channel-3"])
+
+    # Time series plot with two of them
     oszi.addTimeSeriesPlot("Sensors")
-    oszi.regSignal(label="channel-1", fs=100, storage=oszi.storage.deque)
-    oszi.regSignal(label="channel-2", fs=1_000, storage=oszi.storage.ring)
-    oszi.regSignal(label="channel-3", fs=1_000)
     oszi.link(plot="Sensors", label="channel-1")
     oszi.link(plot="Sensors", label="channel-2")
 
     # Spectrogram (STFT) plot for a single, faster signal
-    oszi.addSpectrogramPlot(label="channel-2")
-
-    # Feed all three with demo data sources (replace with real producers later)
-    oszi.attachProducer(label="channel-1", producer=SyntheticProducer(fs=100, freq=5.0))
-    oszi.attachProducer(label="channel-2", producer=SyntheticProducer(fs=1_000, freq=1.0))
-    oszi.attachProducer(label="channel-3", producer=SyntheticProducer(fs=1_000, freq=10.0))
+    oszi.addSpectrogramPlot(label="channel-3")
 
     oszi.show()
 

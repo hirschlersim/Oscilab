@@ -1,5 +1,6 @@
 import ctypes
 import sys
+from collections.abc import Sequence
 from importlib import metadata, resources
 from typing import ClassVar
 
@@ -9,6 +10,7 @@ from PyQt6 import QtGui as qtg
 from PyQt6 import QtWidgets as qtw
 
 from oscilab.math_signal import OPERATORS, MathDialog
+from oscilab.producers import DataProducer
 from oscilab.storage import Storage
 from oscilab.workspace import Workspace
 
@@ -22,7 +24,7 @@ class Oscilab(qtw.QMainWindow):
     """
 
     # Exposed as `Oscilab.storage` / `oszi.storage` so callers write e.g.
-    # `oszi.regSignal(..., storage=oszi.storage.ring)` instead of a bare string.
+    # `oszi.attachProducer(..., storage=oszi.storage.deque)` instead of a bare string.
     storage = Storage
 
     # (plot background, plot foreground) per theme — the QSS covers widget
@@ -297,16 +299,24 @@ class Oscilab(qtw.QMainWindow):
         self.controller_layout.insertWidget(self.controller_layout.count() - 1, controller)
 
     def regSignal(self, label: str, fs: float, storage: Storage = Storage.ring):
-        """`storage`: `self.storage.ring` (default) or `self.storage.deque` — see `oscilab.ring_buffer.RingBuffer`."""
+        """
+        Register a signal you feed yourself (producer-fed signals are
+        registered by `attachProducer`). `storage`: `self.storage.ring`
+        (default) or `self.storage.deque` — see `oscilab.ring_buffer.RingBuffer`.
+        """
         return self.workspace.reg_signal(label, fs, storage=storage)
 
     def link(self, plot: str, label: str):
         self.workspace.link(plot, label)
         self.log(f"Linked signal '{label}' to plot '{plot}'")
 
-    def attachProducer(self, label: str, producer):
-        """Attach and start a `DataProducer` feeding the given signal."""
-        self.workspace.attach_producer(label, producer)
+    def attachProducer(self, producer: DataProducer, signals: str | Sequence[str], storage: Storage = Storage.ring):
+        """
+        Register one signal per producer channel, named by `signals` (a single
+        label for a single-channel producer), and start the producer feeding
+        them. The signals use the producer's `fs`.
+        """
+        return self.workspace.attach_producer(producer, signals, storage=storage)
 
     def log(self, message: str, level: str = "info", timeout_ms: int = 4000):
         """Central logging: routes to loguru and the status bar at once."""

@@ -201,6 +201,12 @@ class SignalRow(qtw.QWidget):
         self._actions_layout.addWidget(button)
         return button
 
+    def set_error(self, message: str):
+        """Flag that this signal's producer stopped with an error (shown on the name)."""
+        self.name_label.setText(f"⚠ {self.label}")
+        self.name_label.setStyleSheet("color: red;")
+        self.name_label.setToolTip(f"Producer stopped: {message}")
+
     def enable_curve(self):
         """
         Upgrade a spectrogram-only row once its signal also gets plotted

@@ -74,23 +74,50 @@ from oscilab.producers import SyntheticProducer
 
 oszi = Oscilab()
 
+# Each producer registers its own signals, one per channel, at its own fs
+oszi.attachProducer(SyntheticProducer(fs=100, freq=5.0), "channel-1", storage=oszi.storage.deque)
+oszi.attachProducer(SyntheticProducer(fs=1_000, freq=(1.0, 10.0)), ["channel-2", "channel-3"])
+
 oszi.addTimeSeriesPlot("Sensors")
-oszi.regSignal(label="channel-1", fs=100, storage=oszi.storage.deque)
-oszi.regSignal(label="channel-2", fs=1_000, storage=oszi.storage.ring)
 oszi.link(plot="Sensors", label="channel-1")
 oszi.link(plot="Sensors", label="channel-2")
 
-oszi.addSpectrogramPlot(label="channel-2")
-
-oszi.attachProducer(label="channel-1", producer=SyntheticProducer(fs=100, freq=5.0))
-oszi.attachProducer(label="channel-2", producer=SyntheticProducer(fs=1_000, freq=1.0))
+oszi.addSpectrogramPlot(label="channel-3")
 
 oszi.show()
 ```
 
+### Writing a producer
+
 To feed your own hardware or file source, subclass `SyncDataProducer` (for
-blocking APIs) or `AsyncDataProducer` (for `asyncio`-based ones) in
-`producers.py` and implement its one abstract method.
+blocking APIs) or `AsyncDataProducer` (for `asyncio`-based ones) from
+`producers.py` and implement its one abstract method:
+
+```python
+class ImuProducer(SyncDataProducer):
+    channels = ("ax", "ay", "az")
+
+    def __init__(self, port):
+        super().__init__(fs=500)
+        self.device = open_my_device(port)
+
+    def _generate(self, elapsed):
+        t, samples = self.device.read()  # samples: shape (3, n), one row per channel
+        return t, samples
+
+    def on_stop(self):  # runs on the producer's thread, however it stops
+        self.device.close()
+
+    def actions(self):  # buttons on the signal's row, run on the producer's thread
+        return {"Zero": self.device.zero}
+
+
+oszi.attachProducer(ImuProducer("COM3"), ["acc-x", "acc-y", "acc-z"])
+```
+
+`x` is shaped `(channels, n)`; a single-channel producer can return a 1-D
+array. An exception inside a producer stops only that producer — it's shown
+in the status bar and on its signals' rows instead of taking the app down.
 
 ## Notable implementation details
 

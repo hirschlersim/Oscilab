@@ -15,11 +15,6 @@ from scipy.io import loadmat
 from oscilab.workspace import Workspace
 
 
-@pytest.fixture
-def workspace(qapp):  # noqa: ARG001 — widgets need the QApplication to exist
-    return Workspace()
-
-
 def fill(workspace: Workspace, label: str, fs: float, n: int):
     """Register `label` and write `n` samples of a ramp into it."""
     model = workspace.reg_signal(label, fs=fs)
