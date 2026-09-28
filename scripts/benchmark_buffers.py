@@ -41,9 +41,9 @@ if __name__ == "__main__":
     # display window at typical sensor rates, plus a higher-rate case similar
     # to the demo's spectrogram channel.
     configs = [
-        (10, 100),    # default duration, typical sensor: maxlen 1_000
-        (10, 1000),   # default duration, spectrogram-rate signal: maxlen 10_000
-        (60, 1000),   # longest duration option, high rate: maxlen 60_000
+        (10, 100),  # default duration, typical sensor: maxlen 1_000
+        (10, 1000),  # default duration, spectrogram-rate signal: maxlen 10_000
+        (60, 1000),  # longest duration option, high rate: maxlen 60_000
     ]
     chunk_size = 10
     n_chunks = 20_000  # ~= 200_000 samples pushed through, several minutes of "live" data

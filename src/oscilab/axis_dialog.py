@@ -61,8 +61,7 @@ class RangeDialog(qtw.QDialog):
 
         # OK / Cancel buttons
         button_box = qtw.QDialogButtonBox(
-            qtw.QDialogButtonBox.StandardButton.Ok
-            | qtw.QDialogButtonBox.StandardButton.Cancel
+            qtw.QDialogButtonBox.StandardButton.Ok | qtw.QDialogButtonBox.StandardButton.Cancel
         )
         button_box.accepted.connect(self.accept)
         button_box.rejected.connect(self.reject)

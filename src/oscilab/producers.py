@@ -149,13 +149,21 @@ class AsyncDataProducer(DataProducer):
 class SyntheticProducer(SyncDataProducer):
     """Generates a noisy sine wave — useful for demos and testing."""
 
-    def __init__(self, fs: float, freq: float = 5.0, amplitude: float = 1.0,
-                 noise: float = 0.05, chunk_size: int = 10, parent=None):
+    def __init__(
+        self,
+        fs: float,
+        freq: float = 5.0,
+        amplitude: float = 1.0,
+        noise: float = 0.05,
+        chunk_size: int = 10,
+        parent=None,
+    ):
         super().__init__(interval_s=chunk_size / fs, parent=parent)
         self.fs = fs
         self.freq = freq
         self.amplitude = amplitude
         self.noise = noise
+        self._rng = np.random.default_rng()
         self._samples_emitted = 0
 
     def _generate(self, elapsed):
@@ -169,7 +177,7 @@ class SyntheticProducer(SyncDataProducer):
         t = n / self.fs
         x = self.amplitude * np.sin(2 * np.pi * self.freq * t)
         if self.noise:
-            x = x + np.random.normal(0, self.noise, size=x.shape)
+            x = x + self._rng.normal(0, self.noise, size=x.shape)
         return t, x
 
 
@@ -183,16 +191,13 @@ class FileReplayProducer(SyncDataProducer):
         self._cursor = 0
         self._loop_offset = 0.0  # elapsed-time origin of the current loop pass
 
-        if len(self._time) > 1:
-            dt = float(np.mean(np.diff(self._time)))
-        else:
-            dt = 0.02
+        dt = float(np.mean(np.diff(self._time))) if len(self._time) > 1 else 0.02
         super().__init__(interval_s=max(dt * chunk_size, 0.001), parent=parent)
 
     @staticmethod
     def __load(path: Path) -> tuple[np.ndarray, np.ndarray]:
         t, x = [], []
-        with open(path, newline="") as f:
+        with path.open(newline="") as f:
             reader = csv.reader(f)
             next(reader, None)  # header
             for row in reader:
@@ -221,16 +226,16 @@ class FileReplayProducer(SyncDataProducer):
                     self._running = False  # End of file, not looping: stop.
             return np.array([]), np.array([])
 
-        t_chunk = self._time[self._cursor:end]
-        x_chunk = self._data[self._cursor:end]
+        t_chunk = self._time[self._cursor : end]
+        x_chunk = self._data[self._cursor : end]
         self._cursor = end
         return t_chunk, x_chunk
 
 
 class SerialProducer(SyncDataProducer):
-    """
+    r"""
     Reads real hardware over a serial port, one line per sample (e.g.
-    `"1.23\\n"`). Needs `pyserial` (`pip install pyserial`) — not a hard
+    `"1.23\n"`). Needs `pyserial` (`pip install pyserial`) — not a hard
     dependency of Oscilab itself, since most users won't need real hardware
     acquisition.
 
@@ -243,7 +248,7 @@ class SerialProducer(SyncDataProducer):
 
     def __init__(self, port: str, fs: float, baudrate: int = 115200, chunk_size: int = 10, parent=None):
         try:
-            import serial
+            import serial  # noqa: PLC0415 — optional dependency, only needed by this producer
         except ImportError as e:
             raise ImportError("SerialProducer needs pyserial: pip install pyserial") from e
 
@@ -256,7 +261,7 @@ class SerialProducer(SyncDataProducer):
         self._connection = serial.Serial(port, baudrate=baudrate, timeout=1.0)
         self._sample_index = 0
 
-    def _generate(self, elapsed):
+    def _generate(self, _elapsed):
         # Blocking reads are fine here — this runs on this producer's own
         # QThread, never the GUI thread. Real hardware may need a tighter
         # per-line timeout than the 1.0s default so a quiet channel doesn't
@@ -295,8 +300,7 @@ class AsyncSyntheticProducer(AsyncDataProducer):
     data. Also demonstrates a custom action button ("Reset Phase").
     """
 
-    def __init__(self, fs: float, freq: float = 5.0, amplitude: float = 1.0,
-                 chunk_size: int = 10, parent=None):
+    def __init__(self, fs: float, freq: float = 5.0, amplitude: float = 1.0, chunk_size: int = 10, parent=None):
         super().__init__(parent=parent)
         self.fs = fs
         self.freq = freq

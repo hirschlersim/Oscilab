@@ -124,6 +124,13 @@ or real-time-systems side rather than the UI:
 uv run pytest
 ```
 
+Lint and formatting (config in `ruff.toml`):
+
+```bash
+uv run ruff check
+uv run ruff format
+```
+
 Test coverage is minimal so far (`tests/test_ring_buffer.py` checks
 `RingBuffer` against `deque(maxlen=...)` for equivalence, including
 wraparound). Most of the rest has only been verified via one-off scripts —

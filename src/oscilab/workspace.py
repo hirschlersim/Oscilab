@@ -44,7 +44,9 @@ class _PdfExporter(pg_exporters.Exporter):
         source_rect = self.getSourceRect()
         writer = qtg.QPdfWriter(file_name)
         writer.setResolution(96)
-        writer.setPageSize(qtg.QPageSize(qtc.QSizeF(source_rect.width(), source_rect.height()), qtg.QPageSize.Unit.Point))
+        writer.setPageSize(
+            qtg.QPageSize(qtc.QSizeF(source_rect.width(), source_rect.height()), qtg.QPageSize.Unit.Point)
+        )
         writer.setPageMargins(qtc.QMarginsF(0, 0, 0, 0))
         target_rect = qtc.QRectF(0, 0, source_rect.width(), source_rect.height())
 
@@ -59,7 +61,7 @@ class _PdfExporter(pg_exporters.Exporter):
 
 class Workspace:
     def __init__(self, log=None):
-        self._log = log or (lambda message, level="info": None)
+        self._log = log or (lambda *_args, **_kwargs: None)
 
         self.signals: dict[str, SignalModel] = {}
         self.math_signals: dict[str, MathSignal] = {}
@@ -74,7 +76,8 @@ class Workspace:
         self._downsampling = False  # min-max curve downsampling, applied to new plots too
 
     def add_plot(self, title: str) -> tuple[TimeseriesPlot, SignalController]:
-        assert title not in self.plots, f"Plot '{title}' already exists"
+        if title in self.plots:
+            raise ValueError(f"Plot '{title}' already exists")
 
         plot = TimeseriesPlot(_title=title)
         plot.set_theme(*self._plot_theme)
@@ -133,8 +136,10 @@ class Workspace:
         metrics watched — everything except curve color (nothing is drawn as
         a line) and "visible" toggles the whole spectrogram widget instead.
         """
-        assert label not in self.plots and label not in self.spectrograms, f"Plot '{label}' already exists"
-        assert label in self.signals, f"Unknown signal '{label}'"
+        if label in self.plots or label in self.spectrograms:
+            raise ValueError(f"Plot '{label}' already exists")
+        if label not in self.signals:
+            raise ValueError(f"Unknown signal '{label}'")
 
         model = self.signals[label]
         spectrogram = SpectrogramPlot(label=label, model=model, nperseg=nperseg, noverlap=noverlap)
@@ -205,7 +210,8 @@ class Workspace:
         return spectrogram, controller
 
     def reg_signal(self, label: str, fs: float, storage: Storage = Storage.ring) -> SignalModel:
-        assert label not in self.signals, f"Signal '{label}' already registered"
+        if label in self.signals:
+            raise ValueError(f"Signal '{label}' already registered")
 
         model = SignalModel(_label=label, _fs=fs, _duration=self._duration, _storage=storage)
         self.signals[label] = model
@@ -213,9 +219,12 @@ class Workspace:
 
     def add_math_signal(self, label: str, operator: str, signal_a: str, signal_b: str) -> SignalModel:
         """Register a new signal computed live as `signal_a <operator> signal_b`."""
-        assert label not in self.signals, f"Signal '{label}' already registered"
-        assert signal_a in self.signals, f"Unknown signal '{signal_a}'"
-        assert signal_b in self.signals, f"Unknown signal '{signal_b}'"
+        if label in self.signals:
+            raise ValueError(f"Signal '{label}' already registered")
+        if signal_a not in self.signals:
+            raise ValueError(f"Unknown signal '{signal_a}'")
+        if signal_b not in self.signals:
+            raise ValueError(f"Unknown signal '{signal_b}'")
 
         model_a = self.signals[signal_a]
         derived_model = SignalModel(_label=label, _fs=model_a.fs, _duration=self._duration)
@@ -228,8 +237,10 @@ class Workspace:
         return derived_model
 
     def link(self, plot: str, label: str):
-        assert plot in self.plots, f"Unknown plot '{plot}'"
-        assert label in self.signals, f"Unknown signal '{label}'"
+        if plot not in self.plots:
+            raise ValueError(f"Unknown plot '{plot}'")
+        if label not in self.signals:
+            raise ValueError(f"Unknown signal '{label}'")
 
         model = self.signals[label]
         target_plot = self.plots[plot]
@@ -256,7 +267,8 @@ class Workspace:
         return self.signal_list.add_signal(label=label, model=model, derived=derived, has_curve=has_curve)
 
     def attach_producer(self, label: str, producer: DataProducer):
-        assert label in self.signals, f"Unknown signal '{label}'"
+        if label not in self.signals:
+            raise ValueError(f"Unknown signal '{label}'")
 
         model = self.signals[label]
         producer.data_ready.connect(model.add_data)
@@ -296,7 +308,8 @@ class Workspace:
 
     def set_cursors(self, plot: str, enabled: bool):
         """Toggle classic two-cursor measurement on `plot` (see `TimeseriesPlot.set_cursors`)."""
-        assert plot in self.plots, f"Unknown plot '{plot}'"
+        if plot not in self.plots:
+            raise ValueError(f"Unknown plot '{plot}'")
         self.plots[plot].set_cursors(enabled)
         if enabled:
             self.__refresh_cursor_readout(plot)  # Show a reading immediately, not just on the next tick/drag
@@ -387,7 +400,7 @@ class Workspace:
             path = self.__spread_path(base_path, title, len(plot_items), suffix)
             try:
                 exporter_cls(plot_item).export(str(path))
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 — see below; any exporter failure is reported, not fatal
                 # pyqtgraph's SVGExporter is known to break against some Qt6
                 # versions (its SVG path post-processor assumes older Qt SVG
                 # serialization); don't let that crash the app or silently
@@ -419,10 +432,11 @@ class Workspace:
 
         for label, model in self.signals.items():
             path = self.__spread_path(base_path, label, len(self.signals), ".csv")
-            with open(path, "w", newline="") as f:
+            time_arr, data_arr = model.snapshot()
+            with path.open("w", newline="") as f:
                 writer = csv.writer(f)
                 writer.writerow(["time", "value"])
-                writer.writerows(zip(model.time, model.data))
+                writer.writerows(zip(time_arr, data_arr, strict=True))
             written.append(path)
 
         self._log(f"Exported {len(written)} signal(s) to CSV")

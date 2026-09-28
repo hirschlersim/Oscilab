@@ -1,4 +1,5 @@
-"""Correctness tests for RingBuffer: it must behave like deque(maxlen=...)
+"""
+Correctness tests for RingBuffer: it must behave like deque(maxlen=...)
 for the same sequence of writes, including wraparound. Performance is
 covered separately by scripts/benchmark_buffers.py, not here — timing
 numbers make flaky pass/fail assertions.
@@ -17,7 +18,7 @@ def as_list(buf) -> list[float]:
 
 
 @pytest.mark.parametrize(
-    "maxlen, chunks",
+    ("maxlen", "chunks"),
     [
         (5, [[1, 2, 3]]),  # partial fill, no wraparound
         (5, [[1, 2, 3], [4, 5]]),  # exact fill across two writes
@@ -74,5 +75,5 @@ def test_iteration_matches_array_order():
 
 
 def test_maxlen_must_be_positive():
-    with pytest.raises(AssertionError):
+    with pytest.raises(ValueError, match="maxlen must be positive"):
         RingBuffer(0)

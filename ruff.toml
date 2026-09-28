@@ -1,3 +1,14 @@
+line-length = 120  # What the code is already written to; 88 would re-wrap most of it
+
+extend-exclude = [
+    # Early standalone prototypes, not part of the package (need matplotlib/numba)
+    "scripts/fft.py",
+    "scripts/gpt.py",
+    "scripts/main.py",
+    "scripts/stft.py",
+    "scripts/update.py",
+]
+
 lint.extend-select = [
     "E",    # Pycodestyle errors (style issues)
     "W",    # Pycodestyle warnings (style issues)
@@ -19,7 +30,7 @@ lint.extend-select = [
     "C4",   # Flake8-comprehensions – best practices in comprehensions
     "DTZ",  # Flake8-datetimez – requires timezone-aware datetime objects
     "T10",  # Flake8-debugger – debugger statements (e.g. pdb)
-    "DJ",   # Flake8-django – Django-specific conventions
+    # "DJ", # Flake8-django – Django-specific conventions (no Django here)
     "EM",   # Flake8-errmsg – error message style
     "EXE",  # Flake8-executable – executable file checks
     "FA",   # Flake8-future-annotations – future import for annotations
@@ -30,7 +41,7 @@ lint.extend-select = [
     "INP",  # Flake8-no-pep420 – requires __init__.py files (no implicit namespace packages)
     "PIE",  # Flake8-pie – Python improvement suggestions
     "T20",  # Flake8-print – disallows print statements
-    "PYI",  # Flake8-pyi – checks for type stub (.pyi) consistency
+    # "PYI",# Flake8-pyi – checks for type stub (.pyi) consistency (no .pyi stubs here)
     "PT",   # Flake8-pytest-style – pytest best practices
     "Q",    # Flake8-quotes – enforces quote style consistency
     "RSE",  # Flake8-raise – proper raise statement usage
@@ -40,23 +51,23 @@ lint.extend-select = [
     "SIM",  # Flake8-simplify – code simplification hints
     "TID",  # Flake8-tidy-imports – enforces specific import styles (e.g., no relative imports)
     "TC",   # Flake8-type-checking – proper import of typing in type checks
-    "INT",  # Flake8-gettext – checks for proper internationalization usage
+    # "INT",# Flake8-gettext – checks for proper internationalization usage (no gettext here)
     "ARG",  # Flake8-unused-arguments – flags unused function arguments
     "PTH",  # Flake8-use-pathlib – encourages pathlib over os.path
     "TD",   # Flake8-todos – flags TODO comments
     "FIX",  # Flake8-fixme – flags FIXME comments
     # "ERA",  # Eradicate – detects commented-out code (potentially dangerous)
-    "PD",   # Pandas-vet – checks pandas-specific code practices
+    # "PD", # Pandas-vet – checks pandas-specific code practices (no pandas here)
     "PGH",  # Pygrep-hooks – custom grep hooks for linting
     "PL",   # Pylint – integration with Pylint conventions
     "TRY",  # Tryceratops – try/except usage suggestions
     "FLY",  # Flynt – f-string conversion suggestions
     "NPY",  # NumPy-specific rules – ensures NumPy coding standards
-    "FAST", # FastAPI – FastAPI-specific linting rules
-    "AIR",  # Airflow – Airflow-specific linting rules
+    # "FAST",# FastAPI – FastAPI-specific linting rules (no FastAPI here)
+    # "AIR",# Airflow – Airflow-specific linting rules (no Airflow here)
     "PERF", # Perflint – performance-related checks
     "FURB", # Refurb – rules for code refurbishment
-    "DOC",  # Pydoclint – docstring linting and consistency
+    # "DOC",# Pydoclint – docstring linting and consistency (only works with preview mode enabled)
     "RUF",  # Ruff-specific rules – additional Ruff checks
 ]
 
@@ -79,4 +90,35 @@ lint.ignore = [
     "TC003", # Flake8-type-checking - Checks for imports from typing that are not within TYPE_CHECKING blocks.
     "COM812", # Flake8-commas - Missing trailing comma. Conflicts with the formatter, which manages trailing commas itself (magic trailing comma is unaffected); Ruff recommends disabling.
     "ISC001", # Flake8-implicit-str-concat - Single-line implicit string concatenation. Conflicts with the formatter; Ruff recommends disabling alongside COM812.
+    "EM102", # Flake8-errmsg - f-string in exception constructor. Same reasoning as EM101/TRY003: short inline messages read fine.
+    "D205",  # Pydocstyle - blank line after summary. Docstrings here are prose whose first sentence often wraps onto a second line.
+    "FBT001", # Flake8-boolean-trap - bool positional argument. Qt slots receive `checked`/`visible` positionally, and setters like `set_downsampling(enabled)` mirror them.
+    "FBT002", # Flake8-boolean-trap - bool default positional argument. Same as FBT001.
+    "N813",  # PEP8 Naming - CamelCase module imported as lowercase. `from PyQt6 import QtWidgets as qtw` is this project's convention.
+    "PLR2004", # Pylint - magic value comparison. Small literal counts (2 math operands, 2 CSV columns) read clearer inline.
+]
+
+# Qt dialogs take (label, a few current values, parent) — 5 is too tight for that.
+lint.pylint.max-args = 7
+lint.pylint.max-positional-args = 7
+
+lint.pep8-naming.extend-ignore-names = [
+    "closeEvent",  # Qt override, name set by Qt
+    # Oscilab's public camelCase API. Renaming is a breaking change for every
+    # user script — decide on one convention first (see TODO.md).
+    "addTimeSeriesPlot",
+    "addSpectrogramPlot",
+    "regSignal",
+    "attachProducer",
+]
+
+[lint.per-file-ignores]
+"tests/**" = [
+    "S101",    # pytest is built on assert
+    "SLF001",  # tests may inspect private state (e.g. the STFT column cache)
+    "INP001",  # pytest collects tests/ without an __init__.py
+]
+"scripts/**" = [
+    "INP001",  # standalone scripts, not a package
+    "T201",    # print is their output
 ]

@@ -23,7 +23,7 @@ class TimeseriesPlot(pg.PlotWidget):
         self.models: dict[str, object] = {}
 
         # Style and Color
-        self.showGrid(x=True, y=True, alpha=0.3,)
+        self.showGrid(x=True, y=True, alpha=0.3)
         self.addLegend()
         self.set_theme(bg="#202f46", fg="#ffffff")
         self.__update_axis_label()
@@ -32,35 +32,35 @@ class TimeseriesPlot(pg.PlotWidget):
         self.setMenuEnabled(False)
         self.getViewBox().setMouseMode(pg.ViewBox.RectMode)
 
-
     def set_theme(self, bg: str, fg: str):
         """Recolor background, title and axes — used for light/dark theme switching."""
         self.color_bg = bg
         self.color_fg = fg
         self.setBackground(bg)
         self.setTitle(self._title, color=fg)
-        self.getAxis('left').setTextPen(fg)
-        self.getAxis('bottom').setTextPen(fg)
-        self.getAxis('left').setPen(fg)
-        self.getAxis('bottom').setPen(fg)
-
+        self.getAxis("left").setTextPen(fg)
+        self.getAxis("bottom").setTextPen(fg)
+        self.getAxis("left").setPen(fg)
+        self.getAxis("bottom").setPen(fg)
 
     def set_time_mode(self, mode: str):
-        """"global": x-axis shows time as recorded. "relative": shifted so the
-        newest sample sits at 0 and the buffer's start sits at -duration."""
-        assert mode in ("global", "relative"), f"Unknown time mode '{mode}'"
+        """
+        "global": x-axis shows time as recorded. "relative": shifted so the
+        newest sample sits at 0 and the buffer's start sits at -duration.
+        """
+        if mode not in ("global", "relative"):
+            raise ValueError(f"Unknown time mode '{mode}'")
         self.time_mode = mode
         self.__update_axis_label()
-        self.update()  # Recompute curve data under the new mode right away...
-        self.reset_view()  # ...then re-fit + resume auto-follow (see reset_view()),
-                            # so a prior manual pan/zoom doesn't leave the view
-                            # stuck showing the old mode's now-irrelevant range.
-
+        # Recompute curve data under the new mode right away, then re-fit +
+        # resume auto-follow (see reset_view()), so a prior manual pan/zoom
+        # doesn't leave the view stuck showing the old mode's now-irrelevant range.
+        self.update()
+        self.reset_view()
 
     def __update_axis_label(self):
         label = "Time (relative to now)" if self.time_mode == "relative" else "Time"
-        self.setLabel('bottom', label, units='s')
-
+        self.setLabel("bottom", label, units="s")
 
     def update(self):
         for label, curve in self.curves.items():
@@ -74,54 +74,52 @@ class TimeseriesPlot(pg.PlotWidget):
                 x = x - x[-1]  # Newest sample at 0, older samples negative
             curve.setData(x, y)
 
-
-    def add_signal(self, label:str, model) -> str:
+    def add_signal(self, label: str, model) -> str:
         color = self.colors[len(self.curves) % len(self.colors)]
         curve = self.plot(pen=pg.mkPen(color, width=1.5), name=label, antialias=False)
-        curve.setDownsampling(auto=self.downsampling, method='peak')
+        curve.setDownsampling(auto=self.downsampling, method="peak")
         curve.setClipToView(self.downsampling)
         self.curves[label] = curve
         self.models[label] = model
         return color
 
-
     def set_downsampling(self, enabled: bool):
-        """Min-max ("peak") downsampling: for every screen pixel column, keep
+        """
+        Min-max ("peak") downsampling: for every screen pixel column, keep
         only that column's min and max sample — a spike is never dropped
         just because there are more samples than pixels to draw them in.
         Paired with clip-to-view (skip processing off-screen points) since
         both are the same "render less without changing what you'd see"
-        tradeoff. Applies to every curve, current and future."""
+        tradeoff. Applies to every curve, current and future.
+        """
         self.downsampling = enabled
         for curve in self.curves.values():
-            curve.setDownsampling(auto=enabled, method='peak')
+            curve.setDownsampling(auto=enabled, method="peak")
             curve.setClipToView(enabled)
-
 
     def set_visible(self, label: str, visible: bool):
         """Show/hide a signal's curve without touching its data buffer."""
         if label in self.curves:
             self.curves[label].setVisible(visible)
 
-
     def set_color(self, label: str, color: str):
         if label in self.curves:
             self.curves[label].setPen(pg.mkPen(color, width=1.5))
 
-
     def set_y_range(self, auto: bool, y_min: float = 0.0, y_max: float = 1.0):
-        """Auto: Y keeps auto-fitting to the data, as before. Manual: pin
+        """
+        Auto: Y keeps auto-fitting to the data, as before. Manual: pin
         exactly [y_min, y_max] and stop auto-fitting Y on new data — X keeps
-        auto-scrolling/fitting either way."""
+        auto-scrolling/fitting either way.
+        """
         self.y_range_auto = auto
         self.y_range_min = y_min
         self.y_range_max = y_max
         if auto:
-            self.enableAutoRange(axis='y')
+            self.enableAutoRange(axis="y")
         else:
-            self.enableAutoRange(axis='y', enable=False)
+            self.enableAutoRange(axis="y", enable=False)
             self.setYRange(y_min, y_max, padding=0)
-
 
     def reset_view(self):
         self.autoRange()
@@ -131,17 +129,18 @@ class TimeseriesPlot(pg.PlotWidget):
         # normally keeps following new data as it streams in. Without
         # re-enabling it here, the plot would silently freeze in place the
         # next time data updates instead of resuming its live scroll.
-        self.enableAutoRange(axis='x')
+        self.enableAutoRange(axis="x")
         if self.y_range_auto:
-            self.enableAutoRange(axis='y')
+            self.enableAutoRange(axis="y")
         else:
             # A manual Y-range survives Reset View instead of being wiped by it.
             self.setYRange(self.y_range_min, self.y_range_max, padding=0)
 
-
     def set_cursors(self, enabled: bool):
-        """Classic two-cursor scope measurement: a draggable region whose two
-        edges are Cursor A/B. Read the result via `cursor_readout()`."""
+        """
+        Classic two-cursor scope measurement: a draggable region whose two
+        edges are Cursor A/B. Read the result via `cursor_readout()`.
+        """
         if enabled and self.cursor_region is None:
             (x_min, x_max), _ = self.getViewBox().viewRange()
             span = x_max - x_min
@@ -159,11 +158,12 @@ class TimeseriesPlot(pg.PlotWidget):
             self.removeItem(self.cursor_region)
             self.cursor_region = None
 
-
     def cursor_readout(self) -> dict | None:
-        """Classic scope cursor readings, or None if cursors are off:
+        """
+        Classic scope cursor readings, or None if cursors are off:
         Cursor A/B time (in the plot's own displayed coordinates), ΔT,
-        1/ΔT, and per-visible-signal value at A/B and their delta."""
+        1/ΔT, and per-visible-signal value at A/B and their delta.
+        """
         if self.cursor_region is None:
             return None
 

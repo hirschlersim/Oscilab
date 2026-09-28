@@ -22,7 +22,8 @@ class MathSignal:
     """
 
     def __init__(self, label: str, model_a, model_b, operator: str):
-        assert operator in _FUNCS, f"Unsupported operator '{operator}'"
+        if operator not in _FUNCS:
+            raise ValueError(f"Unsupported operator '{operator}'")
         self.label = label
         self.model_a = model_a
         self.model_b = model_b
@@ -88,8 +89,7 @@ class MathDialog(qtw.QDialog):
         suggest_label()
 
         button_box = qtw.QDialogButtonBox(
-            qtw.QDialogButtonBox.StandardButton.Ok
-            | qtw.QDialogButtonBox.StandardButton.Cancel
+            qtw.QDialogButtonBox.StandardButton.Ok | qtw.QDialogButtonBox.StandardButton.Cancel
         )
         button_box.accepted.connect(self.accept)
         button_box.rejected.connect(self.reject)

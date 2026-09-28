@@ -1,4 +1,5 @@
-"""Live spectrogram (STFT) view of a single signal's rolling buffer.
+"""
+Live spectrogram (STFT) view of a single signal's rolling buffer.
 
 Unlike a naive "recompute everything every tick" approach, this caches
 already-computed STFT columns (`_cached_cols`/`_cached_times`) and each
@@ -40,13 +41,13 @@ class SpectrogramPlot(qtw.QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
 
         self.plot = pg.PlotWidget()
-        self.plot.setLabel('left', 'Frequency', units='Hz')
+        self.plot.setLabel("left", "Frequency", units="Hz")
         self.plot.getViewBox().invertY(False)  # 0 Hz at the bottom, increasing upwards
         self.plot.setMenuEnabled(False)
         layout.addWidget(self.plot)
 
         self.img = pg.ImageItem()
-        self.img.setColorMap(pg.colormap.get('viridis'))
+        self.img.setColorMap(pg.colormap.get("viridis"))
         self.plot.addItem(self.img)
 
         self.set_theme(bg="#202f46", fg="#ffffff")
@@ -55,41 +56,50 @@ class SpectrogramPlot(qtw.QWidget):
     def set_theme(self, bg: str, fg: str):
         self.plot.setBackground(bg)
         self.plot.setTitle(self.label, color=fg)  # Which signal this spectrogram belongs to
-        self.plot.getAxis('left').setTextPen(fg)
-        self.plot.getAxis('bottom').setTextPen(fg)
-        self.plot.getAxis('left').setPen(fg)
-        self.plot.getAxis('bottom').setPen(fg)
+        self.plot.getAxis("left").setTextPen(fg)
+        self.plot.getAxis("bottom").setTextPen(fg)
+        self.plot.getAxis("left").setPen(fg)
+        self.plot.getAxis("bottom").setPen(fg)
 
     def set_time_mode(self, mode: str):
-        """"global": x-axis shows time as recorded. "relative": shifted so the
-        newest sample sits at 0 and the buffer's start sits at -duration."""
-        assert mode in ("global", "relative"), f"Unknown time mode '{mode}'"
+        """
+        "global": x-axis shows time as recorded. "relative": shifted so the
+        newest sample sits at 0 and the buffer's start sits at -duration.
+        """
+        if mode not in ("global", "relative"):
+            raise ValueError(f"Unknown time mode '{mode}'")
         self.time_mode = mode
         self.__update_axis_label()
-        self.update()  # Recompute the image transform under the new mode right away...
-        self.reset_view()  # ...then re-fit + resume auto-follow (see reset_view()),
-                            # so a prior manual pan/zoom doesn't leave the view
-                            # stuck showing the old mode's now-irrelevant range.
+        # Recompute the image transform under the new mode right away, then
+        # re-fit + resume auto-follow (see reset_view()), so a prior manual
+        # pan/zoom doesn't leave the view stuck showing the old mode's
+        # now-irrelevant range.
+        self.update()
+        self.reset_view()
 
     def __update_axis_label(self):
         label = "Time (relative to now)" if self.time_mode == "relative" else "Time"
-        self.plot.setLabel('bottom', label, units='s')
+        self.plot.setLabel("bottom", label, units="s")
 
     def set_y_range(self, auto: bool, y_min: float = 0.0, y_max: float = 1.0):
-        """Auto: frequency axis keeps auto-fitting to the image (0..Nyquist,
-        as before). Manual: pin exactly [y_min, y_max] Hz."""
+        """
+        Auto: frequency axis keeps auto-fitting to the image (0..Nyquist,
+        as before). Manual: pin exactly [y_min, y_max] Hz.
+        """
         self.freq_range_auto = auto
         self.freq_range_min = y_min
         self.freq_range_max = y_max
         if auto:
-            self.plot.enableAutoRange(axis='y')
+            self.plot.enableAutoRange(axis="y")
         else:
-            self.plot.enableAutoRange(axis='y', enable=False)
+            self.plot.enableAutoRange(axis="y", enable=False)
             self.plot.setYRange(y_min, y_max, padding=0)
 
     def set_color_levels(self, auto: bool, lo: float = 0.0, hi: float = 1.0):
-        """Auto: colormap levels auto-snapshot from the first STFT frame and
-        then hold (today's behavior). Manual: pin exactly [lo, hi] dB."""
+        """
+        Auto: colormap levels auto-snapshot from the first STFT frame and
+        then hold (today's behavior). Manual: pin exactly [lo, hi] dB.
+        """
         self.color_levels_auto = auto
         self.color_levels_min = lo
         self.color_levels_max = hi
@@ -104,6 +114,28 @@ class SpectrogramPlot(qtw.QWidget):
         if len(data_full) < self.nperseg:
             return  # Not enough samples yet for even one STFT window
 
+        stft = self.__update_cache(time_full, data_full)
+        if stft is None or self._cached_times.size == 0:
+            return
+        freqs, preview_cols, preview_times = stft
+
+        if preview_cols.size:
+            display_cols = np.concatenate((self._cached_cols, preview_cols), axis=1)
+            display_times = np.concatenate((self._cached_times, preview_times))
+        else:
+            display_cols, display_times = self._cached_cols, self._cached_times
+
+        self.__draw(display_cols, display_times, freqs, newest=time_full[-1])
+
+    def __update_cache(self, time_full: np.ndarray, data_full: np.ndarray):
+        """
+        Add the columns that are new since last tick to the cache and evict
+        the ones that have scrolled out of the buffer.
+
+        Returns `(freqs, preview_cols, preview_times)` — the preview being
+        this tick's not-yet-cacheable trailing columns, see below — or None
+        if there isn't enough data yet for a single STFT window.
+        """
         hop = self.nperseg - self.noverlap
         if self._cached_times.size and not time_full[0] <= self._cached_times[-1] <= time_full[-1]:
             # The cache no longer overlaps the buffer at all (e.g. paused for
@@ -133,7 +165,7 @@ class SpectrogramPlot(qtw.QWidget):
 
         data_slice = data_full[context_start:]
         if len(data_slice) < self.nperseg:
-            return  # Not enough new+context data yet for even one window
+            return None  # Not enough new+context data yet for even one window
 
         f, t_rel, zxx = signal.stft(data_slice, fs=self.model.fs, nperseg=self.nperseg, noverlap=self.noverlap)
         amp_db = 20 * np.log10(np.abs(zxx) + 1e-9)
@@ -163,18 +195,12 @@ class SpectrogramPlot(qtw.QWidget):
                 self._cached_cols = np.concatenate((self._cached_cols, safe_amp_db), axis=1)
                 self._cached_times = np.concatenate((self._cached_times, safe_col_times))
 
-        if self._cached_times.size == 0:
-            return
-
         # Evict cached columns that have scrolled out of the buffer's
         # current window, the same way `SignalModel`'s own buffer ages out.
         evict = int(np.searchsorted(self._cached_times, time_full[0], side="left"))
         if evict > 0:
             self._cached_cols = self._cached_cols[:, evict:]
             self._cached_times = self._cached_times[evict:]
-
-        if self._cached_times.size == 0:
-            return
 
         # Transient preview: the margin columns just excluded from the
         # cache, appended only to what's *displayed* this tick — not stored,
@@ -187,24 +213,22 @@ class SpectrogramPlot(qtw.QWidget):
         preview_amp_db = preview_amp_db[:, preview_keep]
         preview_col_times = preview_col_times[preview_keep]
 
-        if preview_amp_db.size:
-            display_cols = np.concatenate((self._cached_cols, preview_amp_db), axis=1)
-            display_times = np.concatenate((self._cached_times, preview_col_times))
-        else:
-            display_cols, display_times = self._cached_cols, self._cached_times
+        return f, preview_amp_db, preview_col_times
 
-        now = time_full[-1] if self.time_mode == "relative" else 0.0
-        dt = hop / self.model.fs
-        df = float(f[1] - f[0]) if len(f) > 1 else self.model.fs / self.nperseg
+    def __draw(self, cols: np.ndarray, times: np.ndarray, freqs: np.ndarray, newest: float):
+        """Show `cols` (freq bins x columns, dB) with each column centered on its time."""
+        now = newest if self.time_mode == "relative" else 0.0
+        dt = (self.nperseg - self.noverlap) / self.model.fs
+        df = float(freqs[1] - freqs[0]) if len(freqs) > 1 else self.model.fs / self.nperseg
 
-        self.img.setImage(display_cols.T, autoLevels=False)
+        self.img.setImage(cols.T, autoLevels=False)
         transform = qtg.QTransform()
-        transform.translate(display_times[0] - dt / 2 - now, 0)  # Each column centered on its own time
+        transform.translate(times[0] - dt / 2 - now, 0)
         transform.scale(dt, df)
         self.img.setTransform(transform)
 
         if not self._levels_initialized:
-            self.img.setLevels((float(display_cols.min()), float(display_cols.max())))
+            self.img.setLevels((float(cols.min()), float(cols.max())))
             self._levels_initialized = True
 
     @staticmethod
@@ -222,9 +246,9 @@ class SpectrogramPlot(qtw.QWidget):
         # how the time axis normally keeps following new data as the image
         # updates each tick. Without re-enabling it, the view would silently
         # freeze in place instead of resuming its live scroll.
-        self.plot.enableAutoRange(axis='x')
+        self.plot.enableAutoRange(axis="x")
         if self.freq_range_auto:
-            self.plot.enableAutoRange(axis='y')
+            self.plot.enableAutoRange(axis="y")
         else:
             # A manual frequency range survives Reset View instead of being
             # wiped by it. Color levels are untouched by autoRange anyway.

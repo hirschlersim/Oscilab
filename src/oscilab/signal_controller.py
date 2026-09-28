@@ -1,14 +1,14 @@
-from PyQt6 import QtWidgets as qtw
-from PyQt6 import QtGui as qtg
-from PyQt6 import QtCore as qtc
-
-import pyqtgraph as pg
+from typing import ClassVar
 
 from loguru import logger
+from PyQt6 import QtCore as qtc
+from PyQt6 import QtGui as qtg
+from PyQt6 import QtWidgets as qtw
 
 
 class SignalController(qtw.QGroupBox):
-    """Container holding `SignalRow`s and/or plot-level header buttons.
+    """
+    Container holding `SignalRow`s and/or plot-level header buttons.
 
     Used two ways: a single flat instance (`Workspace.signal_list`) holds
     one row per registered signal regardless of how many plots show it —
@@ -23,7 +23,7 @@ class SignalController(qtw.QGroupBox):
 
         self.layout = qtw.QVBoxLayout(self)
         self.layout.setAlignment(qtc.Qt.AlignmentFlag.AlignTop)
-        self.rows: dict[str, "SignalRow"] = {}
+        self.rows: dict[str, SignalRow] = {}
 
         self._header_layout = qtw.QHBoxLayout()
         self._header_layout.setContentsMargins(0, 0, 0, 0)
@@ -55,7 +55,8 @@ class SignalController(qtw.QGroupBox):
             self._cursor_label.setVisible(True)
 
     def add_signal(self, label, model, derived: bool = False, has_curve: bool = True):
-        assert label not in self.rows, f"Signal '{label}' already added"
+        if label in self.rows:
+            raise ValueError(f"Signal '{label}' already added")
 
         row = SignalRow(label=label, model=model, derived=derived, has_curve=has_curve, parent=self)
         self.rows[label] = row
@@ -75,7 +76,7 @@ class SignalRow(qtw.QWidget):
     color_changed = qtc.pyqtSignal(str, str)  # (label, color hex)
 
     _METRICS = (("Min", "min"), ("Mean", "mean"), ("Max", "max"), ("P-P", "ptp"), ("RMS", "rms"))
-    _METRIC_TOOLTIPS = {
+    _METRIC_TOOLTIPS: ClassVar[dict[str, str]] = {
         "Min": "Minimum value in the current buffer",
         "Mean": "Average value in the current buffer",
         "Max": "Maximum value in the current buffer",
@@ -94,7 +95,26 @@ class SignalRow(qtw.QWidget):
         outer = qtw.QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 6)
 
-        # Row 1: color, name, toggle, dialogs
+        outer.addLayout(self.__build_controls_row())  # Row 1: color, name, toggle, dialogs
+        outer.addLayout(self.__build_metrics_row())  # Row 2: live metrics
+
+        # Row 3: producer-specific action buttons (e.g. "Reconnect", "Zero"),
+        # under the line — empty until a producer with actions() is attached
+        # (see `Workspace.attach_producer` / `add_action_button` below).
+        self._actions_layout = qtw.QHBoxLayout()
+        self._actions_layout.setContentsMargins(0, 0, 0, 0)
+        outer.addLayout(self._actions_layout)
+
+        # Last-entered dialog values, kept around so re-opening a dialog (or
+        # briefly toggling it off) doesn't lose what was typed in.
+        # Default cutoff well below Nyquist (fs/2) — a flat 50 Hz is invalid at fs <= 100.
+        self.filter_settings = {"enabled": False, "cutoff": min(50.0, model.fs / 4), "order": 4}
+        self.scaling_settings = {"enabled": False, "gain": 1.0, "offset": 0.0}
+
+        self.__on_visibility_toggled(False)  # Init button state: visible by default
+        self.set_color(self._color)
+
+    def __build_controls_row(self) -> qtw.QHBoxLayout:
         controls = qtw.QHBoxLayout()
         controls.setContentsMargins(0, 0, 0, 0)
 
@@ -104,7 +124,7 @@ class SignalRow(qtw.QWidget):
         self.color_button.clicked.connect(self.__pick_color)
         controls.addWidget(self.color_button)
 
-        self.name_label = qtw.QLabel(label)
+        self.name_label = qtw.QLabel(self.label)
         controls.addWidget(self.name_label)
 
         self.visibility_button = qtw.QPushButton()
@@ -124,21 +144,22 @@ class SignalRow(qtw.QWidget):
         controls.addWidget(self.visibility_button)
         controls.addWidget(self.filter_button)
         controls.addWidget(self.scaling_button)
-        outer.addLayout(controls)
 
-        if derived:
+        if self.derived:
             # A math signal is fully recomputed each tick, not accumulated
             # incrementally, so filter/scaling's persistent state doesn't apply.
             for button in (self.filter_button, self.scaling_button):
                 button.setEnabled(False)
                 button.setToolTip("Not available for derived (math) signals")
 
-        if not has_curve:
+        if not self.has_curve:
             # E.g. a spectrogram: there's no plotted curve to color.
             self.color_button.setEnabled(False)
             self.color_button.setToolTip("No curve color — this signal isn't plotted as a line")
 
-        # Row 2: live metrics
+        return controls
+
+    def __build_metrics_row(self) -> qtw.QHBoxLayout:
         metrics_layout = qtw.QHBoxLayout()
         metrics_layout.setContentsMargins(0, 0, 0, 0)
         self.metric_labels: dict[str, qtw.QLabel] = {}
@@ -149,23 +170,7 @@ class SignalRow(qtw.QWidget):
             self.metric_labels[title] = metric_label
             metrics_layout.addWidget(metric_label)
         metrics_layout.addStretch()
-        outer.addLayout(metrics_layout)
-
-        # Row 3: producer-specific action buttons (e.g. "Reconnect", "Zero"),
-        # under the line — empty until a producer with actions() is attached
-        # (see `Workspace.attach_producer` / `add_action_button` below).
-        self._actions_layout = qtw.QHBoxLayout()
-        self._actions_layout.setContentsMargins(0, 0, 0, 0)
-        outer.addLayout(self._actions_layout)
-
-        # Last-entered dialog values, kept around so re-opening a dialog (or
-        # briefly toggling it off) doesn't lose what was typed in.
-        # Default cutoff well below Nyquist (fs/2) — a flat 50 Hz is invalid at fs <= 100.
-        self.filter_settings = {"enabled": False, "cutoff": min(50.0, model.fs / 4), "order": 4}
-        self.scaling_settings = {"enabled": False, "gain": 1.0, "offset": 0.0}
-
-        self.__on_visibility_toggled(False)  # Init button state: visible by default
-        self.set_color(self._color)
+        return metrics_layout
 
     def update_metrics(self):
         metrics = self.model.compute_metrics()
@@ -186,8 +191,10 @@ class SignalRow(qtw.QWidget):
         self.color_changed.emit(self.label, color)
 
     def add_action_button(self, text: str, tooltip: str, callback) -> qtw.QPushButton:
-        """Add a producer-specific action button (e.g. "Reconnect"), under
-        the metrics line — see `oscilab.producers.DataProducer.actions`."""
+        """
+        Add a producer-specific action button (e.g. "Reconnect"), under
+        the metrics line — see `oscilab.producers.DataProducer.actions`.
+        """
         button = qtw.QPushButton(text)
         button.setToolTip(tooltip)
         button.clicked.connect(callback)
@@ -195,8 +202,10 @@ class SignalRow(qtw.QWidget):
         return button
 
     def enable_curve(self):
-        """Upgrade a spectrogram-only row once its signal also gets plotted
-        as a curve somewhere (e.g. linked to a `TimeseriesPlot` afterward)."""
+        """
+        Upgrade a spectrogram-only row once its signal also gets plotted
+        as a curve somewhere (e.g. linked to a `TimeseriesPlot` afterward).
+        """
         if self.has_curve:
             return
         self.has_curve = True
@@ -209,17 +218,21 @@ class SignalRow(qtw.QWidget):
             self.set_color(chosen.name())
 
     def __on_visibility_toggled(self, checked):
-        """checked == True means "hidden" (red); unchecked means "visible" (green)."""
+        """Checked == True means "hidden" (red); unchecked means "visible" (green)."""
         visible = not checked
 
         if checked:
             self.visibility_button.setText("Hidden")
             self.visibility_button.setStyleSheet("background-color: red; color: white;")
-            self.visibility_button.setIcon(qtw.QApplication.style().standardIcon(qtw.QStyle.StandardPixmap.SP_DialogNoButton))
+            self.visibility_button.setIcon(
+                qtw.QApplication.style().standardIcon(qtw.QStyle.StandardPixmap.SP_DialogNoButton)
+            )
         else:
             self.visibility_button.setText("Visible")
             self.visibility_button.setStyleSheet("background-color: green; color: white;")
-            self.visibility_button.setIcon(qtw.QApplication.style().standardIcon(qtw.QStyle.StandardPixmap.SP_DialogYesButton))
+            self.visibility_button.setIcon(
+                qtw.QApplication.style().standardIcon(qtw.QStyle.StandardPixmap.SP_DialogYesButton)
+            )
 
         self.visibility_changed.emit(self.label, visible)
 
@@ -290,8 +303,6 @@ class SignalRow(qtw.QWidget):
         button.setStyleSheet("background-color: red; color: white;" if active else "")
 
 
-
-
 class FilterDialog(qtw.QDialog):
     def __init__(
         self,
@@ -299,7 +310,7 @@ class FilterDialog(qtw.QDialog):
         filter_enabled: bool = False,
         current_cutoff: float = 100.0,
         current_order: int = 4,
-        sampling_rate: float = None,
+        sampling_rate: float | None = None,
         parent=None,
     ):
         super().__init__(parent)
@@ -352,8 +363,7 @@ class FilterDialog(qtw.QDialog):
 
         # OK / Cancel buttons
         button_box = qtw.QDialogButtonBox(
-            qtw.QDialogButtonBox.StandardButton.Ok
-            | qtw.QDialogButtonBox.StandardButton.Cancel
+            qtw.QDialogButtonBox.StandardButton.Ok | qtw.QDialogButtonBox.StandardButton.Cancel
         )
         button_box.accepted.connect(self.accept)
         button_box.rejected.connect(self.reject)
@@ -370,7 +380,6 @@ class FilterDialog(qtw.QDialog):
     def get_values(self) -> tuple[bool, float, int]:
         """Return (enabled, cutoff Hz, order)."""
         return self.chk_enabled.isChecked(), self.spin_cutoff.value(), self.spin_order.value()
-
 
 
 class ScalingDialog(qtw.QDialog):
@@ -426,8 +435,7 @@ class ScalingDialog(qtw.QDialog):
 
         # OK / Cancel buttons
         button_box = qtw.QDialogButtonBox(
-            qtw.QDialogButtonBox.StandardButton.Ok
-            | qtw.QDialogButtonBox.StandardButton.Cancel
+            qtw.QDialogButtonBox.StandardButton.Ok | qtw.QDialogButtonBox.StandardButton.Cancel
         )
         button_box.accepted.connect(self.accept)
         button_box.rejected.connect(self.reject)
