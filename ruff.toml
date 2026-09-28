@@ -1,14 +1,5 @@
 line-length = 120  # What the code is already written to; 88 would re-wrap most of it
 
-extend-exclude = [
-    # Early standalone prototypes, not part of the package (need matplotlib/numba)
-    "scripts/fft.py",
-    "scripts/gpt.py",
-    "scripts/main.py",
-    "scripts/stft.py",
-    "scripts/update.py",
-]
-
 lint.extend-select = [
     "E",    # Pycodestyle errors (style issues)
     "W",    # Pycodestyle warnings (style issues)
