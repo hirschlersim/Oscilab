@@ -1,0 +1,5 @@
+# Store text files with LF and check them out with LF on every OS, so git
+# stops converting (and warning about) line endings on Windows.
+* text=auto eol=lf
+
+*.png binary
