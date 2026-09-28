@@ -131,10 +131,11 @@ uv run ruff check
 uv run ruff format
 ```
 
-Test coverage is minimal so far (`tests/test_ring_buffer.py` checks
-`RingBuffer` against `deque(maxlen=...)` for equivalence, including
-wraparound). Most of the rest has only been verified via one-off scripts —
-see [TODO.md](TODO.md).
+Tests run headless (Qt's offscreen platform), so they work without a
+display. They cover the data side — ring buffer, signal model
+(filter/scaling/resize), math signals, the spectrogram's incremental STFT
+cache, workspace rules, and CSV/.mat/.h5 round-trips. Producers and the
+image exports aren't covered yet — see [TODO.md](TODO.md).
 
 ## Status
 
