@@ -4,10 +4,6 @@ Rough notes on what's missing or could be added next. Not commitments, just a
 working list.
 
 - Mypy
-- Public API naming: `Oscilab` uses camelCase (`addTimeSeriesPlot`,
-  `addSpectrogramPlot`, `regSignal`, `attachProducer`), everything else is
-  snake_case. Pick one before add-ons start coding against it —
-  `ruff.toml` exempts these four names from N802 until then.
 - pydantic (documentation)
 - Tests: covered are RingBuffer, SignalModel, MathSignal, the STFT cache,
   Workspace rules, CSV/mat/h5 round-trips and the producer base classes.

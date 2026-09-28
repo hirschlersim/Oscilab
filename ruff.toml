@@ -104,12 +104,6 @@ lint.pylint.max-positional-args = 7
 
 lint.pep8-naming.extend-ignore-names = [
     "closeEvent",  # Qt override, name set by Qt
-    # Oscilab's public camelCase API. Renaming is a breaking change for every
-    # user script — decide on one convention first (see TODO.md).
-    "addTimeSeriesPlot",
-    "addSpectrogramPlot",
-    "regSignal",
-    "attachProducer",
 ]
 
 [lint.per-file-ignores]

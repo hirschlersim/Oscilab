@@ -75,14 +75,14 @@ from oscilab.producers import SyntheticProducer
 oszi = Oscilab()
 
 # Each producer registers its own signals, one per channel, at its own fs
-oszi.attachProducer(SyntheticProducer(fs=100, freq=5.0), "channel-1", storage=oszi.storage.deque)
-oszi.attachProducer(SyntheticProducer(fs=1_000, freq=(1.0, 10.0)), ["channel-2", "channel-3"])
+oszi.attach_producer(SyntheticProducer(fs=100, freq=5.0), "channel-1", storage=oszi.storage.deque)
+oszi.attach_producer(SyntheticProducer(fs=1_000, freq=(1.0, 10.0)), ["channel-2", "channel-3"])
 
-oszi.addTimeSeriesPlot("Sensors")
+oszi.add_timeseries_plot("Sensors")
 oszi.link(plot="Sensors", label="channel-1")
 oszi.link(plot="Sensors", label="channel-2")
 
-oszi.addSpectrogramPlot(label="channel-3")
+oszi.add_spectrogram_plot(label="channel-3")
 
 oszi.show()
 ```
@@ -112,7 +112,7 @@ class ImuProducer(SyncDataProducer):
         return {"Zero": self.device.zero}
 
 
-oszi.attachProducer(ImuProducer("COM3"), ["acc-x", "acc-y", "acc-z"])
+oszi.attach_producer(ImuProducer("COM3"), ["acc-x", "acc-y", "acc-z"])
 ```
 
 `x` is shaped `(channels, n)`; a single-channel producer can return a 1-D

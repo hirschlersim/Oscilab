@@ -24,7 +24,7 @@ class Oscilab(qtw.QMainWindow):
     """
 
     # Exposed as `Oscilab.storage` / `oszi.storage` so callers write e.g.
-    # `oszi.attachProducer(..., storage=oszi.storage.deque)` instead of a bare string.
+    # `oszi.attach_producer(..., storage=oszi.storage.deque)` instead of a bare string.
     storage = Storage
 
     # (plot background, plot foreground) per theme — the QSS covers widget
@@ -198,7 +198,7 @@ class Oscilab(qtw.QMainWindow):
 
     def __build_cursors_menu(self):
         # One checkable entry per timeseries plot, added as
-        # addTimeSeriesPlot() creates them (see there).
+        # add_timeseries_plot() creates them (see there).
         self.cursors_menu = self.menuBar().addMenu("Cursors")
         self.cursors_menu.menuAction().setToolTip("Toggle classic two-cursor time/value measurements on a plot")
         self._cursor_actions: dict[str, qtg.QAction] = {}
@@ -269,7 +269,7 @@ class Oscilab(qtw.QMainWindow):
         self.load_bar.setToolTip(load_tooltip)
         self.statusBar().addPermanentWidget(self.load_bar)
 
-    def addTimeSeriesPlot(self, title: str):
+    def add_timeseries_plot(self, title: str):
         plot, controller = self.workspace.add_plot(title)
         self.plot_layout.addWidget(plot)
         self.__insert_plot_controller(controller)
@@ -283,7 +283,7 @@ class Oscilab(qtw.QMainWindow):
 
         return plot
 
-    def addSpectrogramPlot(self, label: str, nperseg: int = 256, noverlap: int = 128):
+    def add_spectrogram_plot(self, label: str, nperseg: int = 256, noverlap: int = 128):
         """Add a live STFT spectrogram for an already-registered signal."""
         spectrogram, controller = self.workspace.add_spectrogram(label, nperseg=nperseg, noverlap=noverlap)
         self.plot_layout.addWidget(spectrogram)
@@ -298,10 +298,10 @@ class Oscilab(qtw.QMainWindow):
         """
         self.controller_layout.insertWidget(self.controller_layout.count() - 1, controller)
 
-    def regSignal(self, label: str, fs: float, storage: Storage = Storage.ring):
+    def reg_signal(self, label: str, fs: float, storage: Storage = Storage.ring):
         """
         Register a signal you feed yourself (producer-fed signals are
-        registered by `attachProducer`). `storage`: `self.storage.ring`
+        registered by `attach_producer`). `storage`: `self.storage.ring`
         (default) or `self.storage.deque` — see `oscilab.ring_buffer.RingBuffer`.
         """
         return self.workspace.reg_signal(label, fs, storage=storage)
@@ -310,7 +310,7 @@ class Oscilab(qtw.QMainWindow):
         self.workspace.link(plot, label)
         self.log(f"Linked signal '{label}' to plot '{plot}'")
 
-    def attachProducer(self, producer: DataProducer, signals: str | Sequence[str], storage: Storage = Storage.ring):
+    def attach_producer(self, producer: DataProducer, signals: str | Sequence[str], storage: Storage = Storage.ring):
         """
         Register one signal per producer channel, named by `signals` (a single
         label for a single-channel producer), and start the producer feeding

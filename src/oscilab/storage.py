@@ -2,7 +2,7 @@
 Rolling-buffer backend choice for `SignalModel`.
 
 Exposed on `Oscilab` as `Oscilab.storage` (and on any instance as
-`oszi.storage`), so callers write `oszi.regSignal(..., storage=oszi.storage.ring)`
+`oszi.storage`), so callers write `oszi.attach_producer(..., storage=oszi.storage.ring)`
 instead of passing a bare string.
 """
 
