@@ -104,21 +104,32 @@ class SpectrogramPlot(qtw.QWidget):
         if len(data_full) < self.nperseg:
             return  # Not enough samples yet for even one STFT window
 
+        hop = self.nperseg - self.noverlap
+        if self._cached_times.size and not time_full[0] <= self._cached_times[-1] <= time_full[-1]:
+            # The cache no longer overlaps the buffer at all (e.g. paused for
+            # longer than the buffer's duration while producers kept writing),
+            # so there's nothing to continue from — start over.
+            self._cached_cols = None
+            self._cached_times = np.array([])
+
         # Only recompute the STFT over new data (plus a little context so the
         # windows overlap correctly) instead of the entire rolling buffer —
         # already-cached columns are reused as-is.
-        hop = self.nperseg - self.noverlap
         if self._cached_times.size:
-            start_idx = int(np.searchsorted(time_full, self._cached_times[-1], side="right"))
-            raw_context_start = max(0, start_idx - self.nperseg)
-            # scipy.signal.stft always treats a slice's own index 0 as its
-            # local t=0, so segment centers land at context_start + k*hop.
-            # Without aligning context_start to a hop multiple, that grid
-            # doesn't coincide with the grid a full-buffer recompute would
-            # use, and columns end up silently computed at the wrong time.
-            context_start = (raw_context_start // hop) * hop
+            # scipy.signal.stft centers a slice's column k on the slice's own
+            # sample k*hop. Starting the slice a whole number of hops before
+            # the sample the last cached column is centered on keeps every
+            # new column on that same grid, and makes columns 0..steps_back
+            # exactly the ones already cached. (Aligning to a hop multiple of
+            # the *buffer* index instead breaks once the buffer wraps: index 0
+            # then shifts by however many samples arrived since last tick.)
+            last_idx = self.__nearest_index(time_full, self._cached_times[-1])
+            steps_back = min(-(-self.nperseg // hop), last_idx // hop)  # ceil(nperseg / hop), if available
+            context_start = last_idx - steps_back * hop
+            first_new = steps_back + 1
         else:
             context_start = 0
+            first_new = 0
 
         data_slice = data_full[context_start:]
         if len(data_slice) < self.nperseg:
@@ -140,16 +151,9 @@ class SpectrogramPlot(qtw.QWidget):
         # display keeps reaching up to "now" instead of permanently lagging
         # by margin*hop seconds.
         margin = -(-self.nperseg // hop)  # ceil(nperseg / hop)
-        safe_amp_db = amp_db[:, :-margin] if amp_db.shape[1] > margin else amp_db[:, :0]
-        safe_col_times = col_times[:-margin] if len(col_times) > margin else col_times[:0]
-
-        if self._cached_times.size:
-            # Recomputing with fresh context can regenerate a column or two
-            # already in the cache (or one slightly earlier, if alignment
-            # shifted by a fraction of a hop) — keep only genuinely new ones.
-            keep = safe_col_times > self._cached_times[-1]
-            safe_amp_db = safe_amp_db[:, keep]
-            safe_col_times = safe_col_times[keep]
+        safe_end = max(first_new, amp_db.shape[1] - margin)
+        safe_amp_db = amp_db[:, first_new:safe_end]
+        safe_col_times = col_times[first_new:safe_end]
 
         if safe_amp_db.size:
             if self._cached_cols is None:
@@ -175,10 +179,11 @@ class SpectrogramPlot(qtw.QWidget):
         # Transient preview: the margin columns just excluded from the
         # cache, appended only to what's *displayed* this tick — not stored,
         # so next tick recomputes them fresh (some will graduate into the
-        # permanent cache once they're no longer the trailing edge).
-        preview_amp_db = amp_db[:, -margin:]
-        preview_col_times = col_times[-margin:]
-        preview_keep = preview_col_times > self._cached_times[-1]
+        # permanent cache once they're no longer the trailing edge). Columns
+        # centered past the newest sample are mostly zero padding; skip them.
+        preview_amp_db = amp_db[:, safe_end:]
+        preview_col_times = col_times[safe_end:]
+        preview_keep = preview_col_times <= time_full[-1] + 0.5 / self.model.fs
         preview_amp_db = preview_amp_db[:, preview_keep]
         preview_col_times = preview_col_times[preview_keep]
 
@@ -188,19 +193,27 @@ class SpectrogramPlot(qtw.QWidget):
         else:
             display_cols, display_times = self._cached_cols, self._cached_times
 
-        now = self.model.time[-1] if self.time_mode == "relative" and self.model.time else 0.0
+        now = time_full[-1] if self.time_mode == "relative" else 0.0
         dt = hop / self.model.fs
         df = float(f[1] - f[0]) if len(f) > 1 else self.model.fs / self.nperseg
 
         self.img.setImage(display_cols.T, autoLevels=False)
         transform = qtg.QTransform()
-        transform.translate(display_times[0] - now, 0)
+        transform.translate(display_times[0] - dt / 2 - now, 0)  # Each column centered on its own time
         transform.scale(dt, df)
         self.img.setTransform(transform)
 
         if not self._levels_initialized:
             self.img.setLevels((float(display_cols.min()), float(display_cols.max())))
             self._levels_initialized = True
+
+    @staticmethod
+    def __nearest_index(times: np.ndarray, t: float) -> int:
+        """Index of the sample in sorted `times` closest to `t`."""
+        i = int(np.searchsorted(times, t))
+        if i > 0 and (i == len(times) or t - times[i - 1] <= times[i] - t):
+            i -= 1
+        return i
 
     def reset_view(self):
         self.plot.autoRange()
