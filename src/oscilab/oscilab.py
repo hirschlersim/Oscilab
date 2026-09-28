@@ -444,7 +444,7 @@ class Oscilab(qtw.QMainWindow):
 
     def __show_about(self):
         try:
-            version = metadata.version("oszilab")
+            version = metadata.version("oscilab")
         except metadata.PackageNotFoundError:
             version = "unknown (local development)"
 
