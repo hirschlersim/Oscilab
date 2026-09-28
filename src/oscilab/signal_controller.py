@@ -160,7 +160,8 @@ class SignalRow(qtw.QWidget):
 
         # Last-entered dialog values, kept around so re-opening a dialog (or
         # briefly toggling it off) doesn't lose what was typed in.
-        self.filter_settings = {"enabled": False, "cutoff": 50.0, "order": 4}
+        # Default cutoff well below Nyquist (fs/2) — a flat 50 Hz is invalid at fs <= 100.
+        self.filter_settings = {"enabled": False, "cutoff": min(50.0, model.fs / 4), "order": 4}
         self.scaling_settings = {"enabled": False, "gain": 1.0, "offset": 0.0}
 
         self.__on_visibility_toggled(False)  # Init button state: visible by default
@@ -236,13 +237,20 @@ class SignalRow(qtw.QWidget):
         if dialog.exec() == qtw.QDialog.DialogCode.Accepted:
             enabled, cutoff, order = dialog.get_values()
 
+            if enabled:
+                try:
+                    self.model.add_filter(cutoff=cutoff, order=order)
+                except ValueError as e:
+                    # An unhandled exception in a Qt slot aborts the whole app.
+                    logger.warning(f"Filter for '{self.label}' not applied: {e}")
+                    enabled = False
+                else:
+                    logger.info(f"Filter for '{self.label}' enabled: cutoff={cutoff}Hz, order={order}")
+
             # Save settings for next dialog open
             self.filter_settings = {"enabled": enabled, "cutoff": cutoff, "order": order}
 
-            if enabled:
-                self.model.add_filter(cutoff=cutoff, order=order)
-                logger.info(f"Filter for '{self.label}' enabled: cutoff={cutoff}Hz, order={order}")
-            else:
+            if not enabled:
                 self.model.rem_filter()
                 logger.info(f"Filter for '{self.label}' disabled.")
 
@@ -311,8 +319,11 @@ class FilterDialog(qtw.QDialog):
         cutoff_layout = qtw.QHBoxLayout()
         cutoff_layout.addWidget(qtw.QLabel("Cutoff [Hz]:"))
         self.spin_cutoff = qtw.QDoubleSpinBox()
-        self.spin_cutoff.setRange(0.01, 1e6)
         self.spin_cutoff.setDecimals(2)
+        # Butterworth design needs 0 < cutoff < Nyquist; cap the field just
+        # below it so an invalid cutoff can't be entered in the first place.
+        max_cutoff = sampling_rate / 2.0 - 0.01 if sampling_rate is not None else 1e6
+        self.spin_cutoff.setRange(0.01, max_cutoff)
         self.spin_cutoff.setSingleStep(1.0)
         self.spin_cutoff.setValue(current_cutoff)
         self.spin_cutoff.setToolTip("Low-pass cutoff frequency — content above this is attenuated")

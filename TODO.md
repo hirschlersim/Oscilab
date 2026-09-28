@@ -3,15 +3,13 @@
 Rough notes on what's missing or could be added next. Not commitments, just a
 working list.
 
-- relative time stft breaks
-ValueError: Digital filter critical frequencies must be 0 < Wn < fs/2 (fs=100.0 -> fs/2=50.0) catch
-
 - Mypy
 - pydantic (documentation)
-- There's still barely any automated test suite — most of this has been
-  verified via one-off scripts. `tests/test_ring_buffer.py` covers
-  RingBuffer vs deque equivalence; still missing: MathSignal operators, the
-  STFT cache correctness check, CSV/mat/h5 round-trips. These would catch
+- The test suite is still thin — most of this has been verified via
+  one-off scripts. Covered so far: RingBuffer vs deque equivalence, the
+  STFT cache correctness check, filter cutoff validation. Still missing:
+  SignalModel filter/scaling/resize, MathSignal operators, CSV/mat/h5
+  round-trips. These would catch
   regressions for free instead of re-deriving correctness by hand each time
   something nearby changes.
 - Session save/load: persist signals, plot layout, links, colors,
