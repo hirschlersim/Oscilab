@@ -3,17 +3,25 @@
 Rough notes on what's missing or could be added next. Not commitments, just a
 working list.
 
+- relative time stft breaks
+ValueError: Digital filter critical frequencies must be 0 < Wn < fs/2 (fs=100.0 -> fs/2=50.0) catch
+
 - Mypy
 - pydantic (documentation)
-- There's still no automated test suite — everything so far has been
-  verified via one-off scripts. A `tests/` directory covering the cheap,
-  high-value cases (RingBuffer vs deque equivalence, MathSignal operators,
-  the STFT cache correctness check, CSV/mat/h5 round-trips) would catch
+- There's still barely any automated test suite — most of this has been
+  verified via one-off scripts. `tests/test_ring_buffer.py` covers
+  RingBuffer vs deque equivalence; still missing: MathSignal operators, the
+  STFT cache correctness check, CSV/mat/h5 round-trips. These would catch
   regressions for free instead of re-deriving correctness by hand each time
   something nearby changes.
-- 100% test coverage
 - Session save/load: persist signals, plot layout, links, colors,
   filter/scaling, storage backend, theme, cursor state to JSON and reload
   it — set up a layout once via the GUI instead of writing Python each time.
 - Can the producers push multiple signals via vectors?
 - A network/UDP producer template, same shape as the existing producers.
+
+
+- detail of the channels behind a leabbel button i.e. the only get rederd if this button is pressed
+- How to implement producer classes best
+- how to implement custom gui buttons via a class
+- How to hande json or similar for starting a config - maby also start the producers via the gui, and the only attach via code, same with the plots

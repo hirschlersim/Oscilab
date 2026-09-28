@@ -118,10 +118,21 @@ or real-time-systems side rather than the UI:
   `deque(maxlen=...)`, guarded by a lock since producers run on their own
   `QThread`.
 
+## Testing
+
+```bash
+uv run pytest
+```
+
+Test coverage is minimal so far (`tests/test_ring_buffer.py` checks
+`RingBuffer` against `deque(maxlen=...)` for equivalence, including
+wraparound). Most of the rest has only been verified via one-off scripts —
+see [TODO.md](TODO.md).
+
 ## Status
 
-No automated tests yet and documentation is a work in progress — see
-[TODO.md](TODO.md) for the running list of what's next.
+Documentation is a work in progress — see [TODO.md](TODO.md) for the
+running list of what's next.
 
 ## License
 

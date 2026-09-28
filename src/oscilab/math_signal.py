@@ -14,7 +14,8 @@ _FUNCS = {
 
 
 class MathSignal:
-    """`label = model_a <operator> model_b`, recomputed from scratch each tick.
+    """
+    `label = model_a <operator> model_b`, recomputed from scratch each tick.
 
     Not a `DataProducer` — no new samples originate here; it derives a
     dependent view over the overlapping tail of two existing models' buffers.

@@ -1,4 +1,5 @@
-"""Background data producers.
+"""
+Background data producers.
 
 A `DataProducer` runs on its own `QThread` and periodically emits new
 `(t, x)` chunks via the `data_ready` signal. `oscilab.workspace.Workspace`
@@ -23,15 +24,16 @@ import asyncio
 import csv
 import time
 from abc import ABCMeta, abstractmethod
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 import numpy as np
 from PyQt6 import QtCore as qtc
 
 
 class _ProducerMeta(type(qtc.QThread), ABCMeta):
-    """Combines PyQt's own metaclass with `ABCMeta`.
+    """
+    Combines PyQt's own metaclass with `ABCMeta`.
 
     Without this, `@abstractmethod` on a `QThread` subclass is purely
     decorative — Python only enforces abstract methods on classes whose
@@ -43,7 +45,8 @@ class _ProducerMeta(type(qtc.QThread), ABCMeta):
 
 
 class DataProducer(qtc.QThread, metaclass=_ProducerMeta):
-    """Base class for background data producers. Subclass `SyncDataProducer`
+    """
+    Base class for background data producers. Subclass `SyncDataProducer`
     or `AsyncDataProducer` instead of this directly — see the module
     docstring for which one fits your hardware API.
     """
@@ -59,14 +62,17 @@ class DataProducer(qtc.QThread, metaclass=_ProducerMeta):
         self.wait()
 
     def actions(self) -> dict[str, Callable[[], None]]:
-        """Override to expose custom buttons on this producer's signal row,
+        """
+        Override to expose custom buttons on this producer's signal row,
         e.g. `{"Reconnect": self.reconnect, "Zero": self.zero_calibration}`.
-        Added once, when the producer is attached via `Workspace.attach_producer`."""
+        Added once, when the producer is attached via `Workspace.attach_producer`.
+        """
         return {}
 
 
 class SyncDataProducer(DataProducer):
-    """For blocking/synchronous hardware APIs.
+    """
+    For blocking/synchronous hardware APIs.
 
     Subclasses implement `_generate(elapsed)`, returning whatever `(t, x)`
     samples are due given `elapsed` real seconds since the producer started.
@@ -103,13 +109,16 @@ class SyncDataProducer(DataProducer):
 
     @abstractmethod
     def _generate(self, elapsed: float) -> tuple[np.ndarray, np.ndarray]:
-        """Return whatever new (time, value) samples are due by `elapsed`
-        real seconds since the producer started."""
+        """
+        Return whatever new (time, value) samples are due by `elapsed`
+        real seconds since the producer started.
+        """
         raise NotImplementedError
 
 
 class AsyncDataProducer(DataProducer):
-    """For `asyncio`-based hardware APIs (async serial/network clients, ...).
+    """
+    For `asyncio`-based hardware APIs (async serial/network clients, ...).
 
     Subclasses implement `async def _run(self)`, awaiting real I/O directly
     and calling `self.emit_data(t, x)` whenever new samples are ready — no
@@ -129,9 +138,11 @@ class AsyncDataProducer(DataProducer):
 
     @abstractmethod
     async def _run(self):
-        """Await real I/O and call `self.emit_data(t, x)` as samples arrive.
+        """
+        Await real I/O and call `self.emit_data(t, x)` as samples arrive.
         Check `self._running` periodically (e.g. in the loop condition) so
-        `stop()` can actually end the loop promptly."""
+        `stop()` can actually end the loop promptly.
+        """
         raise NotImplementedError
 
 
@@ -217,7 +228,8 @@ class FileReplayProducer(SyncDataProducer):
 
 
 class SerialProducer(SyncDataProducer):
-    """Reads real hardware over a serial port, one line per sample (e.g.
+    """
+    Reads real hardware over a serial port, one line per sample (e.g.
     `"1.23\\n"`). Needs `pyserial` (`pip install pyserial`) — not a hard
     dependency of Oscilab itself, since most users won't need real hardware
     acquisition.
@@ -275,7 +287,8 @@ class SerialProducer(SyncDataProducer):
 
 
 class AsyncSyntheticProducer(AsyncDataProducer):
-    """The same sine wave as `SyntheticProducer`, but written against
+    """
+    The same sine wave as `SyntheticProducer`, but written against
     `AsyncDataProducer` instead of `SyncDataProducer` — a template for
     wrapping an asyncio-based hardware client (`aioserial`, an async
     network client, ...) rather than something you'd use for real demo

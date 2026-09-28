@@ -1,4 +1,5 @@
-"""Domain layer: owns signals, plots, controllers and producers.
+"""
+Domain layer: owns signals, plots, controllers and producers.
 
 `Oscilab` (the QMainWindow) only builds window chrome and delegates all
 registry/wiring logic here. Keeping this Qt-widget-light makes it possible
@@ -10,7 +11,6 @@ import re
 from pathlib import Path
 
 import h5py
-import numpy as np
 import pyqtgraph.exporters as pg_exporters
 from PyQt6 import QtCore as qtc
 from PyQt6 import QtGui as qtg
@@ -33,10 +33,12 @@ def _safe_name(name: str) -> str:
 
 
 class _PdfExporter(pg_exporters.Exporter):
-    """pyqtgraph ships Image/SVG/HDF5 exporters plus a `PrintExporter` that
+    """
+    pyqtgraph ships Image/SVG/HDF5 exporters plus a `PrintExporter` that
     always pops up an OS print dialog — nothing for a direct-to-file PDF.
     Renders straight to a `QPdfWriter` instead, same pattern `ImageExporter`
-    uses internally (`getSourceRect()` + `setExportMode()` + scene.render())."""
+    uses internally (`getSourceRect()` + `setExportMode()` + scene.render()).
+    """
 
     def export(self, file_name: str):
         source_rect = self.getSourceRect()
@@ -48,7 +50,7 @@ class _PdfExporter(pg_exporters.Exporter):
 
         painter = qtg.QPainter(writer)
         try:
-            self.setExportMode(True, {'antialias': True})
+            self.setExportMode(True, {"antialias": True})
             self.getScene().render(painter, target_rect, source_rect)
         finally:
             self.setExportMode(False)
@@ -120,7 +122,8 @@ class Workspace:
     def add_spectrogram(
         self, label: str, nperseg: int = 256, noverlap: int = 128
     ) -> tuple[SpectrogramPlot, SignalController]:
-        """Add a live STFT spectrogram plot bound directly to one signal.
+        """
+        Add a live STFT spectrogram plot bound directly to one signal.
 
         Keyed by `label` itself — a spectrogram is always bound to exactly
         one signal, so there's no separate title needed.
@@ -239,7 +242,8 @@ class Workspace:
         row.set_color(color)  # Sync the row's swatch to the color the plot assigned
 
     def _link_row(self, label: str, model, derived: bool, has_curve: bool):
-        """Return this signal's one row in the flat `signal_list`, creating
+        """
+        Return this signal's one row in the flat `signal_list`, creating
         it on first use. A signal linked to a second/third plot reuses the
         same row rather than getting another one — that row's toggles just
         end up wired to every plot it's linked to (see `link`/`add_spectrogram`).
@@ -301,16 +305,18 @@ class Workspace:
         self._log(f"Cursors {'enabled' if enabled else 'disabled'} on '{plot}'")
 
     def __refresh_cursor_readout(self, title: str):
-        """Recompute and display `title`'s cursor readout, if cursors are on.
+        """
+        Recompute and display `title`'s cursor readout, if cursors are on.
         Called every refresh tick and also directly on every cursor drag, so
-        it stays live even while the refresh timer is stopped (paused)."""
+        it stays live even while the refresh timer is stopped (paused).
+        """
         readout = self.plots[title].cursor_readout()
         if readout is not None:
             self.controllers[title].set_cursor_readout(self.__format_cursor_readout(readout))
 
     @staticmethod
     def __format_cursor_readout(readout: dict) -> str:
-        freq_text = f"{readout['freq']:.3f} Hz" if readout['freq'] is not None else "—"
+        freq_text = f"{readout['freq']:.3f} Hz" if readout["freq"] is not None else "—"
         lines = [f"Cursors  ΔT: {readout['dt']:+.4f} s   1/ΔT: {freq_text}"]
         for label, v in readout["signals"].items():
             lines.append(f"  {label}: A={v['value_a']:+.3f}  B={v['value_b']:+.3f}  Δ={v['delta']:+.3f}")
@@ -325,8 +331,10 @@ class Workspace:
             spectrogram.set_theme(bg, fg)
 
     def set_time_mode(self, mode: str):
-        """Apply a time-axis mode ("global"/"relative") now, and remember it
-        for plots added later."""
+        """
+        Apply a time-axis mode ("global"/"relative") now, and remember it
+        for plots added later.
+        """
         self._time_mode = mode
         for plot in self.plots.values():
             plot.set_time_mode(mode)
@@ -334,31 +342,38 @@ class Workspace:
             spectrogram.set_time_mode(mode)
 
     def set_downsampling(self, enabled: bool):
-        """Apply min-max curve downsampling now, and remember it for plots
+        """
+        Apply min-max curve downsampling now, and remember it for plots
         added later. Spectrograms are unaffected — their pixels are already
-        an STFT-bin aggregate, not raw samples."""
+        an STFT-bin aggregate, not raw samples.
+        """
         self._downsampling = enabled
         for plot in self.plots.values():
             plot.set_downsampling(enabled)
         self._log(f"Downsampling {'enabled' if enabled else 'disabled'}")
 
     def set_duration(self, duration: float):
-        """Resize every signal's rolling buffer to hold `duration` seconds,
-        and remember it for signals registered later."""
+        """
+        Resize every signal's rolling buffer to hold `duration` seconds,
+        and remember it for signals registered later.
+        """
         self._duration = duration
         for model in self.signals.values():
             model.set_duration(duration)
         self._log(f"Display duration set to {duration:g}s")
 
     def __plot_items(self) -> dict:
-        """Every plot's/spectrogram's underlying `PlotItem`, keyed by title —
-        shared by every image-format exporter below."""
+        """
+        Every plot's/spectrogram's underlying `PlotItem`, keyed by title —
+        shared by every image-format exporter below.
+        """
         items = {title: plot.plotItem for title, plot in self.plots.items()}
         items.update({title: spec.plot.plotItem for title, spec in self.spectrograms.items()})
         return items
 
     def __export_plots(self, base_path, suffix: str, exporter_cls, format_name: str) -> list[Path]:
-        """Shared driver for export_png/export_svg/export_pdf: run
+        """
+        Shared driver for export_png/export_svg/export_pdf: run
         `exporter_cls(plot_item).export(path)` for every plot.
 
         With a single plot, `base_path` is used as-is; with several, each
@@ -414,7 +429,8 @@ class Workspace:
         return written
 
     def export_mat(self, path) -> Path:
-        """Export every signal's (time, value) buffer into one MATLAB .mat file.
+        """
+        Export every signal's (time, value) buffer into one MATLAB .mat file.
 
         Unlike CSV/PNG (one file per plot/signal), .mat/.h5 bundle every
         signal into a single file — the idiomatic layout for both formats.
@@ -433,8 +449,10 @@ class Workspace:
         return path
 
     def export_h5(self, path) -> Path:
-        """Export every signal's (time, value) buffer into one HDF5 .h5 file,
-        one group per signal (with `fs` as a group attribute)."""
+        """
+        Export every signal's (time, value) buffer into one HDF5 .h5 file,
+        one group per signal (with `fs` as a group attribute).
+        """
         path = Path(path).with_suffix(".h5")
         with h5py.File(path, "w") as f:
             for label, model in self.signals.items():

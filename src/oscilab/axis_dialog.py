@@ -1,4 +1,5 @@
-"""Manual Auto/Min/Max range entry — reused for a plot's Y-axis and (for
+"""
+Manual Auto/Min/Max range entry — reused for a plot's Y-axis and (for
 spectrograms) its colormap level range. Same enable-checkbox-then-fields
 shape as FilterDialog/ScalingDialog, just generic over a unit label.
 """

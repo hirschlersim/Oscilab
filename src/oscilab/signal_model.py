@@ -8,7 +8,8 @@ from oscilab.storage import Storage
 
 
 class SignalModel:
-    """Holds the rolling data buffer and DSP state for a single signal.
+    """
+    Holds the rolling data buffer and DSP state for a single signal.
 
     Pure data/DSP class — no Qt dependency, so it can be driven from any
     thread (see `oscilab.producers.DataProducer`) and unit-tested in
@@ -45,7 +46,7 @@ class SignalModel:
         self._cache = None  # (time_array, data_array), see `snapshot()`
 
     def __maxlen_for(self, duration: float) -> int:
-        return max(1, int(round(duration * self.fs)))
+        return max(1, round(duration * self.fs))
 
     def __make_buffer(self, maxlen: int):
         return RingBuffer(maxlen) if self.storage is Storage.ring else deque(maxlen=maxlen)
@@ -58,7 +59,8 @@ class SignalModel:
         return buffer
 
     def set_duration(self, duration: float):
-        """Resize the rolling buffer to hold `duration` seconds at this signal's fs.
+        """
+        Resize the rolling buffer to hold `duration` seconds at this signal's fs.
 
         The most recent samples that still fit are kept; older ones are
         dropped. Growing the duration doesn't back-fill lost history.
@@ -83,7 +85,8 @@ class SignalModel:
         self._cache = None
 
     def set_data(self, t, x):
-        """Wholesale-replace the buffer (used by derived/math signals).
+        """
+        Wholesale-replace the buffer (used by derived/math signals).
 
         Unlike `add_data`, this does not apply filter/scaling: those assume
         an incrementally-growing stream with persistent filter state, which
@@ -96,13 +99,15 @@ class SignalModel:
         self._cache = None
 
     def snapshot(self) -> tuple[np.ndarray, np.ndarray]:
-        """(time_array, data_array) for the buffer's current contents,
-        computed once and cached until the next write — see class docstring."""
+        """
+        (time_array, data_array) for the buffer's current contents,
+        computed once and cached until the next write — see class docstring.
+        """
         if self._cache is None:
             self._cache = (np.asarray(self.time), np.asarray(self.data))
         return self._cache
 
-    def get_lastTimestamp(self):
+    def get_last_timestamp(self):
         return self.time[-1] if self.time else None
 
     def compute_metrics(self) -> dict:
@@ -121,7 +126,7 @@ class SignalModel:
         }
 
     def add_filter(self, cutoff: float = 50.0, order: int = 4):
-        self.sos = signal.butter(N=order, Wn=cutoff, btype='low', analog=False, fs=self.fs, output='sos')
+        self.sos = signal.butter(N=order, Wn=cutoff, btype="low", analog=False, fs=self.fs, output="sos")
         self.zi = signal.sosfilt_zi(self.sos)
 
     def rem_filter(self):

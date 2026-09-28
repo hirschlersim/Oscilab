@@ -1,4 +1,5 @@
-"""Fixed-capacity, pre-allocated numpy circular buffer.
+"""
+Fixed-capacity, pre-allocated numpy circular buffer.
 
 Exposes the same surface `SignalModel` needs from `collections.deque(maxlen=...)`
 — `extend()`, `clear()`, `len()`, `[0]`/`[-1]`, iteration, and `np.asarray()`

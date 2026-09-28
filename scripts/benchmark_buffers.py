@@ -1,4 +1,5 @@
-"""Benchmark: deque(maxlen=...) vs RingBuffer for Oscilab's actual access pattern.
+"""
+Benchmark: deque(maxlen=...) vs RingBuffer for Oscilab's actual access pattern.
 
 The real workload per signal, every refresh tick (default 30ms):
   1. One or more small `extend()` calls from producer chunks (~10 samples).
