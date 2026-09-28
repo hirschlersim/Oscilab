@@ -15,7 +15,7 @@ class SignalModel:
     thread (see `oscilab.producers.DataProducer`) and unit-tested in
     isolation.
 
-    `_storage` (an `oscilab.storage.Storage` member) picks the rolling-buffer
+    `storage` (an `oscilab.storage.Storage` member) picks the rolling-buffer
     backend: `Storage.ring` (default — a pre-allocated numpy circular
     buffer, see `oscilab.ring_buffer.RingBuffer`) or `Storage.deque`
     (`collections.deque(maxlen=...)`). Both expose the same
@@ -31,12 +31,12 @@ class SignalModel:
     call `snapshot()` instead and they share one. Invalidated on any write.
     """
 
-    def __init__(self, _label: str, _fs: float, _duration: float = 10.0, _storage: Storage = Storage.ring):
-        self.label = _label
-        self.fs = _fs
-        self.duration = _duration  # How many seconds of history the buffer holds
-        self.storage = Storage(_storage)  # Accepts a Storage member or its string value
-        maxlen = self.__maxlen_for(_duration)
+    def __init__(self, label: str, fs: float, duration: float = 10.0, storage: Storage = Storage.ring):
+        self.label = label
+        self.fs = fs
+        self.duration = duration  # How many seconds of history the buffer holds
+        self.storage = Storage(storage)  # Accepts a Storage member or its string value
+        maxlen = self.__maxlen_for(duration)
         self.data = self.__make_buffer(maxlen)
         self.time = self.__make_buffer(maxlen)
         self.sos = None  # Filter
@@ -71,17 +71,17 @@ class SignalModel:
         self.data = self.__rebuilt(self.data, maxlen)
         self._cache = None
 
-    def add_data(self, _t, _x):
-        _x = np.asarray(_x)
+    def add_data(self, t, x):
+        x = np.asarray(x)
 
         if self.gain is not None:
-            _x = (_x - self.offset) * self.gain
+            x = (x - self.offset) * self.gain
 
         if self.sos is not None:
-            _x, self.zi = signal.sosfilt(sos=self.sos, x=_x, zi=self.zi)
+            x, self.zi = signal.sosfilt(sos=self.sos, x=x, zi=self.zi)
 
-        self.data.extend(_x)
-        self.time.extend(_t)
+        self.data.extend(x)
+        self.time.extend(t)
         self._cache = None
 
     def set_data(self, t, x):
@@ -107,9 +107,6 @@ class SignalModel:
             self._cache = (np.asarray(self.time), np.asarray(self.data))
         return self._cache
 
-    def get_last_timestamp(self):
-        return self.time[-1] if self.time else None
-
     def compute_metrics(self) -> dict:
         """Live stats over the current buffer: min, mean, max, peak-to-peak, RMS."""
         if not self.data:
@@ -133,9 +130,9 @@ class SignalModel:
         self.sos = None
         self.zi = None
 
-    def add_scaling(self, _gain, _offset):
-        self.gain = _gain
-        self.offset = _offset
+    def add_scaling(self, gain: float, offset: float):
+        self.gain = gain
+        self.offset = offset
 
     def rem_scaling(self):
         self.gain = None

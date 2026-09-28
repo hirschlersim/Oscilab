@@ -4,7 +4,7 @@ Fixed-capacity, pre-allocated numpy circular buffer.
 Exposes the same surface `SignalModel` needs from `collections.deque(maxlen=...)`
 — `extend()`, `clear()`, `len()`, `[0]`/`[-1]`, iteration, and `np.asarray()`
 via `__array__` — so it's a drop-in alternative storage backend, picked per
-signal via `SignalModel(..., _storage="ring")` / `Workspace.reg_signal(...,
+signal via `SignalModel(..., storage="ring")` / `Workspace.reg_signal(...,
 storage="ring")`. See `scripts/benchmark_buffers.py` for a deque-vs-ring
 throughput comparison.
 

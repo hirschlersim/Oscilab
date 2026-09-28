@@ -8,7 +8,7 @@ from oscilab.signal_model import SignalModel
 
 
 def model_with(values, fs: float = 10.0) -> SignalModel:
-    model = SignalModel(_label="m", _fs=fs)
+    model = SignalModel(label="m", fs=fs)
     model.add_data(np.arange(len(values)) / fs, np.asarray(values, dtype=float))
     return model
 
@@ -50,7 +50,7 @@ def test_division_by_zero_is_nan_not_an_error():
 
 
 def test_empty_source_gives_empty_result():
-    a, b = model_with([1, 2]), SignalModel(_label="empty", _fs=10.0)
+    a, b = model_with([1, 2]), SignalModel(label="empty", fs=10.0)
     t, x = MathSignal(label="c", model_a=a, model_b=b, operator="+").compute()
     assert t.size == 0
     assert x.size == 0

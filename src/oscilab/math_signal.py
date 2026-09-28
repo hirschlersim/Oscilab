@@ -3,14 +3,13 @@
 import numpy as np
 from PyQt6 import QtWidgets as qtw
 
-OPERATORS = ("+", "-", "*", "/")  # New operations only need an entry here and in _FUNCS
-
 _FUNCS = {
     "+": lambda a, b: a + b,
     "-": lambda a, b: a - b,
     "*": lambda a, b: a * b,
     "/": lambda a, b: np.divide(a, b, out=np.full_like(a, np.nan, dtype=float), where=b != 0),
 }
+OPERATORS = tuple(_FUNCS)  # A new operation only needs an entry in _FUNCS; the Math menu follows
 
 
 class MathSignal:

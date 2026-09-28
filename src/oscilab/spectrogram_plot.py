@@ -74,7 +74,7 @@ class SpectrogramPlot(qtw.QWidget):
         # re-fit + resume auto-follow (see reset_view()), so a prior manual
         # pan/zoom doesn't leave the view stuck showing the old mode's
         # now-irrelevant range.
-        self.update()
+        self.refresh()
         self.reset_view()
 
     def __update_axis_label(self):
@@ -107,9 +107,10 @@ class SpectrogramPlot(qtw.QWidget):
             self._levels_initialized = False  # let the next frame take a fresh auto snapshot
         else:
             self.img.setLevels((lo, hi))
-            self._levels_initialized = True  # stop the auto-snapshot logic in update() from overriding this
+            self._levels_initialized = True  # stop the auto-snapshot logic in refresh() from overriding this
 
-    def update(self):
+    def refresh(self):
+        """Extend the STFT with the samples that arrived since last tick and redraw (called each tick)."""
         time_full, data_full = self.model.snapshot()
         if len(data_full) < self.nperseg:
             return  # Not enough samples yet for even one STFT window

@@ -22,19 +22,18 @@ def feed_chunks(model: SignalModel, t: np.ndarray, x: np.ndarray, chunk: int):
 
 @pytest.mark.parametrize("storage", BACKENDS)
 def test_buffer_keeps_only_the_last_duration_seconds(storage):
-    model = SignalModel(_label="s", _fs=10.0, _duration=1.0, _storage=storage)  # 10 samples
+    model = SignalModel(label="s", fs=10.0, duration=1.0, storage=storage)  # 10 samples
     t = np.arange(25) / 10.0
     feed_chunks(model, t, t * 2, chunk=4)
 
     time_arr, data_arr = model.snapshot()
     np.testing.assert_array_equal(time_arr, t[-10:])
     np.testing.assert_array_equal(data_arr, t[-10:] * 2)
-    assert model.get_last_timestamp() == t[-1]
 
 
 @pytest.mark.parametrize("storage", BACKENDS)
 def test_set_duration_keeps_the_newest_samples(storage):
-    model = SignalModel(_label="s", _fs=10.0, _duration=2.0, _storage=storage)
+    model = SignalModel(label="s", fs=10.0, duration=2.0, storage=storage)
     t = np.arange(20) / 10.0
     model.add_data(t, t)
 
@@ -51,11 +50,11 @@ def test_set_duration_keeps_the_newest_samples(storage):
 
 @pytest.mark.parametrize("storage", ["ring", "deque"])
 def test_storage_accepts_its_string_value(storage):
-    assert SignalModel(_label="s", _fs=1.0, _storage=storage).storage is Storage(storage)
+    assert SignalModel(label="s", fs=1.0, storage=storage).storage is Storage(storage)
 
 
 def test_snapshot_is_cached_until_the_next_write():
-    model = SignalModel(_label="s", _fs=10.0)
+    model = SignalModel(label="s", fs=10.0)
     model.add_data([0.0, 0.1], [1.0, 2.0])
     first = model.snapshot()
     assert model.snapshot() is first  # same tick, same arrays
@@ -71,7 +70,7 @@ def test_snapshot_is_cached_until_the_next_write():
 
 
 def test_scaling_subtracts_offset_then_applies_gain():
-    model = SignalModel(_label="s", _fs=10.0)
+    model = SignalModel(label="s", fs=10.0)
     model.add_scaling(2.0, 1.0)
     model.add_data([0.0, 0.1, 0.2], [1.0, 2.0, 4.0])
     assert model.snapshot()[1].tolist() == [0.0, 2.0, 6.0]
@@ -89,7 +88,7 @@ def test_filter_state_carries_across_chunks():
     t = np.arange(2_000) / fs
     x = np.sin(2 * np.pi * 5 * t) + rng.normal(0, 0.5, t.size)
 
-    model = SignalModel(_label="s", _fs=fs, _duration=10.0)
+    model = SignalModel(label="s", fs=fs, duration=10.0)
     model.add_filter(cutoff=20.0, order=4)
     feed_chunks(model, t, x, chunk=37)
 
@@ -101,7 +100,7 @@ def test_filter_state_carries_across_chunks():
 def test_scaling_is_applied_before_the_filter():
     fs = 100.0
     x = np.linspace(0.0, 1.0, 50)
-    model = SignalModel(_label="s", _fs=fs)
+    model = SignalModel(label="s", fs=fs)
     model.add_scaling(3.0, 0.5)
     model.add_filter(cutoff=10.0, order=2)
     model.add_data(np.arange(50) / fs, x)
@@ -112,7 +111,7 @@ def test_scaling_is_applied_before_the_filter():
 
 
 def test_removing_the_filter_passes_raw_values_again():
-    model = SignalModel(_label="s", _fs=100.0)
+    model = SignalModel(label="s", fs=100.0)
     model.add_filter(cutoff=10.0)
     model.rem_filter()
     model.add_data([0.0, 0.01], [3.0, -3.0])
@@ -121,7 +120,7 @@ def test_removing_the_filter_passes_raw_values_again():
 
 def test_metrics_match_numpy():
     x = np.array([1.0, -2.0, 3.0, 0.5])
-    model = SignalModel(_label="s", _fs=1.0)
+    model = SignalModel(label="s", fs=1.0)
     model.add_data(np.arange(4.0), x)
 
     metrics = model.compute_metrics()
@@ -133,6 +132,5 @@ def test_metrics_match_numpy():
 
 
 def test_metrics_of_an_empty_buffer_are_none():
-    model = SignalModel(_label="s", _fs=1.0)
+    model = SignalModel(label="s", fs=1.0)
     assert set(model.compute_metrics().values()) == {None}
-    assert model.get_last_timestamp() is None

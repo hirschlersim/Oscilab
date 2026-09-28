@@ -6,10 +6,10 @@ from PyQt6 import QtCore as qtc
 class TimeseriesPlot(pg.PlotWidget):
     cursor_changed = qtc.pyqtSignal()  # Cursor region dragged — fires even while paused
 
-    def __init__(self, _title=None):
+    def __init__(self, title: str | None = None):
         super().__init__()
 
-        self._title = _title
+        self._title = title
         self.time_mode = "global"  # "global" (as recorded) or "relative" ([-duration, 0], now at 0)
         self.downsampling = False  # Off by default — opt in via the toolbar "Downsample" button
         self.y_range_auto = True  # Off: Y is pinned to (y_range_min, y_range_max), sticky across Reset View
@@ -17,7 +17,7 @@ class TimeseriesPlot(pg.PlotWidget):
         self.y_range_max = 1.0
         self.cursor_region: pg.LinearRegionItem | None = None
 
-        # Variabels
+        # Curve colors, assigned round-robin as signals are added
         self.colors = ["#FF5555", "#55FF55", "#5555FF", "#FFFF55", "#FF55FF"]
         self.curves: dict[str, pg.PlotDataItem] = {}
         self.models: dict[str, object] = {}
@@ -34,8 +34,6 @@ class TimeseriesPlot(pg.PlotWidget):
 
     def set_theme(self, bg: str, fg: str):
         """Recolor background, title and axes — used for light/dark theme switching."""
-        self.color_bg = bg
-        self.color_fg = fg
         self.setBackground(bg)
         self.setTitle(self._title, color=fg)
         self.getAxis("left").setTextPen(fg)
@@ -55,14 +53,15 @@ class TimeseriesPlot(pg.PlotWidget):
         # Recompute curve data under the new mode right away, then re-fit +
         # resume auto-follow (see reset_view()), so a prior manual pan/zoom
         # doesn't leave the view stuck showing the old mode's now-irrelevant range.
-        self.update()
+        self.refresh()
         self.reset_view()
 
     def __update_axis_label(self):
         label = "Time (relative to now)" if self.time_mode == "relative" else "Time"
         self.setLabel("bottom", label, units="s")
 
-    def update(self):
+    def refresh(self):
+        """Redraw every visible curve from its signal's current buffer (called each tick)."""
         for label, curve in self.curves.items():
             if not curve.isVisible():
                 continue
@@ -183,7 +182,7 @@ class TimeseriesPlot(pg.PlotWidget):
 
             time_arr, data_arr = model.snapshot()
             # Displayed coordinates are shifted by -now in relative time
-            # mode (see `update()`); map back to the model's own real time
+            # mode (see `refresh()`); map back to the model's own real time
             # to look up samples. The shift cancels in `t_b - t_a`, so ΔT
             # above is already correct regardless of time mode.
             shift = time_arr[-1] if self.time_mode == "relative" else 0.0

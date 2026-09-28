@@ -201,7 +201,6 @@ class Oscilab(qtw.QMainWindow):
         # add_timeseries_plot() creates them (see there).
         self.cursors_menu = self.menuBar().addMenu("Cursors")
         self.cursors_menu.menuAction().setToolTip("Toggle classic two-cursor time/value measurements on a plot")
-        self._cursor_actions: dict[str, qtg.QAction] = {}
 
     def __build_help_menu(self):
         help_menu = self.menuBar().addMenu("Help")
@@ -279,7 +278,6 @@ class Oscilab(qtw.QMainWindow):
         cursor_action.setToolTip(f"Toggle measurement cursors on '{title}'")
         cursor_action.toggled.connect(lambda checked, t=title: self.__set_cursors(t, checked))
         self.cursors_menu.addAction(cursor_action)
-        self._cursor_actions[title] = cursor_action
 
         return plot
 
@@ -321,8 +319,7 @@ class Oscilab(qtw.QMainWindow):
     def log(self, message: str, level: str = "info", timeout_ms: int = 4000):
         """Central logging: routes to loguru and the status bar at once."""
         getattr(logger, level, logger.info)(message)
-        if hasattr(self, "statusBar"):
-            self.statusBar().showMessage(message, timeout_ms)
+        self.statusBar().showMessage(message, timeout_ms)
 
     def show(self):
         super().show()

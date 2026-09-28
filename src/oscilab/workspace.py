@@ -82,7 +82,7 @@ class Workspace:
         if title in self.plots:
             raise ValueError(f"Plot '{title}' already exists")
 
-        plot = TimeseriesPlot(_title=title)
+        plot = TimeseriesPlot(title=title)
         plot.set_theme(*self._plot_theme)
         plot.set_time_mode(self._time_mode)
         plot.set_downsampling(self._downsampling)
@@ -220,7 +220,7 @@ class Workspace:
         if label in self.signals:
             raise ValueError(f"Signal '{label}' already registered")
 
-        model = SignalModel(_label=label, _fs=fs, _duration=self._duration, _storage=storage)
+        model = SignalModel(label=label, fs=fs, duration=self._duration, storage=storage)
         self.signals[label] = model
         return model
 
@@ -234,7 +234,7 @@ class Workspace:
             raise ValueError(f"Unknown signal '{signal_b}'")
 
         model_a = self.signals[signal_a]
-        derived_model = SignalModel(_label=label, _fs=model_a.fs, _duration=self._duration)
+        derived_model = SignalModel(label=label, fs=model_a.fs, duration=self._duration)
 
         self.signals[label] = derived_model
         self.math_signals[label] = MathSignal(
@@ -351,11 +351,11 @@ class Workspace:
             self.signals[math_signal.label].set_data(t, x)
 
         for title, plot in self.plots.items():
-            plot.update()
+            plot.refresh()
             self.__refresh_cursor_readout(title)
         for spectrogram in self.spectrograms.values():
-            spectrogram.update()
-        self.signal_list.update()
+            spectrogram.refresh()
+        self.signal_list.refresh()
 
     def reset_views(self):
         for plot in self.plots.values():

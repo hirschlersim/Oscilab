@@ -21,13 +21,13 @@ class SignalController(qtw.QGroupBox):
     def __init__(self, title: str = "Controls:", parent=None):
         super().__init__(title, parent)
 
-        self.layout = qtw.QVBoxLayout(self)
-        self.layout.setAlignment(qtc.Qt.AlignmentFlag.AlignTop)
+        self._layout = qtw.QVBoxLayout(self)
+        self._layout.setAlignment(qtc.Qt.AlignmentFlag.AlignTop)
         self.rows: dict[str, SignalRow] = {}
 
         self._header_layout = qtw.QHBoxLayout()
         self._header_layout.setContentsMargins(0, 0, 0, 0)
-        self.layout.addLayout(self._header_layout)
+        self._layout.addLayout(self._header_layout)
 
         # Live cursor readout (Cursors menu) — hidden until cursors are
         # enabled on this plot; updated in place each tick, not rebuilt.
@@ -35,7 +35,7 @@ class SignalController(qtw.QGroupBox):
         self._cursor_label.setStyleSheet("font-size: 9pt; color: gray; font-family: Consolas, monospace;")
         self._cursor_label.setToolTip("Classic two-cursor measurement: value at each cursor, ΔT, 1/ΔT, ΔValue")
         self._cursor_label.setVisible(False)
-        self.layout.addWidget(self._cursor_label)
+        self._layout.addWidget(self._cursor_label)
 
     def add_header_button(self, text: str, tooltip: str, callback) -> qtw.QPushButton:
         """Add a plot-level button (e.g. "Y-Axis") above the signal rows."""
@@ -60,10 +60,10 @@ class SignalController(qtw.QGroupBox):
 
         row = SignalRow(label=label, model=model, derived=derived, has_curve=has_curve, parent=self)
         self.rows[label] = row
-        self.layout.addWidget(row)
+        self._layout.addWidget(row)
         return row
 
-    def update(self):
+    def refresh(self):
         """Refresh live metric readouts for every row (called each tick)."""
         for row in self.rows.values():
             row.update_metrics()

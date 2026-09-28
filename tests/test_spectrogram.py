@@ -28,7 +28,7 @@ def make_recording(seconds: float) -> np.ndarray:
 
 
 def make_spectrogram(duration: float = 2.0) -> tuple[SignalModel, SpectrogramPlot]:
-    model = SignalModel(_label="s", _fs=FS, _duration=duration)
+    model = SignalModel(label="s", fs=FS, duration=duration)
     spec = SpectrogramPlot(label="s", model=model, nperseg=NPERSEG, noverlap=NOVERLAP)
     return model, spec
 
@@ -39,7 +39,7 @@ def feed(model, spec, x, start: int, stop: int, chunk: int, *, refresh: bool = T
         j = min(i + chunk, stop)
         model.add_data(np.arange(i, j) / FS, x[i:j])
         if refresh:
-            spec.update()
+            spec.refresh()
 
 
 # Chunk sizes that are and aren't multiples of the hop, including one

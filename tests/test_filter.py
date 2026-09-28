@@ -19,13 +19,13 @@ def test_dialog_caps_cutoff_below_nyquist():
     _, cutoff, order = dialog.get_values()
 
     assert cutoff < 50.0
-    SignalModel(_label="s", _fs=100.0).add_filter(cutoff=cutoff, order=order)
+    SignalModel(label="s", fs=100.0).add_filter(cutoff=cutoff, order=order)
 
 
 @pytest.mark.parametrize("fs", [10.0, 100.0, 1_000.0])
 @pytest.mark.usefixtures("qapp")
 def test_default_cutoff_is_valid_for_the_signal(fs):
-    model = SignalModel(_label="s", _fs=fs)
+    model = SignalModel(label="s", fs=fs)
     row = SignalRow(label="s", model=model)
     cutoff = row.filter_settings["cutoff"]
 
@@ -35,4 +35,4 @@ def test_default_cutoff_is_valid_for_the_signal(fs):
 
 def test_model_rejects_cutoff_at_nyquist():
     with pytest.raises(ValueError, match="critical frequencies"):
-        SignalModel(_label="s", _fs=100.0).add_filter(cutoff=50.0)
+        SignalModel(label="s", fs=100.0).add_filter(cutoff=50.0)
