@@ -8,6 +8,7 @@ requires-python = ">=3.12"
 dependencies = [
     "h5py>=3.11.0",
     "loguru>=0.7.3",
+    "pydantic>=2.13.5",
     "pyqt6>=6.11.0",
     "pyqtgraph>=0.14.0",
     "scipy>=1.18.0",
@@ -15,6 +16,7 @@ dependencies = [
 
 [project.scripts]
 demo = "oscilab.demo:run"
+oscilab = "oscilab.__main__:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

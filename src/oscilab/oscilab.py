@@ -2,6 +2,7 @@ import ctypes
 import sys
 from collections.abc import Callable, Sequence
 from importlib import metadata, resources
+from pathlib import Path
 from typing import ClassVar, Literal, NamedTuple
 
 from loguru import logger
@@ -9,6 +10,7 @@ from PyQt6 import QtCore as qtc
 from PyQt6 import QtGui as qtg
 from PyQt6 import QtWidgets as qtw
 
+from oscilab import session
 from oscilab.dialogs import MathDialog
 from oscilab.math_signal import OPERATORS
 from oscilab.producers import DataProducer
@@ -86,6 +88,8 @@ class Oscilab(qtw.QMainWindow):
 
     # (plot background, plot foreground) per theme — the QSS covers widget
     # chrome, but pyqtgraph's canvas colors are set programmatically.
+    _extra_windows: ClassVar[set["Oscilab"]] = set()  # Opened by open_session(); see there
+
     _PLOT_THEMES: ClassVar[dict[str, tuple[str, str]]] = {
         "dark": ("#202f46", "#ffffff"),
         "light": ("#f5f5f5", "#1a1a1a"),
@@ -146,6 +150,8 @@ class Oscilab(qtw.QMainWindow):
 
         # Domain layer
         self.workspace = Workspace(log=self.log)
+        self._theme = "dark"  # Matches the QSS loaded above and Workspace's default plot colors
+        self._fps = 30
 
         # Layout
         self.controller_layout = qtw.QVBoxLayout()
@@ -165,7 +171,7 @@ class Oscilab(qtw.QMainWindow):
         # Timer / Update loop
         self.refresh_timer = qtc.QTimer()
         self.refresh_timer.timeout.connect(self.__refresh)
-        self.refresh_timer.start(30)
+        self.refresh_timer.start(1000 // self._fps)
 
         self.__build_menu_bar()
         self.__build_toolbar()  # After the menu bar: Start/Stop keeps View > Reset View in sync
@@ -187,6 +193,18 @@ class Oscilab(qtw.QMainWindow):
             action.setToolTip(export.tooltip)
             action.triggered.connect(lambda _checked=False, e=export: self.__export(e))
             file_menu.addAction(action)
+
+        file_menu.addSeparator()
+        open_action = qtg.QAction("Open Session...", self)
+        open_action.setToolTip(
+            "Rebuild a saved setup: producers, plots and settings (in a new window if this one is in use)"
+        )
+        open_action.triggered.connect(self.__open_session_dialog)
+        file_menu.addAction(open_action)
+        save_action = qtg.QAction("Save Session...", self)
+        save_action.setToolTip("Save this setup — producers, plots and settings, not the data — as JSON")
+        save_action.triggered.connect(self.__save_session_dialog)
+        file_menu.addAction(save_action)
 
     def __build_view_menu(self):
         view_menu = self.menuBar().addMenu("View")
@@ -275,6 +293,7 @@ class Oscilab(qtw.QMainWindow):
         fps_box.setToolTip("How often the plots redraw per second")
         fps_box.currentTextChanged.connect(self.__set_fps)
         self.toolbar.addWidget(fps_box)
+        self._fps_box = fps_box
         self.toolbar.addSeparator()
         # Duration dropdown — how many seconds of history are kept/displayed
         duration_box = qtw.QComboBox()
@@ -283,6 +302,7 @@ class Oscilab(qtw.QMainWindow):
         duration_box.setToolTip("How many seconds of history each signal keeps and displays")
         duration_box.currentTextChanged.connect(self.__set_duration)
         self.toolbar.addWidget(duration_box)
+        self._duration_box = duration_box
         self.toolbar.addSeparator()
         # Downsample toggle — separate from Duration: it's about how much
         # gets *drawn*, not how much is *kept*.
@@ -361,6 +381,88 @@ class Oscilab(qtw.QMainWindow):
         getattr(logger, level, logger.info)(message)
         self.statusBar().showMessage(message, timeout_ms)
 
+    @property
+    def theme(self) -> str:
+        return self._theme
+
+    @property
+    def fps(self) -> int:
+        return self._fps
+
+    # The setters below go through the menus/toolbar, so those always show
+    # what's in effect — same as if the user had picked it there.
+
+    def set_theme(self, theme: str):
+        """`"dark"` or `"light"`."""
+        if theme not in self._PLOT_THEMES:
+            raise ValueError(f"Unknown theme {theme!r}; expected one of {list(self._PLOT_THEMES)}")
+        for action in self._theme_action_group.actions():
+            action.setChecked(action.text() == theme.capitalize())
+        self.__set_theme(theme)
+
+    def set_fps(self, fps: int):
+        """Redraw rate: one of the toolbar's choices (5, 10, 30, 60)."""
+        text = f"{fps} FPS"
+        if self._fps_box.findText(text) < 0:
+            choices = [self._fps_box.itemText(i) for i in range(self._fps_box.count())]
+            raise ValueError(f"fps must be one of {choices}, got {fps}")
+        self._fps_box.setCurrentText(text)
+
+    def set_duration(self, duration: float):
+        """Seconds of history kept and shown per signal; any value, not just the toolbar's choices."""
+        text = f"{duration:g} s"
+        if self._duration_box.findText(text) < 0:
+            self._duration_box.addItem(text)
+        self._duration_box.setCurrentText(text)
+
+    def set_time_mode(self, mode: str):
+        """`"global"` (time as recorded) or `"relative"` (newest sample at 0)."""
+        if mode not in ("global", "relative"):
+            raise ValueError(f"Unknown time mode {mode!r}")
+        for action in self._time_action_group.actions():
+            action.setChecked(action.text().lower() == mode)
+        self.__set_time_mode(mode)
+
+    def set_downsampling(self, enabled: bool):
+        self.downsample_action.setChecked(enabled)
+
+    def set_cursors(self, plot: str, enabled: bool):
+        """Two-cursor measurement on a time-series plot, as in the Cursors menu."""
+        action = next((a for a in self.cursors_menu.actions() if a.text() == plot), None)
+        if action is None:
+            raise ValueError(f"Unknown time-series plot '{plot}'")
+        action.setChecked(enabled)
+
+    def save_session(self, path) -> Path:
+        """Save this window's setup as JSON — see `oscilab.session`."""
+        path = session.save(self, path)
+        self.log(f"Session saved to {path.name}")
+        return path
+
+    def load_session(self, path):
+        """Rebuild a saved setup in this window, which must still be empty."""
+        session.load(self, path)
+        self.log(f"Session loaded from {Path(path).name}")
+
+    def open_session(self, path) -> "Oscilab":
+        """
+        Load a session into this window if it's still empty, otherwise into
+        a new window (shown right away). Returns the window it's in.
+        """
+        if not (self.workspace.signals or self.workspace.views):
+            self.load_session(path)
+            return self
+
+        window = Oscilab(app=self.app)
+        try:
+            window.load_session(path)
+        except Exception:
+            window.close()
+            raise
+        Oscilab._extra_windows.add(window)  # Keeps it alive until it's closed
+        window.show()
+        return window
+
     def run(self) -> int:
         """Show the window and run the Qt event loop until it's closed. Returns the exit code."""
         self.show()
@@ -376,6 +478,7 @@ class Oscilab(qtw.QMainWindow):
 
     def closeEvent(self, event):
         self.workspace.stop_producers()
+        Oscilab._extra_windows.discard(self)
         super().closeEvent(event)
 
     def __refresh(self):
@@ -400,11 +503,32 @@ class Oscilab(qtw.QMainWindow):
         if path:
             export.write(workspace, path)
 
+    def __save_session_dialog(self):
+        path, _ = qtw.QFileDialog.getSaveFileName(self, "Save Session", "", "Oscilab session (*.json)")
+        if path:
+            try:
+                self.save_session(path)
+            except Exception as e:  # noqa: BLE001 — reported, never fatal (this is a Qt slot)
+                self.__session_error("save", e)
+
+    def __open_session_dialog(self):
+        path, _ = qtw.QFileDialog.getOpenFileName(self, "Open Session", "", "Oscilab session (*.json)")
+        if path:
+            try:
+                self.open_session(path)
+            except Exception as e:  # noqa: BLE001 — a bad file or a device that won't open: report it
+                self.__session_error("open", e)
+
+    def __session_error(self, verb: str, error: Exception):
+        self.log(f"Couldn't {verb} session: {error}", level="error")
+        qtw.QMessageBox.warning(self, f"Couldn't {verb} session", str(error))
+
     def __load_qss(self, theme: str) -> str:
         with resources.files("oscilab.assets").joinpath(f"style_{theme}.qss").open("r") as f:
             return f.read()
 
     def __set_theme(self, theme: str):
+        self._theme = theme
         self.app.setStyleSheet(self.__load_qss(theme))
         self.workspace.set_theme(*self._PLOT_THEMES[theme])
         self.log(f"Theme set to {theme.capitalize()}")
@@ -497,9 +621,9 @@ class Oscilab(qtw.QMainWindow):
         self.reset_views_action.setEnabled(checked)
 
     def __set_fps(self, text):
-        fps = int(text.split()[0])  # "30 FPS" -> 30
-
-        self.refresh_timer.start(1000 // fps)
+        self._fps = int(text.split()[0])  # "30 FPS" -> 30
+        # setInterval, not start(): changing FPS while paused mustn't resume
+        self.refresh_timer.setInterval(1000 // self._fps)
 
     def __set_duration(self, text):
         duration = float(text.split()[0])  # "10 s" -> 10.0

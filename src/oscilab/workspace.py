@@ -87,6 +87,19 @@ class Workspace:
         self._downsampling = False  # min-max curve downsampling, applied to new plots too
 
     @property
+    def duration(self) -> float:
+        """Seconds of history each signal keeps (see `set_duration`)."""
+        return self._duration
+
+    @property
+    def time_mode(self) -> str:
+        return self._time_mode
+
+    @property
+    def downsampling(self) -> bool:
+        return self._downsampling
+
+    @property
     def plots(self) -> dict[str, TimeseriesPlot]:
         """The time-series plots (the ones signals are `link`ed to), keyed by title."""
         return {title: view for title, view in self.views.items() if isinstance(view, TimeseriesPlot)}

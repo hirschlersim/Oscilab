@@ -93,6 +93,9 @@ lint.ignore = [
 lint.pylint.max-args = 7
 lint.pylint.max-positional-args = 7
 
+# pydantic evaluates model annotations at runtime, so their imports must stay real imports
+lint.flake8-type-checking.runtime-evaluated-base-classes = ["pydantic.BaseModel", "oscilab.session._Model"]
+
 lint.pep8-naming.extend-ignore-names = [
     # Qt overrides, named by Qt
     "closeEvent",

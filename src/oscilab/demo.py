@@ -32,7 +32,8 @@ def run() -> int:
 
     # Blocks until the window is closed; also try the Math, Cursors and
     # View > Time menus, and each row's details (click its name): live
-    # metrics and the Filter/Scaling buttons.
+    # metrics and the Filter/Scaling buttons. File > Save Session keeps the
+    # whole setup; `uv run oscilab <file>.json` reopens it without this script.
     return oszi.run()
 
 

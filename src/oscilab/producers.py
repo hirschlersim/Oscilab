@@ -34,6 +34,9 @@ What every producer gets from the base class:
 - A producer that stopped can be started again (`Workspace.restart_producer`,
   or the Restart button on its row after an error). The built-in producers
   resume where they left off; time keeps running forward.
+- Saving in a session (`oscilab.session`): the arguments a producer was
+  constructed with are recorded automatically, so `config()` can rebuild
+  it — as long as they're JSON-friendly (numbers, strings, lists, paths).
 - Custom buttons (e.g. "Reconnect", "Zero") via `actions()`. Clicks are
   queued and run on the producer's own thread between reads, so an action
   can safely touch the same connection the producer is reading from. An
@@ -43,6 +46,9 @@ What every producer gets from the base class:
 import asyncio
 import contextlib
 import csv
+import functools
+import importlib
+import inspect
 import queue
 import time
 from abc import ABCMeta, abstractmethod
@@ -67,6 +73,55 @@ class _ProducerMeta(type(qtc.QThread), ABCMeta):
     """
 
 
+def _recording_init(init):
+    """
+    Wrap a producer class's `__init__` to record the arguments it was
+    called with — only for the outermost call, i.e. the user's, not a
+    subclass's `super().__init__(...)` — as `self._init_args`.
+    """
+    signature = inspect.signature(init)
+
+    @functools.wraps(init)
+    def wrapper(self, *args, **kwargs):
+        if "_init_args" not in self.__dict__:
+            bound = signature.bind(self, *args, **kwargs)
+            recorded = {}
+            for name, value in bound.arguments.items():
+                kind = signature.parameters[name].kind
+                if name in ("self", "parent"):
+                    continue
+                if kind is inspect.Parameter.VAR_KEYWORD:
+                    recorded.update(value)
+                elif kind is inspect.Parameter.VAR_POSITIONAL:
+                    recorded[f"*{name}"] = list(value)  # Can't be rebuilt by keyword; config() refuses it
+                else:
+                    recorded[name] = value
+            self.__dict__["_init_args"] = recorded
+        init(self, *args, **kwargs)
+
+    return wrapper
+
+
+def resolve_producer(type_path: str) -> type["DataProducer"]:
+    """
+    The producer class for a `"module:QualifiedName"` path, as
+    `DataProducer.type_path()` writes it (e.g.
+    `"oscilab.producers:SyntheticProducer"`). Imports the module if needed.
+    """
+    module_name, _, qualname = type_path.partition(":")
+    if not module_name or not qualname:
+        raise ValueError(f"Producer type {type_path!r} isn't a 'module:ClassName' path")
+    try:
+        obj = importlib.import_module(module_name)
+        for part in qualname.split("."):
+            obj = getattr(obj, part)
+    except (ImportError, AttributeError) as e:
+        raise ValueError(f"Can't find producer type {type_path!r}: {e}") from e
+    if not (isinstance(obj, type) and issubclass(obj, DataProducer)):
+        raise TypeError(f"{type_path!r} isn't a DataProducer subclass")
+    return obj
+
+
 class DataProducer(qtc.QThread, metaclass=_ProducerMeta):
     """
     Base class for background data producers. Subclass `SyncDataProducer`
@@ -81,6 +136,28 @@ class DataProducer(qtc.QThread, metaclass=_ProducerMeta):
     # attribute, or set `self.channels` in `__init__` when the count depends
     # on constructor arguments.
     channels: tuple[str, ...] = ("value",)
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        if "__init__" in cls.__dict__:
+            cls.__init__ = _recording_init(cls.__init__)
+
+    @classmethod
+    def type_path(cls) -> str:
+        """Where to find this class again: `"module:QualifiedName"` (see `resolve_producer`)."""
+        return f"{cls.__module__}:{cls.__qualname__}"
+
+    def config(self) -> dict:
+        """
+        The keyword arguments that rebuild this producer:
+        `type(p)(**p.config())`. Recorded from its constructor call —
+        only what was passed explicitly, so defaults can still change.
+        """
+        args = dict(self.__dict__.get("_init_args", {}))
+        starred = [name for name in args if name.startswith("*")]
+        if starred:
+            raise ValueError(f"{type(self).__name__} takes {starred[0]}: can't be rebuilt from keyword arguments")
+        return args
 
     def __init__(self, fs: float, parent=None):
         super().__init__(parent)

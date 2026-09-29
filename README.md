@@ -53,8 +53,10 @@ workspace.py          Domain layer: owns all registries and wiring
 exporters.py           └─ PNG/SVG/PDF images, CSV/.mat/.h5 data
     │
 oscilab.py            QMainWindow: menus, toolbar, window chrome
+session.py             └─ save/restore a whole setup as JSON
     │
 demo.py               Example usage / `uv run demo` entry point
+__main__.py           `uv run oscilab [session.json]` entry point
 ```
 
 Roughly bottom-up: data model → producers → plots → per-signal controls →
@@ -136,6 +138,31 @@ oszi.attach_producer(ImuProducer("COM3"), ["acc-x", "acc-y", "acc-z"])
 array. An exception inside a producer stops only that producer — it's shown
 in the status bar and on its signals' rows instead of taking the app down,
 and the row's **Restart** button starts it again.
+
+### Sessions
+
+Set a layout up once, then reopen it without writing Python.
+**File → Save Session…** writes the whole setup to a JSON file: the
+producers (class and constructor arguments), every plot with its links,
+pinned ranges and cursors, each signal's color, visibility, filter and
+scaling, and the display settings. Buffered data isn't saved; producers
+start afresh.
+
+```bash
+uv run oscilab my-setup.json   # open a saved session
+uv run oscilab --schema        # print the session file format (JSON Schema)
+```
+
+**File → Open Session…** or `oszi.load_session(path)` rebuilds one — in a
+new window if the current one is already in use. The file is checked
+before anything is built: unknown keys (typos), bad values and references
+to signals that nothing provides are reported instead of half-loading.
+
+Producers are stored by import path (`"module:ClassName"`), so your own
+producer classes can be saved too, as long as they're defined in an
+importable module (not the script you run) and take JSON-friendly
+constructor arguments. Loading a session imports those modules, so only
+open session files you trust.
 
 ## Notable implementation details
 
