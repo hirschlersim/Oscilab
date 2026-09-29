@@ -1,0 +1,93 @@
+"""
+Custom toolbar buttons and toggles, defined as methods of your own class.
+
+    from oscilab import button, toggle
+
+    class LabTools:
+        def __init__(self, device):
+            self.device = device
+
+        @button("Zero", tooltip="Zero the sensor")
+        def zero(self):
+            self.device.zero()
+
+        @toggle("Heater", tooltip="Switch the sample heater")
+        def heater(self, on: bool):
+            self.device.set_heater(on)
+
+    oszi.add_toolbar(LabTools(device))
+
+They appear in the toolbar after the built-in controls (next to Downsample),
+in the order they're defined, base classes first. A button's method is
+called with no arguments; a toggle's with its new state (True = on) on every
+click. `@classmethod`s work too — then pass the class itself.
+
+A method that raises doesn't take the app down: the error shows in the
+status bar, the traceback goes to the log file, and a toggle flips back to
+the state it was in.
+"""
+
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Literal
+
+_MARK = "_oscilab_toolbar_item"
+
+
+@dataclass(frozen=True)
+class ToolbarItem:
+    kind: Literal["button", "toggle"]
+    text: str
+    tooltip: str = ""
+    checked: bool = False  # A toggle's initial state (not reported to its method)
+
+
+def _mark(item: ToolbarItem):
+    def decorate(method):
+        # Mark the underlying function, so either decorator order works with
+        # @classmethod/@staticmethod (which wrap it).
+        setattr(getattr(method, "__func__", method), _MARK, item)
+        return method
+
+    return decorate
+
+
+def button(text: str, tooltip: str = ""):
+    """Mark a method as a toolbar button: `method()` runs when it's clicked."""
+    return _mark(ToolbarItem("button", text, tooltip))
+
+
+def toggle(text: str, tooltip: str = "", checked: bool = False):
+    """
+    Mark a method as a toolbar toggle: `method(on)` runs with the new state on
+    every click. `checked` is the initial state; the method isn't called for it.
+    """
+    return _mark(ToolbarItem("toggle", text, tooltip, checked))
+
+
+def _marked(attr) -> ToolbarItem | None:
+    return getattr(attr, _MARK, None) or getattr(getattr(attr, "__func__", None), _MARK, None)
+
+
+def toolbar_items(tools) -> list[tuple[ToolbarItem, Callable]]:
+    """
+    The `@button` / `@toggle` methods of `tools` — an instance, or a class whose
+    marked methods are all classmethods — as (item, bound method) pairs, in
+    definition order, base classes first.
+    """
+    cls = tools if isinstance(tools, type) else type(tools)
+    found: dict[str, tuple[ToolbarItem, object]] = {}
+    for klass in reversed(cls.__mro__):
+        for name, attr in vars(klass).items():
+            item = _marked(attr)
+            if item is not None:
+                found[name] = (item, attr)  # A subclass's override keeps the base's position
+    if not found:
+        raise ValueError(f"{cls.__name__} has no @button or @toggle methods")
+
+    items = []
+    for name, (item, attr) in found.items():
+        if tools is cls and not isinstance(attr, classmethod | staticmethod):
+            raise TypeError(f"{cls.__name__}.{name} is a regular method: pass an instance, {cls.__name__}(...)")
+        items.append((item, getattr(tools, name)))
+    return items

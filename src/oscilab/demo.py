@@ -1,6 +1,27 @@
 """`uv run demo`: a tour of the public API with synthetic data."""
 
-from oscilab import AsyncSyntheticProducer, Oscilab, SyntheticProducer
+import time
+
+from oscilab import AsyncSyntheticProducer, Oscilab, SyntheticProducer, button, toggle
+
+
+class DemoTools:
+    """
+    Custom toolbar controls: methods of your own class, marked with @button /
+    @toggle, show up in the toolbar next to Downsample.
+    """
+
+    def __init__(self, oszi: Oscilab, noisy: SyntheticProducer):
+        self.oszi = oszi
+        self.noisy = noisy
+
+    @toggle("Noise", tooltip="Add noise to channel-1", checked=True)
+    def noise(self, on: bool):
+        self.noisy.noise = 0.05 if on else 0.0
+
+    @button("Mark", tooltip="Log a timestamped marker to the status bar and the log file")
+    def mark(self):
+        self.oszi.log(f"Marker at {time.strftime('%H:%M:%S')}", level="success")
 
 
 def run() -> int:
@@ -12,7 +33,8 @@ def run() -> int:
     # "channel-1": a single-channel producer, stored in a deque instead of the
     # default ring buffer, to show both backends behave the same ("ring" is far
     # cheaper per refresh tick at scale; see scripts/benchmark_buffers.py).
-    oszi.attach_producer(SyntheticProducer(fs=100, freq=5.0), "channel-1", storage=oszi.storage.deque)
+    channel_1 = SyntheticProducer(fs=100, freq=5.0)
+    oszi.attach_producer(channel_1, "channel-1", storage=oszi.storage.deque)
     # "channel-2"/"channel-3": ONE two-channel producer — a 1 Hz and a 10 Hz
     # sine sampled together, like a multi-channel DAQ.
     oszi.attach_producer(SyntheticProducer(fs=1_000, freq=(1.0, 10.0)), ["channel-2", "channel-3"])
@@ -29,6 +51,9 @@ def run() -> int:
 
     # ...and a live spectrogram (STFT) of the 10 Hz one.
     oszi.add_spectrogram_plot(label="channel-3")
+
+    # "Noise" and "Mark" in the toolbar, from the DemoTools class above
+    oszi.add_toolbar(DemoTools(oszi, channel_1))
 
     # Blocks until the window is closed; also try the Math, Cursors and
     # View > Time menus, and each row's details (click its name): live

@@ -140,6 +140,38 @@ array. An exception inside a producer stops only that producer — it's shown
 in the status bar and on its signals' rows instead of taking the app down,
 and the row's **Restart** button starts it again.
 
+### Custom toolbar buttons and toggles
+
+Write them as methods of your own class, mark them with `@button` or
+`@toggle`, and hand an instance to `add_toolbar`. They appear after the
+built-in controls, next to Downsample:
+
+```python
+from oscilab import button, toggle
+
+
+class LabTools:
+    def __init__(self, device):
+        self.device = device
+
+    @button("Zero", tooltip="Zero the sensor")
+    def zero(self):
+        self.device.zero()
+
+    @toggle("Heater", tooltip="Switch the sample heater")
+    def heater(self, on: bool):  # the new state, on every click
+        self.device.set_heater(on)
+
+
+oszi.add_toolbar(LabTools(device))
+```
+
+`@classmethod`s work too; pass the class itself then. A method that raises
+doesn't take the app down: the error shows in the status bar, the traceback
+goes to the log file, and a toggle flips back. For a one-off,
+`oszi.add_toolbar_button("Zero", device.zero)` and `add_toolbar_toggle` take
+any callable.
+
 ### Sessions
 
 Set a layout up once, then reopen it without writing Python.

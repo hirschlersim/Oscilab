@@ -24,10 +24,10 @@ working list, roughly in the order they'd make sense.
 
 ## Open questions
 
-- **Custom GUI buttons from a class.** Buttons tied to a producer work
-  (`DataProducer.actions()`, see the README). Buttons or panels that aren't
-  tied to a producer (a toolbar action or a side panel from an add-on) would
-  need an add-on API. What's actually needed?
+- **Custom GUI from a class, beyond buttons.** Producer buttons
+  (`DataProducer.actions()`) and toolbar buttons/toggles (`@button` /
+  `@toggle` + `add_toolbar`) work. A whole side panel from an add-on (its
+  own widgets, e.g. a settings form) would need more. Is it needed?
 - **Where producer buttons go.** They sit on the first of a producer's
   signals to get a row. With many buttons, a per-producer section could be
   clearer.

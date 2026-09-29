@@ -17,6 +17,7 @@ from oscilab.log import StatusLine, log_file, log_to_file
 from oscilab.math_signal import OPERATORS
 from oscilab.producers import DataProducer
 from oscilab.storage import Storage
+from oscilab.toolbar import toolbar_items
 from oscilab.workspace import Workspace
 
 
@@ -390,6 +391,61 @@ class Oscilab(qtw.QMainWindow):
         them. The signals use the producer's `fs`.
         """
         return self.workspace.attach_producer(producer, signals, storage=storage)
+
+    def add_toolbar(self, tools) -> list[qtg.QAction]:
+        """
+        Put the `@button` / `@toggle` methods of `tools` — an instance of your
+        own class, or the class itself if they're classmethods — in the
+        toolbar, after the built-in controls. See `oscilab.toolbar`.
+        """
+        actions = []
+        for item, method in toolbar_items(tools):
+            if item.kind == "button":
+                actions.append(self.add_toolbar_button(item.text, method, tooltip=item.tooltip))
+            else:
+                actions.append(self.add_toolbar_toggle(item.text, method, checked=item.checked, tooltip=item.tooltip))
+        self.toolbar.addSeparator()  # Keeps each class's controls together
+        return actions
+
+    def add_toolbar_button(self, text: str, callback: Callable[[], object], tooltip: str = "") -> qtg.QAction:
+        """A toolbar button calling `callback()` — e.g. a method of your own class — when clicked."""
+        action = qtg.QAction(text, self)
+        action.setToolTip(tooltip or text)
+        action.triggered.connect(lambda _checked=False: self.__run_tool(text, callback))
+        self.toolbar.addAction(action)
+        return action
+
+    def add_toolbar_toggle(
+        self, text: str, callback: Callable[[bool], object], checked: bool = False, tooltip: str = ""
+    ) -> qtg.QAction:
+        """
+        A toolbar toggle calling `callback(on)` with its new state whenever it
+        changes. `checked`: the initial state, which isn't reported to `callback`.
+        """
+        action = qtg.QAction(text, self)
+        action.setCheckable(True)
+        action.setChecked(checked)
+        action.setIcon(self._dot_icon("green" if checked else "gray"))
+        action.setToolTip(tooltip or text)
+        action.toggled.connect(lambda on: self.__run_toggle(action, callback, on))
+        self.toolbar.addAction(action)
+        return action
+
+    def __run_tool(self, name: str, callback: Callable, *args) -> bool:
+        """Run a custom toolbar callback. An exception is reported (status bar, log file), never fatal."""
+        try:
+            callback(*args)
+        except Exception as e:  # noqa: BLE001 — raised in a Qt slot, it would abort the whole app
+            self.logger.opt(exception=e).error(f"'{name}' failed: {type(e).__name__}: {e}")
+            return False
+        return True
+
+    def __run_toggle(self, action: qtg.QAction, callback: Callable[[bool], object], on: bool):
+        if self.__run_tool(action.text(), callback, on):
+            action.setIcon(self._dot_icon("green" if on else "gray"))
+        else:
+            with qtc.QSignalBlocker(action):
+                action.setChecked(not on)  # It didn't take: show the state it's still in
 
     def log(self, message: str, level: str = "info"):
         """
