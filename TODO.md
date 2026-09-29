@@ -5,22 +5,13 @@ working list, roughly in the order they'd make sense.
 
 ## Next up
 
-1. **Session save/load (JSON).** Persist signals, plot layout, links,
-   colors, filter/scaling, storage backend, theme and cursor state, and
-   reload it: set a layout up once via the GUI instead of writing Python
-   each time. Also covers starting producers from a config (or the GUI)
-   instead of only from code. That needs a producer registry mapping a type
-   name to its class and constructor arguments. Pydantic models for the
-   schema would double as its documentation.
-2. **Network/UDP producer template.** An `AsyncDataProducer` over an
-   asyncio datagram endpoint, same shape as the existing producers, and the
-   first entry in that registry.
-3. **Restart a stopped producer.** A producer that stopped with an error
-   stays stopped until the app restarts; add a "Restart" button next to
-   the ⚠ on its row.
-4. **Collapsible signal rows.** Show only color, name and Visible by
-   default; metrics, Filter, Scaling and producer buttons appear (and are
-   only built) when the row's label is clicked.
+1. **Network/UDP producer template.** An `AsyncDataProducer` over an
+   asyncio datagram endpoint, same shape as the existing producers. Sessions
+   save it like any other producer (import path + constructor arguments).
+2. **Add producers and plots from the GUI.** Sessions rebuild a setup from
+   a file, but creating one still takes code (or a hand-written JSON file).
+   Dialogs to add a producer (type + arguments) and a plot would make the
+   whole setup doable without Python.
 
 ## Small fixes
 
@@ -28,6 +19,7 @@ working list, roughly in the order they'd make sense.
   `<label>_data`, but labels like `channel-1` aren't valid MATLAB names
   (letters, digits and underscores, starting with a letter). Sanitize to
   `[A-Za-z]\w*`.
+- have loggin work  via a oscilab logger, which has loguru, file, and a ststus line colord with properties according to the severity of the event
 
 ## Code quality
 
@@ -50,3 +42,8 @@ working list, roughly in the order they'd make sense.
 - **The `demo` launcher name** is generic. Another installed package with a
   `demo` script would collide, which is how the old `oszilab` install took
   it with it on uninstall. `oscilab-demo` would be safer.
+
+
+## Dump
+
+- contoller bt producer
