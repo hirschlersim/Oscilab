@@ -151,10 +151,10 @@ def test_a_failing_toggle_flips_back(window):
     assert not stuck.isChecked()  # Its method failed, so it's still off
 
 
-def test_producers_add_nothing_to_the_toolbar(window):
+def test_producers_add_nothing_to_the_toolbar_by_default(window):
     before = len(window.toolbar.actions())
     window.attach_producer(SyntheticProducer(fs=100), "s")
-    assert len(window.toolbar.actions()) == before  # Their controls are in the Producers menu
+    assert len(window.toolbar.actions()) == before  # Only toolbar=True functions go there
 
 
 def test_long_captions_are_shortened():

@@ -27,9 +27,17 @@ status bar, the traceback goes to the log file, and a toggle flips back to
 the state it was in.
 
 Producers (`oscilab.producers`) use the same decorators, but their marked
-methods go in the producer's entry of the Producers menu instead (next to
-Start and Stop), and run on the producer's own thread between reads — so
-they can use its device connection safely. A producer that isn't running
+methods go in the producer's entry of the Producers menu (next to Start and
+Stop) — and in the toolbar as well with `toolbar=True`:
+
+    class ImuProducer(SyncDataProducer):
+        @button("Zero", toolbar=True)
+        def zero(self):
+            self.device.zero()
+
+That's one control in two places: a toggle shows the same state in both.
+Either way they run on the producer's own thread between reads — so they
+can use its device connection safely. A producer that isn't running
 refuses them.
 """
 
@@ -46,6 +54,7 @@ class ToolbarItem:
     text: str
     tooltip: str = ""
     checked: bool = False  # A toggle's initial state (not reported to its method)
+    toolbar: bool = False  # A producer's: in the toolbar too, not only in its Producers-menu entry
 
 
 def _mark(item: ToolbarItem):
@@ -58,17 +67,23 @@ def _mark(item: ToolbarItem):
     return decorate
 
 
-def button(text: str, tooltip: str = ""):
-    """Mark a method as a toolbar button: `method()` runs when it's clicked."""
-    return _mark(ToolbarItem("button", text, tooltip))
+def button(text: str, tooltip: str = "", toolbar: bool = False):
+    """
+    Mark a method as a toolbar button: `method()` runs when it's clicked.
+    `toolbar`: on a producer, put it in the toolbar as well as its
+    Producers-menu entry.
+    """
+    return _mark(ToolbarItem("button", text, tooltip, toolbar=toolbar))
 
 
-def toggle(text: str, tooltip: str = "", checked: bool = False):
+def toggle(text: str, tooltip: str = "", checked: bool = False, toolbar: bool = False):
     """
     Mark a method as a toolbar toggle: `method(on)` runs with the new state on
     every click. `checked` is the initial state; the method isn't called for it.
+    `toolbar`: on a producer, put it in the toolbar as well as its
+    Producers-menu entry.
     """
-    return _mark(ToolbarItem("toggle", text, tooltip, checked))
+    return _mark(ToolbarItem("toggle", text, tooltip, checked, toolbar))
 
 
 def _marked(attr) -> ToolbarItem | None:

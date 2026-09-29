@@ -82,7 +82,7 @@ _window_ids = itertools.count(1)  # Tells each window's log messages apart (see 
 
 
 def _signals_caption(labels: list[str]) -> str:
-    """Names a producer's toolbar group by its signals, kept short for many channels."""
+    """Names a producer's Producers-menu entry by its signals, kept short for many channels."""
     return ", ".join(labels) if len(labels) <= 3 else f"{labels[0]} … {labels[-1]}"
 
 
@@ -441,7 +441,8 @@ class Oscilab(qtw.QMainWindow):
         label for a single-channel producer), and start the producer feeding
         them. The signals use the producer's `fs`. It gets an entry in the
         Producers menu — Start, Stop, and its `@button` / `@toggle` methods,
-        which run on its own thread (see `oscilab.toolbar`).
+        which run on its own thread; those marked `toolbar=True` go in the
+        toolbar too (see `oscilab.toolbar`).
         """
         models = self.workspace.attach_producer(producer, signals, storage=storage)
         self.__add_producer_menu(producer)
@@ -453,7 +454,8 @@ class Oscilab(qtw.QMainWindow):
             self._no_producers_action = None
 
         labels = self.workspace.signals_fed_by(producer)
-        menu = self.producers_menu.addMenu(f"{type(producer).__name__}: {_signals_caption(labels)}")
+        caption = f"{type(producer).__name__}: {_signals_caption(labels)}"
+        menu = self.producers_menu.addMenu(caption)
         menu.setToolTipsVisible(True)
         menu.menuAction().setToolTip(f"Feeds {', '.join(labels)}")
         start = menu.addAction("Start")
@@ -466,9 +468,17 @@ class Oscilab(qtw.QMainWindow):
         items = toolbar_items(producer, required=False)
         if items:
             menu.addSeparator()
+        in_toolbar = []
         for item, method in items:
             run = functools.partial(self.__run_on_producer, producer, method)
-            menu.addAction(self.__control_action(item, run, dot=False))
+            action = self.__control_action(item, run)
+            menu.addAction(action)
+            if item.toolbar:  # The same action: a toggle shows the same state in both places
+                action.setToolTip(f"{action.toolTip()} ({caption})")  # Which producer's, in the toolbar
+                in_toolbar.append(action)
+        if in_toolbar:
+            self.toolbar.addActions(in_toolbar)
+            self.toolbar.addSeparator()
 
         self._producer_menus.append((labels[0], menu, start, stop))
         self.__update_producer_menus()
@@ -492,6 +502,12 @@ class Oscilab(qtw.QMainWindow):
         own class, or the class itself if they're classmethods — in the
         toolbar, after the built-in controls. See `oscilab.toolbar`.
         """
+        if isinstance(tools, DataProducer):
+            # Its methods would run on the GUI thread, racing its own reads
+            raise TypeError(
+                f"{type(tools).__name__} is a producer: mark its methods toolbar=True instead,"
+                " and they run on its own thread"
+            )
         actions = [self.__control_action(item, method) for item, method in toolbar_items(tools)]
         self.toolbar.addActions(actions)
         self.toolbar.addSeparator()  # Keeps each class's controls together
@@ -514,11 +530,11 @@ class Oscilab(qtw.QMainWindow):
         self.toolbar.addAction(action)
         return action
 
-    def __control_action(self, item: ToolbarItem, callback: Callable, dot: bool = True) -> qtg.QAction:
+    def __control_action(self, item: ToolbarItem, callback: Callable) -> qtg.QAction:
         """
         The QAction for a `@button` / `@toggle` control, wherever it goes. A
-        toggle shows its state as a green/gray `dot` (in the toolbar), or just
-        a check mark (in a menu).
+        toggle shows its state as a green/gray dot in the toolbar, and as a
+        check mark in a menu.
         """
         action = qtg.QAction(item.text, self)
         action.setToolTip(item.tooltip or item.text)
@@ -527,9 +543,9 @@ class Oscilab(qtw.QMainWindow):
         else:
             action.setCheckable(True)
             action.setChecked(item.checked)
-            if dot:
-                action.setIcon(self._dot_icon("green" if item.checked else "gray"))
-            action.toggled.connect(lambda on: self.__run_toggle(action, callback, on, dot))
+            action.setIcon(self._dot_icon("green" if item.checked else "gray"))
+            action.setIconVisibleInMenu(False)  # So a menu shows its check mark instead
+            action.toggled.connect(lambda on: self.__run_toggle(action, callback, on))
         return action
 
     @staticmethod
@@ -547,10 +563,9 @@ class Oscilab(qtw.QMainWindow):
             return False
         return True
 
-    def __run_toggle(self, action: qtg.QAction, callback: Callable[[bool], object], on: bool, dot: bool):
+    def __run_toggle(self, action: qtg.QAction, callback: Callable[[bool], object], on: bool):
         if self.__run_tool(action.text(), callback, on):
-            if dot:
-                action.setIcon(self._dot_icon("green" if on else "gray"))
+            action.setIcon(self._dot_icon("green" if on else "gray"))
         else:
             with qtc.QSignalBlocker(action):
                 action.setChecked(not on)  # It didn't take: show the state it's still in

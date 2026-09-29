@@ -40,9 +40,10 @@ What every producer gets from the base class:
 - An entry in the window's Producers menu, with Start and Stop — plus its
   own functions (e.g. "Reconnect", "Zero"): methods marked with `@button` /
   `@toggle` (from `oscilab.toolbar`), the same decorators as toolbar
-  controls. They're queued and run on the producer's own thread between
-  reads, so a method can safely touch the same connection the producer is
-  reading from. An exception in one stops the producer like any other.
+  controls; with `toolbar=True` one goes in the toolbar too. They're queued
+  and run on the producer's own thread between reads, so a method can safely
+  touch the same connection the producer is reading from. An exception in
+  one stops the producer like any other.
 """
 
 import asyncio
@@ -564,7 +565,8 @@ class AsyncSyntheticProducer(AsyncDataProducer):
     `AsyncDataProducer` instead of `SyncDataProducer` — a template for
     wrapping an asyncio-based hardware client (`aioserial`, an async
     network client, ...) rather than something you'd use for real demo
-    data. Also demonstrates a Producers-menu function ("Reset Phase").
+    data. Also demonstrates a producer function ("Reset Phase"), in its
+    Producers-menu entry and, with `toolbar=True`, in the toolbar.
     """
 
     def __init__(self, fs: float, freq: float = 5.0, amplitude: float = 1.0, chunk_size: int = 10, parent=None):
@@ -590,7 +592,7 @@ class AsyncSyntheticProducer(AsyncDataProducer):
                 self.emit_data(t, self.amplitude * np.sin(2 * np.pi * self.freq * (t - self._phase_origin)))
             await asyncio.sleep(self.chunk_size / self.fs)  # Real code: `await client.read_chunk()` etc.
 
-    @button("Reset Phase", tooltip="Restart the sine at phase 0")
+    @button("Reset Phase", tooltip="Restart the sine at phase 0", toolbar=True)
     def reset_phase(self):
         # Illustrative custom action — a real one might re-sync a device's
         # onboard clock, send a calibration command, etc. Restarts the sine

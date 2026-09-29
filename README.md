@@ -29,7 +29,8 @@ architecture in Python; still under active development (see
   Producers menu.
 - **Pluggable data producers** — background `QThread`-based producers
   with a synchronous or `asyncio` base class, multi-channel; the Producers
-  menu starts and stops them and runs their own functions. An error stops
+  menu starts and stops them and runs their own functions (which can go in
+  the toolbar too). An error stops
   only the producer that hit it. Ships with a synthetic signal generator, a CSV file-replay
   producer, and templates for serial and `asyncio` sources.
 - **Two storage backends** — a plain `collections.deque` or a
@@ -91,7 +92,7 @@ oszi = Oscilab()
 # Each producer registers its own signals, one per channel, at its own fs
 oszi.attach_producer(SyntheticProducer(fs=100, freq=5.0), "channel-1", storage=oszi.storage.deque)
 oszi.attach_producer(SyntheticProducer(fs=1_000, freq=(1.0, 10.0)), ["channel-2", "channel-3"])
-oszi.attach_producer(AsyncSyntheticProducer(fs=200, freq=2.0), "async")  # has a "Reset Phase" function
+oszi.attach_producer(AsyncSyntheticProducer(fs=200, freq=2.0), "async")  # "Reset Phase" in the toolbar
 
 oszi.add_timeseries_plot("Sensors")
 oszi.link(plot="Sensors", label="channel-1")
@@ -130,7 +131,7 @@ class ImuProducer(SyncDataProducer):
     def on_stop(self):  # runs on the producer's thread, however it stops
         self.device.close()
 
-    @button("Zero")  # in its Producers-menu entry, run on the producer's thread
+    @button("Zero", toolbar=True)  # in its Producers-menu entry and the toolbar; runs on its thread
     def zero(self):
         self.device.zero()
 
@@ -176,9 +177,12 @@ goes to the log file, and a toggle flips back. For a one-off,
 any callable.
 
 Producers use the same decorators (see the `ImuProducer` above), but their
-functions go in the **Producers** menu instead: every attached producer has
-an entry there with **Start**, **Stop** and its `@button` / `@toggle`
-methods, which run on the producer's own thread between reads.
+functions go in the **Producers** menu: every attached producer has an entry
+there with **Start**, **Stop** and its `@button` / `@toggle` methods, which
+run on the producer's own thread between reads. Add `toolbar=True` to put
+one in the toolbar as well — `@button("Zero", toolbar=True)`. It's the same
+control in both places, so a toggle shows the same state in each; its
+toolbar tooltip names the producer.
 
 ### Sessions
 

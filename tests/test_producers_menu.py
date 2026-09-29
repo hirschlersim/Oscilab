@@ -1,6 +1,7 @@
 """
 The Producers menu: every attached producer, with Start, Stop and its own
-@button / @toggle functions — which run on the producer's thread.
+@button / @toggle functions — which run on the producer's thread, and with
+toolbar=True go in the toolbar too.
 """
 
 import threading
@@ -46,11 +47,11 @@ class Device(SyncDataProducer):
             raise RuntimeError("device unplugged")
         return np.array([]), np.array([])
 
-    @button("Zero", tooltip="Zero the sensor")
+    @button("Zero", tooltip="Zero the sensor", toolbar=True)
     def zero(self):
         self.calls.append(("zero", threading.get_ident()))
 
-    @toggle("Heater")
+    @toggle("Heater", toolbar=True)
     def heater(self, on: bool):
         self.calls.append(("heater", on, threading.get_ident()))
 
@@ -69,6 +70,10 @@ def entry(menu: qtw.QMenu, text: str):
 
 def entries(menu: qtw.QMenu) -> list[str]:
     return [a.text() for a in menu.actions() if not a.isSeparator()]
+
+
+def toolbar_action(window: Oscilab, text: str):
+    return next(a for a in window.toolbar.actions() if a.text() == text)
 
 
 def refresh(window: Oscilab):
@@ -153,3 +158,41 @@ def test_functions_are_refused_while_its_stopped(window, monkeypatch):
     heater.trigger()
     assert not heater.isChecked()  # Didn't take, so it flips back
     assert device.calls == []
+
+
+def test_toolbar_functions_go_in_the_toolbar_too(window):
+    window.attach_producer(Device(), ["x", "y"])
+    menu = submenus(window)["Device: x, y"]
+
+    toolbar = [a.text() for a in window.toolbar.actions() if a.text()]
+    assert toolbar[-3:] == ["Full Detail", "Zero", "Heater"]  # After Downsample; not Explode, it's menu-only
+    assert entries(menu) == ["Start", "Stop", "Zero", "Heater", "Explode"]  # The menu has them all
+    assert toolbar_action(window, "Zero") is entry(menu, "Zero")  # One control, in both places
+    assert toolbar_action(window, "Zero").toolTip() == "Zero the sensor (Device: x, y)"  # Says whose it is
+
+
+def test_from_the_toolbar_they_run_on_the_producers_thread_too(qapp, window):
+    device = Device()
+    window.attach_producer(device, ["x", "y"])
+
+    toolbar_action(window, "Zero").trigger()
+    wait_until(qapp, lambda: device.calls)
+    assert device.calls[0][0] == "zero"
+    assert device.calls[0][1] != MAIN_THREAD
+
+
+def test_a_toggle_shows_the_same_state_in_the_toolbar_and_the_menu(qapp, window):
+    device = Device()
+    window.attach_producer(device, ["x", "y"])
+    heater = toolbar_action(window, "Heater")
+
+    heater.trigger()
+    wait_until(qapp, lambda: device.calls)
+    assert entry(submenus(window)["Device: x, y"], "Heater").isChecked()
+    assert not heater.icon().isNull()  # Its green/gray dot, in the toolbar...
+    assert not heater.isIconVisibleInMenu()  # ...and a check mark in the menu
+
+
+def test_add_toolbar_refuses_a_producer(window):
+    with pytest.raises(TypeError, match=r"toolbar=True"):
+        window.add_toolbar(Device())  # Its methods would run on the GUI thread
