@@ -4,6 +4,9 @@ from PyQt6 import QtCore as qtc
 
 
 class TimeseriesPlot(pg.PlotWidget):
+    """Scrolling multi-signal time-series plot. Implements `oscilab.view.View`."""
+
+    y_unit = ""
     cursor_changed = qtc.pyqtSignal()  # Cursor region dragged — fires even while paused
 
     def __init__(self, title: str | None = None):
@@ -104,6 +107,14 @@ class TimeseriesPlot(pg.PlotWidget):
     def set_color(self, label: str, color: str):
         if label in self.curves:
             self.curves[label].setPen(pg.mkPen(color, width=1.5))
+
+    @property
+    def plot_item(self) -> pg.PlotItem:
+        return self.plotItem
+
+    def live_y_range(self) -> tuple[float, float]:
+        y_min, y_max = self.getViewBox().viewRange()[1]
+        return y_min, y_max
 
     def set_y_range(self, auto: bool, y_min: float = 0.0, y_max: float = 1.0):
         """

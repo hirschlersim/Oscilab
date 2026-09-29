@@ -10,8 +10,11 @@ import csv
 import h5py
 import numpy as np
 import pytest
+from PyQt6 import QtWidgets as qtw
 from scipy.io import loadmat
 
+from oscilab import workspace as workspace_module
+from oscilab.view import View
 from oscilab.workspace import Workspace
 
 
@@ -53,6 +56,50 @@ def test_unknown_names_are_rejected(workspace, call, message):
     workspace.register_signal("a", fs=10)
     with pytest.raises(ValueError, match=message):
         call(workspace)
+
+
+def test_plot_titles_are_unique_across_plot_types(workspace):
+    workspace.register_signal("s", fs=1_000)
+    workspace.add_spectrogram("s")
+    with pytest.raises(ValueError, match="already exists"):
+        workspace.add_plot("s")
+
+
+def test_signals_link_only_to_time_series_plots(workspace):
+    workspace.register_signal("s", fs=1_000)
+    workspace.add_spectrogram("s")
+    with pytest.raises(ValueError, match="isn't a time-series plot"):
+        workspace.link(plot="s", label="s")
+
+
+def test_every_plot_type_implements_view(workspace):
+    workspace.register_signal("s", fs=1_000)
+    workspace.add_plot("P")
+    workspace.add_spectrogram("s")
+    assert all(isinstance(view, View) for view in workspace.views.values())
+    assert set(workspace.plots) == {"P"}
+    assert set(workspace.spectrograms) == {"s"}
+
+
+def test_y_axis_button_works_for_every_plot_type(workspace, monkeypatch):
+    asked = []
+
+    def fake_ask_range(_parent, title, **kwargs):
+        asked.append((title, kwargs["unit"]))
+        return False, 1.0, 2.0  # "pin the range to [1, 2]"
+
+    monkeypatch.setattr(workspace_module, "_ask_range", fake_ask_range)
+    workspace.register_signal("s", fs=1_000)
+    workspace.add_plot("P")
+    workspace.add_spectrogram("s")
+
+    for title in ("P", "s"):
+        buttons = workspace.controllers[title].findChildren(qtw.QPushButton)
+        next(b for b in buttons if b.text() == "Y-Axis").click()
+
+    assert asked == [("Y-Axis | P", ""), ("Y-Axis | s", "Hz")]
+    for view in workspace.views.values():
+        assert (view.y_range_auto, view.y_range_min, view.y_range_max) == (False, 1.0, 2.0)
 
 
 def test_a_signal_on_two_plots_gets_one_row(workspace):

@@ -20,6 +20,7 @@ from oscilab.signal_model import SignalModel
 from oscilab.spectrogram_plot import SpectrogramPlot
 from oscilab.storage import Storage
 from oscilab.timeseries_plot import TimeseriesPlot
+from oscilab.view import View
 
 
 def _ask_range(
@@ -44,8 +45,7 @@ class Workspace:
 
         self.signals: dict[str, SignalModel] = {}
         self.math_signals: dict[str, MathSignal] = {}
-        self.plots: dict[str, TimeseriesPlot] = {}
-        self.spectrograms: dict[str, SpectrogramPlot] = {}
+        self.views: dict[str, View] = {}  # Every plot, whatever its type, keyed by title
         self.signal_list = SignalController(title="Signals:")  # ONE flat row per signal, however many plots use it
         self.controllers: dict[str, SignalController] = {}  # per-plot: header buttons only (Y-Axis/Color), no rows
         self.producers: dict[str, DataProducer] = {}  # signal label -> the producer feeding it
@@ -56,43 +56,30 @@ class Workspace:
         self._time_mode = "global"  # "global" or "relative", applied to new plots too
         self._downsampling = False  # min-max curve downsampling, applied to new plots too
 
+    @property
+    def plots(self) -> dict[str, TimeseriesPlot]:
+        """The time-series plots (the ones signals are `link`ed to), keyed by title."""
+        return {title: view for title, view in self.views.items() if isinstance(view, TimeseriesPlot)}
+
+    @property
+    def spectrograms(self) -> dict[str, SpectrogramPlot]:
+        """The spectrograms, keyed by their signal's label."""
+        return {title: view for title, view in self.views.items() if isinstance(view, SpectrogramPlot)}
+
     def add_plot(self, title: str) -> tuple[TimeseriesPlot, SignalController]:
-        if title in self.plots:
-            raise ValueError(f"Plot '{title}' already exists")
+        self.__check_new_title(title)
+        first_plot = next(iter(self.plots.values()), None)
 
         plot = TimeseriesPlot(title=title)
-        plot.set_theme(*self._plot_theme)
-        plot.set_time_mode(self._time_mode)
-        plot.set_downsampling(self._downsampling)
-        controller = SignalController(title="Plot:")
-
-        def open_y_axis_dialog():
-            chosen = _ask_range(
-                controller,
-                f"Y-Axis | {title}",
-                auto=plot.y_range_auto,
-                pinned=(plot.y_range_min, plot.y_range_max),
-                live=tuple(plot.getViewBox().viewRange()[1]),
-            )
-            if chosen:
-                auto, lo, hi = chosen
-                plot.set_y_range(auto, lo, hi)
-                self._log(f"Y-axis for '{title}' set to {'Auto' if auto else f'[{lo:g}, {hi:g}]'}")
-
-        controller.add_header_button(
-            "Y-Axis", "Pin an exact Y-axis range instead of always auto-fitting", open_y_axis_dialog
-        )
+        controller = self.__add_view(title, plot)
         # Fires on every drag, so the readout stays in sync even while
         # paused (the timer-driven `refresh()` loop covers it while running).
         plot.cursor_changed.connect(lambda t=title: self.__refresh_cursor_readout(t))
 
         # Keep every plot's time axis (pan/zoom) in sync with the first one,
         # so scrubbing/zooming one plot moves them all together.
-        if self.plots:
-            plot.setXLink(next(iter(self.plots.values())))
-
-        self.plots[title] = plot
-        self.controllers[title] = controller
+        if first_plot is not None:
+            plot.setXLink(first_plot)
         return plot, controller
 
     def add_spectrogram(
@@ -109,31 +96,13 @@ class Workspace:
         metrics watched — everything except curve color (nothing is drawn as
         a line) and "visible" toggles the whole spectrogram widget instead.
         """
-        if label in self.plots or label in self.spectrograms:
-            raise ValueError(f"Plot '{label}' already exists")
+        self.__check_new_title(label)
         if label not in self.signals:
             raise ValueError(f"Unknown signal '{label}'")
 
         model = self.signals[label]
         spectrogram = SpectrogramPlot(label=label, model=model, nperseg=nperseg, noverlap=noverlap)
-        spectrogram.set_theme(*self._plot_theme)
-        spectrogram.set_time_mode(self._time_mode)
-
-        controller = SignalController(title="Plot:")
-
-        def open_y_axis_dialog():
-            chosen = _ask_range(
-                controller,
-                f"Y-Axis | {label}",
-                auto=spectrogram.freq_range_auto,
-                pinned=(spectrogram.freq_range_min, spectrogram.freq_range_max),
-                live=tuple(spectrogram.plot.getViewBox().viewRange()[1]),
-                unit="Hz",
-            )
-            if chosen:
-                auto, lo, hi = chosen
-                spectrogram.set_y_range(auto, lo, hi)
-                self._log(f"Frequency axis for '{label}' set to {'Auto' if auto else f'[{lo:g}, {hi:g}] Hz'}")
+        controller = self.__add_view(label, spectrogram)
 
         def open_color_dialog():
             levels = spectrogram.img.getLevels()  # None until the first STFT frame is drawn
@@ -151,19 +120,53 @@ class Workspace:
                 self._log(f"Color levels for '{label}' set to {'Auto' if auto else f'[{lo:g}, {hi:g}] dB'}")
 
         controller.add_header_button(
-            "Y-Axis", "Pin an exact frequency range instead of always auto-fitting", open_y_axis_dialog
-        )
-        controller.add_header_button(
             "Color", "Pin exact colormap levels instead of the one-time auto snapshot", open_color_dialog
         )
 
         derived = label in self.math_signals
         row = self._link_row(label, model, derived=derived, has_curve=False)
         row.visibility_changed.connect(lambda _label, visible: spectrogram.setVisible(visible))
-
-        self.spectrograms[label] = spectrogram
-        self.controllers[label] = controller
         return spectrogram, controller
+
+    def __check_new_title(self, title: str):
+        if title in self.views:
+            raise ValueError(f"Plot '{title}' already exists")
+
+    def __add_view(self, title: str, view: View) -> SignalController:
+        """
+        Register `view` under `title` with the current theme, time mode and
+        downsampling applied, and give it a "Plot:" panel with a Y-Axis
+        button. Returns the panel, for any buttons specific to the view.
+        """
+        view.set_theme(*self._plot_theme)
+        view.set_time_mode(self._time_mode)
+        view.set_downsampling(self._downsampling)
+
+        controller = SignalController(title="Plot:")
+        controller.add_header_button(
+            "Y-Axis",
+            "Pin an exact Y-axis range instead of always auto-fitting",
+            lambda _checked=False: self.__open_y_axis_dialog(title),
+        )
+        self.views[title] = view
+        self.controllers[title] = controller
+        return controller
+
+    def __open_y_axis_dialog(self, title: str):
+        view = self.views[title]
+        chosen = _ask_range(
+            self.controllers[title],
+            f"Y-Axis | {title}",
+            auto=view.y_range_auto,
+            pinned=(view.y_range_min, view.y_range_max),
+            live=view.live_y_range(),
+            unit=view.y_unit,
+        )
+        if chosen:
+            auto, lo, hi = chosen
+            view.set_y_range(auto, lo, hi)
+            unit = f" {view.y_unit}" if view.y_unit else ""
+            self._log(f"Y-axis for '{title}' set to {'Auto' if auto else f'[{lo:g}, {hi:g}]{unit}'}")
 
     def register_signal(self, label: str, fs: float, storage: Storage = Storage.ring) -> SignalModel:
         """
@@ -197,8 +200,10 @@ class Workspace:
         return derived_model
 
     def link(self, plot: str, label: str):
-        if plot not in self.plots:
+        if plot not in self.views:
             raise ValueError(f"Unknown plot '{plot}'")
+        if plot not in self.plots:
+            raise ValueError(f"'{plot}' isn't a time-series plot; signals can only be linked to those")
         if label not in self.signals:
             raise ValueError(f"Unknown signal '{label}'")
 
@@ -303,18 +308,15 @@ class Workspace:
             t, x = math_signal.compute()
             self.signals[math_signal.label].set_data(t, x)
 
-        for title, plot in self.plots.items():
-            plot.refresh()
+        for view in self.views.values():
+            view.refresh()
+        for title in self.plots:
             self.__refresh_cursor_readout(title)
-        for spectrogram in self.spectrograms.values():
-            spectrogram.refresh()
         self.signal_list.refresh()
 
     def reset_views(self):
-        for plot in self.plots.values():
-            plot.reset_view()
-        for spectrogram in self.spectrograms.values():
-            spectrogram.reset_view()
+        for view in self.views.values():
+            view.reset_view()
 
     def set_cursors(self, plot: str, enabled: bool):
         """Toggle classic two-cursor measurement on `plot` (see `TimeseriesPlot.set_cursors`)."""
@@ -333,7 +335,7 @@ class Workspace:
         Called every refresh tick and also directly on every cursor drag, so
         it stays live even while the refresh timer is stopped (paused).
         """
-        readout = self.plots[title].cursor_readout()
+        readout = self.views[title].cursor_readout()
         if readout is not None:
             self.controllers[title].set_cursor_readout(self.__format_cursor_readout(readout))
 
@@ -348,10 +350,8 @@ class Workspace:
     def set_theme(self, bg: str, fg: str):
         """Apply a plot color theme now, and remember it for plots added later."""
         self._plot_theme = (bg, fg)
-        for plot in self.plots.values():
-            plot.set_theme(bg, fg)
-        for spectrogram in self.spectrograms.values():
-            spectrogram.set_theme(bg, fg)
+        for view in self.views.values():
+            view.set_theme(bg, fg)
 
     def set_time_mode(self, mode: str):
         """
@@ -359,20 +359,18 @@ class Workspace:
         for plots added later.
         """
         self._time_mode = mode
-        for plot in self.plots.values():
-            plot.set_time_mode(mode)
-        for spectrogram in self.spectrograms.values():
-            spectrogram.set_time_mode(mode)
+        for view in self.views.values():
+            view.set_time_mode(mode)
 
     def set_downsampling(self, enabled: bool):
         """
         Apply min-max curve downsampling now, and remember it for plots
-        added later. Spectrograms are unaffected — their pixels are already
-        an STFT-bin aggregate, not raw samples.
+        added later. (Spectrograms ignore it — their pixels are already
+        STFT-bin aggregates, not raw samples.)
         """
         self._downsampling = enabled
-        for plot in self.plots.values():
-            plot.set_downsampling(enabled)
+        for view in self.views.values():
+            view.set_downsampling(enabled)
         self._log(f"Downsampling {'enabled' if enabled else 'disabled'}")
 
     def set_duration(self, duration: float):
@@ -386,10 +384,8 @@ class Workspace:
         self._log(f"Display duration set to {duration:g}s")
 
     def __plot_items(self) -> dict:
-        """Every plot's/spectrogram's underlying `PlotItem`, keyed by title — what the image exporters render."""
-        items = {title: plot.plotItem for title, plot in self.plots.items()}
-        items.update({title: spec.plot.plotItem for title, spec in self.spectrograms.items()})
-        return items
+        """Every view's `PlotItem`, keyed by title — what the image exporters render."""
+        return {title: view.plot_item for title, view in self.views.items()}
 
     def __export_images(self, base_path, suffix: str) -> list[Path]:
         written, failed = exporters.export_images(self.__plot_items(), base_path, suffix)

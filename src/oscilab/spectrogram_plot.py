@@ -18,6 +18,10 @@ from scipy import signal
 
 
 class SpectrogramPlot(qtw.QWidget):
+    """Live STFT of one signal (see module docstring). Implements `oscilab.view.View`."""
+
+    y_unit = "Hz"  # The Y axis is frequency
+
     def __init__(self, label: str, model, nperseg: int = 256, noverlap: int = 128):
         super().__init__()
         self.label = label
@@ -26,9 +30,9 @@ class SpectrogramPlot(qtw.QWidget):
         self.noverlap = min(noverlap, nperseg - 1)
         self._levels_initialized = False
         self.time_mode = "global"  # "global" (as recorded) or "relative" ([-duration, 0], now at 0)
-        self.freq_range_auto = True  # Off: Y (frequency) pinned to (freq_range_min, freq_range_max)
-        self.freq_range_min = 0.0
-        self.freq_range_max = 1.0
+        self.y_range_auto = True  # Off: Y (frequency) pinned to (y_range_min, y_range_max)
+        self.y_range_min = 0.0
+        self.y_range_max = 1.0
         self.color_levels_auto = True  # Off: colormap pinned to (color_levels_min, color_levels_max) dB
         self.color_levels_min = 0.0
         self.color_levels_max = 1.0
@@ -81,14 +85,25 @@ class SpectrogramPlot(qtw.QWidget):
         label = "Time (relative to now)" if self.time_mode == "relative" else "Time"
         self.plot.setLabel("bottom", label, units="s")
 
+    @property
+    def plot_item(self) -> pg.PlotItem:
+        return self.plot.plotItem
+
+    def live_y_range(self) -> tuple[float, float]:
+        y_min, y_max = self.plot.getViewBox().viewRange()[1]
+        return y_min, y_max
+
+    def set_downsampling(self, _enabled: bool):
+        """No-op: a spectrogram's pixels are already STFT-bin aggregates, not raw samples."""
+
     def set_y_range(self, auto: bool, y_min: float = 0.0, y_max: float = 1.0):
         """
         Auto: frequency axis keeps auto-fitting to the image (0..Nyquist,
         as before). Manual: pin exactly [y_min, y_max] Hz.
         """
-        self.freq_range_auto = auto
-        self.freq_range_min = y_min
-        self.freq_range_max = y_max
+        self.y_range_auto = auto
+        self.y_range_min = y_min
+        self.y_range_max = y_max
         if auto:
             self.plot.enableAutoRange(axis="y")
         else:
@@ -248,9 +263,9 @@ class SpectrogramPlot(qtw.QWidget):
         # updates each tick. Without re-enabling it, the view would silently
         # freeze in place instead of resuming its live scroll.
         self.plot.enableAutoRange(axis="x")
-        if self.freq_range_auto:
+        if self.y_range_auto:
             self.plot.enableAutoRange(axis="y")
         else:
             # A manual frequency range survives Reset View instead of being
             # wiped by it. Color levels are untouched by autoRange anyway.
-            self.plot.setYRange(self.freq_range_min, self.freq_range_max, padding=0)
+            self.plot.setYRange(self.y_range_min, self.y_range_max, padding=0)

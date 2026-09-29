@@ -36,13 +36,14 @@ architecture in Python; still under active development (see
 ## Architecture
 
 ```
-producers.py        Background QThread data sources (Sync/Async base classes)
+producers.py          Background QThread data sources (Sync/Async base classes)
     │
-signal_model.py      Rolling buffer, filtering, scaling, metrics per signal
-math_signal.py        └─ derived signal (A op B)
+signal_model.py       Rolling buffer, filtering, scaling, metrics per signal
+math_signal.py         └─ derived signal (A op B)
     │
-timeseries_plot.py   pyqtgraph-based plot widgets, reading model.snapshot()
-spectrogram_plot.py
+view.py               The interface every plot type implements
+timeseries_plot.py     ├─ scrolling time-series plot
+spectrogram_plot.py    └─ live STFT spectrogram
     │
 signal_controller.py  Per-signal sidebar controls (SignalRow / SignalController)
 dialogs.py            Modal dialogs: range, filter, scaling, math
@@ -50,14 +51,17 @@ dialogs.py            Modal dialogs: range, filter, scaling, math
 workspace.py          Domain layer: owns all registries and wiring
 exporters.py           └─ PNG/SVG/PDF images, CSV/.mat/.h5 data
     │
-oscilab.py             QMainWindow: menus, toolbar, window chrome
+oscilab.py            QMainWindow: menus, toolbar, window chrome
     │
-demo.py                Example usage / entry point
+demo.py               Example usage / `uv run demo` entry point
 ```
 
 Roughly bottom-up: data model → producers → plots → per-signal controls →
 the `Workspace` layer that wires everything together → the `QMainWindow`
-shell on top.
+shell on top. To add a plot type (FFT, XY, ...), implement `View` in
+[view.py](src/oscilab/view.py) and add a `Workspace.add_*` method for it —
+theming, time modes, Reset View, the Y-Axis button and image export then
+work for it without further changes.
 
 ## Getting started
 

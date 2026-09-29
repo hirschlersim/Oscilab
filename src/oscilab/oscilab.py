@@ -380,7 +380,7 @@ class Oscilab(qtw.QMainWindow):
 
     def __export(self, export: _Export):
         workspace = self.workspace
-        has_content = (workspace.plots or workspace.spectrograms) if export.content == "plots" else workspace.signals
+        has_content = workspace.views if export.content == "plots" else workspace.signals
         if not has_content:
             self.log(f"No {export.content} to export", level="warning")
             return
