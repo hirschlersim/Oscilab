@@ -7,6 +7,7 @@ Filter/Scaling/Range ones put their fields behind an enable (or "Auto")
 checkbox, so turning a setting off doesn't lose what was typed in.
 """
 
+from PyQt6 import QtCore as qtc
 from PyQt6 import QtWidgets as qtw
 
 
@@ -303,3 +304,104 @@ class MathDialog(qtw.QDialog):
             self.edit_label.text().strip(),
             self.combo_plot.currentText(),
         )
+
+
+class PlotDialog(qtw.QDialog):
+    """
+    A time-series plot's title and the signals it shows: for adding a plot,
+    or (with `title_editable=False`) for changing an existing one's signals.
+    """
+
+    def __init__(
+        self,
+        signal_labels: list[str],
+        shown: list[str] = (),
+        title: str = "",
+        title_editable: bool = True,
+        parent=None,
+    ):
+        super().__init__(parent)
+        self.setWindowTitle("Add Time Series Plot" if title_editable else f"Signals | {title}")
+        self.setMinimumWidth(280)
+
+        layout = qtw.QVBoxLayout(self)
+        form = qtw.QFormLayout()
+        self.edit_title = qtw.QLineEdit(title)
+        self.edit_title.setEnabled(title_editable)
+        self.edit_title.setToolTip("The plot's title — also how menus and sessions refer to it")
+        form.addRow("Title:", self.edit_title)
+        layout.addLayout(form)
+
+        layout.addWidget(qtw.QLabel("Signals shown:"))
+        self.signal_list = qtw.QListWidget()
+        self.signal_list.setToolTip("Tick the signals this plot should draw")
+        for label in signal_labels:
+            item = qtw.QListWidgetItem(label)
+            item.setFlags(item.flags() | qtc.Qt.ItemFlag.ItemIsUserCheckable)
+            item.setCheckState(qtc.Qt.CheckState.Checked if label in shown else qtc.Qt.CheckState.Unchecked)
+            self.signal_list.addItem(item)
+        layout.addWidget(self.signal_list)
+
+        button_box = qtw.QDialogButtonBox(
+            qtw.QDialogButtonBox.StandardButton.Ok | qtw.QDialogButtonBox.StandardButton.Cancel
+        )
+        button_box.accepted.connect(self.accept)
+        button_box.rejected.connect(self.reject)
+        layout.addWidget(button_box)
+
+    def set_checked(self, labels: list[str]):
+        for i in range(self.signal_list.count()):
+            item = self.signal_list.item(i)
+            checked = item.text() in labels
+            item.setCheckState(qtc.Qt.CheckState.Checked if checked else qtc.Qt.CheckState.Unchecked)
+
+    def get_values(self) -> tuple[str, list[str]]:
+        """Return (title, ticked signals in list order)."""
+        ticked = [
+            self.signal_list.item(i).text()
+            for i in range(self.signal_list.count())
+            if self.signal_list.item(i).checkState() == qtc.Qt.CheckState.Checked
+        ]
+        return self.edit_title.text().strip(), ticked
+
+
+class SpectrogramDialog(qtw.QDialog):
+    """Pick the signal for a new spectrogram, and its STFT window length."""
+
+    WINDOW_LENGTHS = (64, 128, 256, 512, 1024, 2048)
+
+    def __init__(self, signal_labels: list[str], parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Add Spectrogram")
+        self.setMinimumWidth(280)
+
+        layout = qtw.QVBoxLayout(self)
+        form = qtw.QFormLayout()
+        self.combo_signal = qtw.QComboBox()
+        self.combo_signal.addItems(signal_labels)
+        self.combo_signal.setToolTip("The signal to show as a live STFT")
+        form.addRow("Signal:", self.combo_signal)
+
+        self.combo_window = qtw.QComboBox()
+        self.combo_window.addItems([str(n) for n in self.WINDOW_LENGTHS])
+        self.combo_window.setCurrentText("256")
+        self.combo_window.setToolTip(
+            "STFT window length in samples: longer resolves frequency more finely, but time more coarsely"
+        )
+        form.addRow("Window [samples]:", self.combo_window)
+        layout.addLayout(form)
+
+        info_label = qtw.QLabel("Windows overlap by half their length")
+        info_label.setStyleSheet("font-size: 9pt; color: gray;")
+        layout.addWidget(info_label)
+
+        button_box = qtw.QDialogButtonBox(
+            qtw.QDialogButtonBox.StandardButton.Ok | qtw.QDialogButtonBox.StandardButton.Cancel
+        )
+        button_box.accepted.connect(self.accept)
+        button_box.rejected.connect(self.reject)
+        layout.addWidget(button_box)
+
+    def get_values(self) -> tuple[str, int]:
+        """Return (signal, window length)."""
+        return self.combo_signal.currentText(), int(self.combo_window.currentText())

@@ -13,7 +13,7 @@ from PyQt6 import QtGui as qtg
 from PyQt6 import QtWidgets as qtw
 
 from oscilab import session
-from oscilab.dialogs import MathDialog
+from oscilab.dialogs import MathDialog, PlotDialog, SpectrogramDialog
 from oscilab.log import StatusLine, log_file, log_to_file
 from oscilab.math_signal import OPERATORS
 from oscilab.producers import DataProducer
@@ -196,6 +196,7 @@ class Oscilab(qtw.QMainWindow):
     def __build_menu_bar(self):
         self.__build_file_menu()
         self.__build_view_menu()
+        self.__build_plots_menu()
         self.__build_math_menu()
         self.__build_producers_menu()
         self.__build_cursors_menu()
@@ -259,6 +260,18 @@ class Oscilab(qtw.QMainWindow):
             time_action.triggered.connect(lambda _checked=False, m=mode: self.__set_time_mode(m))
             self._time_action_group.addAction(time_action)
             time_menu.addAction(time_action)
+
+    def __build_plots_menu(self):
+        plots_menu = self.menuBar().addMenu("Plots")
+        plots_menu.menuAction().setToolTip("Add plots; each plot's panel can change its signals or remove it")
+        add_plot = qtg.QAction("Add Time Series Plot...", self)
+        add_plot.setToolTip("A new scrolling plot, showing the signals you pick")
+        add_plot.triggered.connect(self.__add_plot_dialog)
+        plots_menu.addAction(add_plot)
+        add_spectrogram = qtg.QAction("Add Spectrogram...", self)
+        add_spectrogram.setToolTip("A live STFT spectrogram of one signal")
+        add_spectrogram.triggered.connect(self.__add_spectrogram_dialog)
+        plots_menu.addAction(add_spectrogram)
 
     def __build_math_menu(self):
         math_menu = self.menuBar().addMenu("Math")
@@ -372,6 +385,10 @@ class Oscilab(qtw.QMainWindow):
         cursor_action.toggled.connect(lambda checked, t=title: self.__set_cursors(t, checked))
         self.cursors_menu.addAction(cursor_action)
 
+        controller.add_header_button(
+            "Signals...", "Choose which signals this plot shows", lambda: self.__edit_plot_signals(title)
+        )
+        self.__add_remove_button(controller, title)
         return plot
 
     def add_spectrogram_plot(self, label: str, nperseg: int = 256, noverlap: int = 128):
@@ -379,7 +396,24 @@ class Oscilab(qtw.QMainWindow):
         spectrogram, controller = self.workspace.add_spectrogram(label, nperseg=nperseg, noverlap=noverlap)
         self.plot_layout.addWidget(spectrogram)
         self.__insert_plot_controller(controller)
+        self.__add_remove_button(controller, label)
         return spectrogram
+
+    def __add_remove_button(self, controller, title: str):
+        controller.add_header_button("Remove", "Remove this plot; its signals stay", lambda: self.remove_plot(title))
+
+    def remove_plot(self, title: str):
+        """Remove a plot (time series or spectrogram); its signals stay."""
+        self.workspace.remove_plot(title)
+        for action in self.cursors_menu.actions():
+            if action.text() == title:
+                self.cursors_menu.removeAction(action)
+                action.deleteLater()
+
+    def unlink(self, plot: str, label: str):
+        """Take a signal off a time-series plot."""
+        self.workspace.unlink(plot, label)
+        self.log(f"Removed signal '{label}' from plot '{plot}'")
 
     def __insert_plot_controller(self, controller: qtw.QWidget):
         """
@@ -701,6 +735,51 @@ class Oscilab(qtw.QMainWindow):
 
     def __set_cursors(self, plot: str, enabled: bool):
         self.workspace.set_cursors(plot, enabled)
+
+    def __add_plot_dialog(self):
+        titles = self.workspace.views
+        default = next(f"Plot {n}" for n in range(1, len(titles) + 2) if f"Plot {n}" not in titles)
+        dialog = PlotDialog(signal_labels=list(self.workspace.signals), title=default, parent=self)
+        if dialog.exec() != qtw.QDialog.DialogCode.Accepted:
+            return
+        title, labels = dialog.get_values()
+        if not title:
+            self.log("A plot needs a title", level="warning")
+            return
+        if title in titles:
+            self.log(f"Plot '{title}' already exists", level="warning")
+            return
+        self.add_timeseries_plot(title)
+        for label in labels:
+            self.link(plot=title, label=label)
+
+    def __add_spectrogram_dialog(self):
+        # A spectrogram is keyed by its signal's name, so a signal can have one
+        candidates = [label for label in self.workspace.signals if label not in self.workspace.views]
+        if not candidates:
+            message = "Every signal already has a spectrogram" if self.workspace.signals else "No signals yet"
+            self.log(message, level="warning")
+            return
+        dialog = SpectrogramDialog(signal_labels=candidates, parent=self)
+        if dialog.exec() != qtw.QDialog.DialogCode.Accepted:
+            return
+        label, nperseg = dialog.get_values()
+        self.add_spectrogram_plot(label, nperseg=nperseg, noverlap=nperseg // 2)
+
+    def __edit_plot_signals(self, title: str):
+        shown = list(self.workspace.plots[title].curves)
+        dialog = PlotDialog(
+            signal_labels=list(self.workspace.signals), shown=shown, title=title, title_editable=False, parent=self
+        )
+        if dialog.exec() != qtw.QDialog.DialogCode.Accepted:
+            return
+        _, wanted = dialog.get_values()
+        for label in shown:
+            if label not in wanted:
+                self.unlink(plot=title, label=label)
+        for label in wanted:
+            if label not in shown:
+                self.link(plot=title, label=label)
 
     def __open_math_dialog(self, operator: str):
         signal_labels = list(self.workspace.signals.keys())

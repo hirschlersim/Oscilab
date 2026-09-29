@@ -55,10 +55,11 @@ def run() -> int:
     # "Noise" and "Mark" in the toolbar, from the DemoTools class above
     oszi.add_toolbar(DemoTools(oszi, channel_1))
 
-    # Blocks until the window is closed; also try the Math, Cursors and
-    # View > Time menus, and each row's details (click its name): live
-    # metrics and the Filter/Scaling buttons. File > Save Session keeps the
-    # whole setup; `uv run oscilab <file>.json` reopens it without this script.
+    # Blocks until the window is closed; also try the Plots, Math, Producers,
+    # Cursors and View > Time menus, each plot's panel (Signals..., Remove),
+    # and each row's details (click its name): live metrics and the
+    # Filter/Scaling buttons. File > Save Session keeps the whole setup;
+    # `uv run oscilab <file>.json` reopens it without this script.
     return oszi.run()
 
 

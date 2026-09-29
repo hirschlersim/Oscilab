@@ -8,15 +8,11 @@ working list, roughly in the order they'd make sense within each section.
 1. **Network/UDP producer template.** An `AsyncDataProducer` over an
    asyncio datagram endpoint, same shape as the existing producers. Sessions
    save it like any other producer (import path + constructor arguments).
-2. **Remove plots, signals and producers at runtime.** Nothing can be taken
-   out once added. Needed for the GUI setup below (a close button per plot,
-   removing a signal and stopping its producer), and it would let File >
-   Open Session replace the current window's setup instead of always
-   opening a new window.
-3. **Add producers and plots from the GUI.** Sessions rebuild a setup from a
-   file, but creating one still takes code (or a hand-written JSON file).
-   Dialogs to add a producer (type + arguments) and a plot would make the
-   whole setup doable without Python.
+2. **Open Session replaces the current setup.** Plots, links and math
+   signals can now be removed at runtime, but producers are attached in code
+   and stay — so a session opened in a window that's in use still gets a new
+   window. Replacing the setup in place would need detaching producers
+   (stop them, drop their signals).
 
 ## Features
 

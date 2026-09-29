@@ -88,6 +88,13 @@ QMenu::item:selected {
     background-color: #007acc;
 }
 
+/* Without this, disabled entries (a running producer's Start, View > Reset
+   View while running) look enabled: the explicit color above overrides Qt's
+   native dimming. */
+QMenu::item:disabled {
+    color: #7a8699;
+}
+
 /* Status Bar styling */
 QStatusBar {
     background-color: #e4e9f5;

@@ -23,6 +23,10 @@ architecture in Python; still under active development (see
   Rows start collapsed; click a signal's name for its details.
 - **Signal math** — derive a new signal as `A op B` (`+ - * /`) from two
   existing signals.
+- **Build the layout in the app** — add time-series plots and spectrograms
+  from the Plots menu; each plot's panel picks the signals it shows or
+  removes it. Producers are attached in code, and started/stopped from the
+  Producers menu.
 - **Pluggable data producers** — background `QThread`-based producers
   with a synchronous or `asyncio` base class, multi-channel; the Producers
   menu starts and stops them and runs their own functions. An error stops
