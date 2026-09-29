@@ -20,6 +20,7 @@ architecture in Python; still under active development (see
   buffer — see [Notable implementation details](#notable-implementation-details)).
 - **Per-signal controls** — visibility, IIR filtering, offset/gain
   scaling, curve color, and live Min/Mean/Max/Peak-to-Peak/RMS metrics.
+  Rows start collapsed; click a signal's name for its details.
 - **Signal math** — derive a new signal as `A op B` (`+ - * /`) from two
   existing signals.
 - **Pluggable data producers** — background `QThread`-based producers

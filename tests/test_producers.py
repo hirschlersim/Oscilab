@@ -68,6 +68,7 @@ class Ramp(SyncDataProducer):
 
 def action_buttons(workspace, label: str) -> dict[str, qtw.QPushButton]:
     row = workspace.signal_list.rows[label]
+    row.set_expanded(True)  # Producer buttons live in a row's (collapsed by default) details
     return {b.text(): b for b in row.findChildren(qtw.QPushButton) if b.text() in ("Mark", "Explode")}
 
 
@@ -152,7 +153,7 @@ def test_an_error_stops_only_that_producer(qapp, workspace):
     assert failing.isFinished()
     assert healthy.isRunning()
     assert workspace._producer_errors["bad"] == "RuntimeError: device unplugged"
-    name = workspace.signal_list.rows["bad"].name_label
+    name = workspace.signal_list.rows["bad"].name_button
     assert name.text().startswith("⚠")
     assert "device unplugged" in name.toolTip()
 
@@ -163,7 +164,7 @@ def test_a_row_created_after_the_error_still_shows_it(qapp, workspace):
 
     workspace.add_plot("P")
     workspace.link(plot="P", label="bad")
-    assert workspace.signal_list.rows["bad"].name_label.text().startswith("⚠")
+    assert workspace.signal_list.rows["bad"].name_button.text().startswith("⚠")
 
 
 def test_a_wrong_shape_is_reported_with_a_hint(qapp, workspace):
@@ -366,7 +367,7 @@ def test_restart_button_restarts_a_failed_producer(qapp, workspace):
 
     assert producer.isRunning()
     assert "s" not in workspace._producer_errors
-    assert not row.name_label.text().startswith("⚠")
+    assert not row.name_button.text().startswith("⚠")
     assert not row.restart_button.isVisibleTo(row)
     assert len(producer.start_threads) == 2
     assert MAIN_THREAD not in producer.start_threads  # on_start runs on the producer's thread
