@@ -6,18 +6,12 @@ registry/wiring logic here. Keeping this Qt-widget-light makes it possible
 to test linking/producer logic without spinning up a full window.
 """
 
-import csv
-import re
 from collections.abc import Sequence
 from pathlib import Path
 
-import h5py
-import pyqtgraph.exporters as pg_exporters
-from PyQt6 import QtCore as qtc
-from PyQt6 import QtGui as qtg
 from PyQt6 import QtWidgets as qtw
-from scipy.io import savemat
 
+from oscilab import exporters
 from oscilab.dialogs import RangeDialog
 from oscilab.math_signal import MathSignal
 from oscilab.producers import DataProducer
@@ -26,11 +20,6 @@ from oscilab.signal_model import SignalModel
 from oscilab.spectrogram_plot import SpectrogramPlot
 from oscilab.storage import Storage
 from oscilab.timeseries_plot import TimeseriesPlot
-
-
-def _safe_name(name: str) -> str:
-    """Sanitize a plot/signal label for use as a filename fragment."""
-    return re.sub(r"[^\w\-]+", "_", name).strip("_") or "signal"
 
 
 def _ask_range(
@@ -47,33 +36,6 @@ def _ask_range(
     if dialog.exec() != qtw.QDialog.DialogCode.Accepted:
         return None
     return dialog.get_values()
-
-
-class _PdfExporter(pg_exporters.Exporter):
-    """
-    pyqtgraph ships Image/SVG/HDF5 exporters plus a `PrintExporter` that
-    always pops up an OS print dialog — nothing for a direct-to-file PDF.
-    Renders straight to a `QPdfWriter` instead, same pattern `ImageExporter`
-    uses internally (`getSourceRect()` + `setExportMode()` + scene.render()).
-    """
-
-    def export(self, file_name: str):
-        source_rect = self.getSourceRect()
-        writer = qtg.QPdfWriter(file_name)
-        writer.setResolution(96)
-        writer.setPageSize(
-            qtg.QPageSize(qtc.QSizeF(source_rect.width(), source_rect.height()), qtg.QPageSize.Unit.Point)
-        )
-        writer.setPageMargins(qtc.QMarginsF(0, 0, 0, 0))
-        target_rect = qtc.QRectF(0, 0, source_rect.width(), source_rect.height())
-
-        painter = qtg.QPainter(writer)
-        try:
-            self.setExportMode(True, {"antialias": True})
-            self.getScene().render(painter, target_rect, source_rect)
-        finally:
-            self.setExportMode(False)
-            painter.end()
 
 
 class Workspace:
@@ -424,113 +386,45 @@ class Workspace:
         self._log(f"Display duration set to {duration:g}s")
 
     def __plot_items(self) -> dict:
-        """
-        Every plot's/spectrogram's underlying `PlotItem`, keyed by title —
-        shared by every image-format exporter below.
-        """
+        """Every plot's/spectrogram's underlying `PlotItem`, keyed by title — what the image exporters render."""
         items = {title: plot.plotItem for title, plot in self.plots.items()}
         items.update({title: spec.plot.plotItem for title, spec in self.spectrograms.items()})
         return items
 
-    def __export_plots(self, base_path, suffix: str, exporter_cls, format_name: str) -> list[Path]:
-        """
-        Shared driver for export_png/export_svg/export_pdf: run
-        `exporter_cls(plot_item).export(path)` for every plot.
-
-        With a single plot, `base_path` is used as-is; with several, each
-        gets the plot's title appended to the filename.
-        """
-        base_path = Path(base_path)
-        written = []
-        plot_items = self.__plot_items()
-
-        for title, plot_item in plot_items.items():
-            path = self.__spread_path(base_path, title, len(plot_items), suffix)
-            try:
-                exporter_cls(plot_item).export(str(path))
-            except Exception as e:  # noqa: BLE001 — see below; any exporter failure is reported, not fatal
-                # pyqtgraph's SVGExporter is known to break against some Qt6
-                # versions (its SVG path post-processor assumes older Qt SVG
-                # serialization); don't let that crash the app or silently
-                # produce a partial file — report it and keep going with any
-                # other plots/formats.
-                self._log(f"Failed to export '{title}' to {format_name}: {e}", level="error")
-                continue
-            written.append(path)
-
+    def __export_images(self, base_path, suffix: str) -> list[Path]:
+        written, failed = exporters.export_images(self.__plot_items(), base_path, suffix)
+        format_name = suffix.lstrip(".").upper()
+        for title, error in failed.items():
+            self._log(f"Failed to export '{title}' to {format_name}: {error}", level="error")
         self._log(f"Exported {len(written)} plot(s) to {format_name}")
         return written
 
     def export_png(self, base_path) -> list[Path]:
         """Export every plot to a PNG next to `base_path` (raster)."""
-        return self.__export_plots(base_path, ".png", pg_exporters.ImageExporter, "PNG")
+        return self.__export_images(base_path, ".png")
 
     def export_svg(self, base_path) -> list[Path]:
         """Export every plot to an SVG next to `base_path` (vector)."""
-        return self.__export_plots(base_path, ".svg", pg_exporters.SVGExporter, "SVG")
+        return self.__export_images(base_path, ".svg")
 
     def export_pdf(self, base_path) -> list[Path]:
         """Export every plot to a PDF next to `base_path` (vector)."""
-        return self.__export_plots(base_path, ".pdf", _PdfExporter, "PDF")
+        return self.__export_images(base_path, ".pdf")
 
     def export_csv(self, base_path) -> list[Path]:
         """Export every signal's (time, value) buffer to a CSV next to `base_path`."""
-        base_path = Path(base_path)
-        written = []
-
-        for label, model in self.signals.items():
-            path = self.__spread_path(base_path, label, len(self.signals), ".csv")
-            time_arr, data_arr = model.snapshot()
-            with path.open("w", newline="") as f:
-                writer = csv.writer(f)
-                writer.writerow(["time", "value"])
-                writer.writerows(zip(time_arr, data_arr, strict=True))
-            written.append(path)
-
+        written = exporters.export_csv(self.signals, base_path)
         self._log(f"Exported {len(written)} signal(s) to CSV")
         return written
 
     def export_mat(self, path) -> Path:
-        """
-        Export every signal's (time, value) buffer into one MATLAB .mat file.
-
-        Unlike CSV/PNG (one file per plot/signal), .mat/.h5 bundle every
-        signal into a single file — the idiomatic layout for both formats.
-        Variables are named `<signal>_time` / `<signal>_data`.
-        """
-        path = Path(path).with_suffix(".mat")
-        mat_dict = {}
-        for label, model in self.signals.items():
-            safe = _safe_name(label)
-            time_arr, data_arr = model.snapshot()
-            mat_dict[f"{safe}_time"] = time_arr
-            mat_dict[f"{safe}_data"] = data_arr
-
-        savemat(str(path), mat_dict)
+        """Export every signal's (time, value) buffer into one MATLAB .mat file."""
+        path = exporters.export_mat(self.signals, path)
         self._log(f"Exported {len(self.signals)} signal(s) to {path.name}")
         return path
 
     def export_h5(self, path) -> Path:
-        """
-        Export every signal's (time, value) buffer into one HDF5 .h5 file,
-        one group per signal (with `fs` as a group attribute).
-        """
-        path = Path(path).with_suffix(".h5")
-        with h5py.File(path, "w") as f:
-            for label, model in self.signals.items():
-                time_arr, data_arr = model.snapshot()
-                group = f.create_group(_safe_name(label))
-                group.create_dataset("time", data=time_arr)
-                group.create_dataset("data", data=data_arr)
-                group.attrs["fs"] = model.fs
-                group.attrs["label"] = label
-
+        """Export every signal's (time, value) buffer into one HDF5 .h5 file."""
+        path = exporters.export_h5(self.signals, path)
         self._log(f"Exported {len(self.signals)} signal(s) to {path.name}")
         return path
-
-    @staticmethod
-    def __spread_path(base_path: Path, name: str, count: int, suffix: str) -> Path:
-        """base_path as-is for a single item; base_path_<name><suffix> for several."""
-        if count <= 1:
-            return base_path.with_suffix(suffix)
-        return base_path.with_name(f"{base_path.stem}_{_safe_name(name)}{suffix}")

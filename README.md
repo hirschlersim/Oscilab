@@ -47,7 +47,8 @@ spectrogram_plot.py
 signal_controller.py  Per-signal sidebar controls (SignalRow / SignalController)
 dialogs.py            Modal dialogs: range, filter, scaling, math
     │
-workspace.py          Domain layer: owns all registries, wiring, export
+workspace.py          Domain layer: owns all registries and wiring
+exporters.py           └─ PNG/SVG/PDF images, CSV/.mat/.h5 data
     │
 oscilab.py             QMainWindow: menus, toolbar, window chrome
     │

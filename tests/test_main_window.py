@@ -41,7 +41,7 @@ def test_file_menu_lists_every_export(window):
     assert [a.text() for a in file_menu.actions()] == [".png", ".svg", ".pdf", ".csv", ".mat", ".h5"]
 
 
-@pytest.mark.parametrize("suffix", [".csv", ".png"])
+@pytest.mark.parametrize("suffix", [".png", ".svg", ".pdf", ".csv", ".mat", ".h5"])
 def test_export_writes_the_chosen_file(window, tmp_path, monkeypatch, suffix):
     model = window.register_signal("s", fs=10)
     model.add_data(np.arange(5) / 10, np.arange(5.0))
@@ -53,6 +53,7 @@ def test_export_writes_the_chosen_file(window, tmp_path, monkeypatch, suffix):
     file_action(window, suffix).trigger()
 
     assert target.exists()
+    assert target.stat().st_size > 0
 
 
 def test_export_with_nothing_to_export_skips_the_dialog(window, monkeypatch):
