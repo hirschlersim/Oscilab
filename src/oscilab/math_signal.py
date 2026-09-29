@@ -16,7 +16,9 @@ class MathSignal:
     `label = model_a <operator> model_b`, recomputed from scratch each tick.
 
     Not a `DataProducer` — no new samples originate here; it derives a
-    dependent view over the overlapping tail of two existing models' buffers.
+    dependent view over the time range both models' buffers cover, at A's
+    timestamps (and so A's sampling rate). B is linearly interpolated onto
+    them, so the two may have different rates or start times.
     """
 
     def __init__(self, label: str, model_a, model_b, operator: str):
@@ -29,13 +31,15 @@ class MathSignal:
         self._fn = _FUNCS[operator]
 
     def compute(self) -> tuple[np.ndarray, np.ndarray]:
-        """Return (t, x) over the overlapping tail of both source buffers."""
-        n = min(len(self.model_a.data), len(self.model_b.data))
-        if n == 0:
+        """Return (t, x) for A's timestamps within the time range both sources cover."""
+        t_a, data_a = self.model_a.snapshot()
+        t_b, data_b = self.model_b.snapshot()
+        if t_a.size == 0 or t_b.size == 0:
             return np.array([]), np.array([])
 
-        t_a, data_a = self.model_a.snapshot()
-        _, data_b = self.model_b.snapshot()
-        t = t_a[-n:]
-        x = self._fn(data_a[-n:], data_b[-n:])
+        # Pairing samples by position instead would combine values from
+        # different moments whenever the rates or start times differ.
+        overlap = (t_a >= t_b[0]) & (t_a <= t_b[-1])
+        t = t_a[overlap]
+        x = self._fn(data_a[overlap], np.interp(t, t_b, data_b))
         return t, x
