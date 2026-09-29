@@ -1,7 +1,7 @@
 from collections.abc import Callable
 from typing import ClassVar
 
-from loguru import logger
+from loguru import logger as default_logger
 from PyQt6 import QtCore as qtc
 from PyQt6 import QtGui as qtg
 from PyQt6 import QtWidgets as qtw
@@ -21,8 +21,9 @@ class SignalController(qtw.QGroupBox):
     per-plot property, not a per-signal one.
     """
 
-    def __init__(self, title: str = "Controls:", parent=None):
+    def __init__(self, title: str = "Controls:", parent=None, logger=None):
         super().__init__(title, parent)
+        self._logger = logger or default_logger  # Handed to its rows
 
         self._layout = qtw.QVBoxLayout(self)
         self._layout.setAlignment(qtc.Qt.AlignmentFlag.AlignTop)
@@ -61,7 +62,9 @@ class SignalController(qtw.QGroupBox):
         if label in self.rows:
             raise ValueError(f"Signal '{label}' already added")
 
-        row = SignalRow(label=label, model=model, derived=derived, has_curve=has_curve, parent=self)
+        row = SignalRow(
+            label=label, model=model, derived=derived, has_curve=has_curve, parent=self, logger=self._logger
+        )
         self.rows[label] = row
         self._layout.addWidget(row)
         return row
@@ -97,8 +100,9 @@ class SignalRow(qtw.QWidget):
     }
     _NAME_TOOLTIP = "Show or hide this signal's metrics, Filter/Scaling and producer buttons"
 
-    def __init__(self, label: str, model, derived: bool = False, has_curve: bool = True, parent=None):
+    def __init__(self, label: str, model, derived: bool = False, has_curve: bool = True, parent=None, logger=None):
         super().__init__(parent)
+        self._logger = logger or default_logger
         self.label = label
         self.model = model
         self.derived = derived
@@ -319,13 +323,13 @@ class SignalRow(qtw.QWidget):
                 self.model.add_filter(cutoff=cutoff, order=order)
             except ValueError as e:
                 # Reached from a Qt slot, where an unhandled exception aborts the app.
-                logger.warning(f"Filter for '{self.label}' not applied: {e}")
+                self._logger.warning(f"Filter for '{self.label}' not applied: {e}")
                 enabled = False
             else:
-                logger.info(f"Filter for '{self.label}' enabled: cutoff={cutoff}Hz, order={order}")
+                self._logger.info(f"Filter for '{self.label}' enabled: cutoff={cutoff}Hz, order={order}")
         if not enabled:
             if self.filter_settings["enabled"]:
-                logger.info(f"Filter for '{self.label}' disabled")
+                self._logger.info(f"Filter for '{self.label}' disabled")
             self.model.remove_filter()
 
         self.filter_settings = {"enabled": enabled, "cutoff": cutoff, "order": order}
@@ -337,10 +341,10 @@ class SignalRow(qtw.QWidget):
         """Turn gain/offset scaling on or off: output = (raw - offset) * gain."""
         if enabled:
             self.model.add_scaling(gain, offset)
-            logger.info(f"Scaling for '{self.label}' enabled: gain={gain}, offset={offset}")
+            self._logger.info(f"Scaling for '{self.label}' enabled: gain={gain}, offset={offset}")
         else:
             if self.scaling_settings["enabled"]:
-                logger.info(f"Scaling for '{self.label}' disabled")
+                self._logger.info(f"Scaling for '{self.label}' disabled")
             self.model.remove_scaling()
 
         self.scaling_settings = {"enabled": enabled, "gain": gain, "offset": offset}

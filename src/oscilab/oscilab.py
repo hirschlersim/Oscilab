@@ -1,4 +1,5 @@
 import ctypes
+import itertools
 import sys
 from collections.abc import Callable, Sequence
 from importlib import metadata, resources
@@ -12,6 +13,7 @@ from PyQt6 import QtWidgets as qtw
 
 from oscilab import session
 from oscilab.dialogs import MathDialog
+from oscilab.log import StatusLine, log_file, log_to_file
 from oscilab.math_signal import OPERATORS
 from oscilab.producers import DataProducer
 from oscilab.storage import Storage
@@ -74,6 +76,9 @@ _EXPORTS = (
 )
 
 
+_window_ids = itertools.count(1)  # Tells each window's log messages apart (see oscilab.log)
+
+
 class Oscilab(qtw.QMainWindow):
     """
     Main window: chrome only (menu, toolbar, status bar, refresh loop).
@@ -86,10 +91,10 @@ class Oscilab(qtw.QMainWindow):
     # `oszi.attach_producer(..., storage=oszi.storage.deque)` instead of a bare string.
     storage = Storage
 
-    # (plot background, plot foreground) per theme — the QSS covers widget
-    # chrome, but pyqtgraph's canvas colors are set programmatically.
     _extra_windows: ClassVar[set["Oscilab"]] = set()  # Opened by open_session(); see there
 
+    # (plot background, plot foreground) per theme — the QSS covers widget
+    # chrome, but pyqtgraph's canvas colors are set programmatically.
     _PLOT_THEMES: ClassVar[dict[str, tuple[str, str]]] = {
         "dark": ("#202f46", "#ffffff"),
         "light": ("#f5f5f5", "#1a1a1a"),
@@ -112,12 +117,7 @@ class Oscilab(qtw.QMainWindow):
         # window, e.g. File > Open Session; Qt allows only one per process).
         app = app or qtw.QApplication.instance()
         starting_app = app is None
-        if starting_app:
-            self.app = qtw.QApplication([])
-            self.app.setStyle("windows11")
-            self.app.setStyleSheet(self.__load_qss("dark"))
-        else:
-            self.app = app
+        self.app = self.__start_application() if starting_app else app
 
         with resources.as_file(icon_path) as path:
             app_icon = qtg.QIcon(str(path))
@@ -125,6 +125,14 @@ class Oscilab(qtw.QMainWindow):
 
         super().__init__()
         self.setWindowIcon(app_icon)  # Also set on the window itself, for the title bar/taskbar
+
+        # Messages logged through `self.logger` also show in this window's
+        # status bar, styled by severity (see oscilab.log). The Workspace and
+        # its signal rows log through it too.
+        self._theme = "dark"  # Matches the QSS loaded above and Workspace's default plot colors
+        window_id = next(_window_ids)
+        self.logger = logger.bind(window=window_id)
+        self._status_line = StatusLine(self.statusBar(), window_id, theme=self._theme)
 
         # Splash screen — only while the application itself is starting up.
         # Not for a window joining a running app (File > Open Session): a
@@ -149,8 +157,7 @@ class Oscilab(qtw.QMainWindow):
         self.move(50, 50)
 
         # Domain layer
-        self.workspace = Workspace(log=self.log)
-        self._theme = "dark"  # Matches the QSS loaded above and Workspace's default plot colors
+        self.workspace = Workspace(logger=self.logger)
         self._fps = 30
 
         # Layout
@@ -267,6 +274,14 @@ class Oscilab(qtw.QMainWindow):
         about_action.setToolTip("Show the installed Oscilab version")
         about_action.triggered.connect(self.__show_about)
         help_menu.addAction(about_action)
+        # Open Log Folder
+        log_action = qtg.QAction("Open Log Folder", self)
+        log_action.setToolTip("Show where the log file is, e.g. to attach it to a bug report")
+        log_action.setEnabled(log_file() is not None)
+        log_action.triggered.connect(
+            lambda: qtg.QDesktopServices.openUrl(qtc.QUrl.fromLocalFile(str(log_file().parent)))
+        )
+        help_menu.addAction(log_action)
         # About QT
         about_qt_action = qtg.QAction("About Qt", self)
         about_qt_action.setToolTip("Show info about the Qt framework this app is built on")
@@ -376,10 +391,13 @@ class Oscilab(qtw.QMainWindow):
         """
         return self.workspace.attach_producer(producer, signals, storage=storage)
 
-    def log(self, message: str, level: str = "info", timeout_ms: int = 4000):
-        """Central logging: routes to loguru and the status bar at once."""
-        getattr(logger, level, logger.info)(message)
-        self.statusBar().showMessage(message, timeout_ms)
+    def log(self, message: str, level: str = "info"):
+        """
+        Log through this window's `logger`: to the console, the log file and
+        this window's status bar. `level`: "debug", "info", "success",
+        "warning", "error" or "critical".
+        """
+        self.logger.opt(depth=1).log(level.upper(), message)
 
     @property
     def theme(self) -> str:
@@ -436,13 +454,13 @@ class Oscilab(qtw.QMainWindow):
     def save_session(self, path) -> Path:
         """Save this window's setup as JSON — see `oscilab.session`."""
         path = session.save(self, path)
-        self.log(f"Session saved to {path.name}")
+        self.log(f"Session saved to {path.name}", level="success")
         return path
 
     def load_session(self, path):
         """Rebuild a saved setup in this window, which must still be empty."""
         session.load(self, path)
-        self.log(f"Session loaded from {Path(path).name}")
+        self.log(f"Session loaded from {Path(path).name}", level="success")
 
     def open_session(self, path) -> "Oscilab":
         """
@@ -478,6 +496,7 @@ class Oscilab(qtw.QMainWindow):
 
     def closeEvent(self, event):
         self.workspace.stop_producers()
+        self._status_line.close()
         Oscilab._extra_windows.discard(self)
         super().closeEvent(event)
 
@@ -523,12 +542,25 @@ class Oscilab(qtw.QMainWindow):
         self.log(f"Couldn't {verb} session: {error}", level="error")
         qtw.QMessageBox.warning(self, f"Couldn't {verb} session", str(error))
 
+    def __start_application(self) -> qtw.QApplication:
+        """The QApplication, when this window is the one starting it: styled, and logging to a file."""
+        app = qtw.QApplication([])
+        app.setApplicationName("Oscilab")  # Also names the per-user folders, e.g. for the log file
+        app.setStyle("windows11")
+        app.setStyleSheet(self.__load_qss("dark"))
+        try:
+            log_to_file()
+        except OSError as e:  # A read-only profile, say: carry on without the file
+            logger.warning(f"Can't write the log file: {e}")
+        return app
+
     def __load_qss(self, theme: str) -> str:
         with resources.files("oscilab.assets").joinpath(f"style_{theme}.qss").open("r") as f:
             return f.read()
 
     def __set_theme(self, theme: str):
         self._theme = theme
+        self._status_line.theme = theme
         self.app.setStyleSheet(self.__load_qss(theme))
         self.workspace.set_theme(*self._PLOT_THEMES[theme])
         self.log(f"Theme set to {theme.capitalize()}")
@@ -586,7 +618,8 @@ class Oscilab(qtw.QMainWindow):
             f"""
             <h3>Oscilab</h3>
 
-            Version: {version}
+            Version: {version}<br>
+            Log file: {log_file() or "off"}
 
             Signal visualization and analysis software.
 

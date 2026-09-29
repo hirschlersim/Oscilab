@@ -13,14 +13,6 @@ working list, roughly in the order they'd make sense.
    Dialogs to add a producer (type + arguments) and a plot would make the
    whole setup doable without Python.
 
-## Small fixes
-
-- **`.mat` variable names.** The export names variables `<label>_time` /
-  `<label>_data`, but labels like `channel-1` aren't valid MATLAB names
-  (letters, digits and underscores, starting with a letter). Sanitize to
-  `[A-Za-z]\w*`.
-- have loggin work  via a oscilab logger, which has loguru, file, and a ststus line colord with properties according to the severity of the event
-
 ## Code quality
 
 - **Type hints + mypy.** Add hints to the remaining untyped parameters

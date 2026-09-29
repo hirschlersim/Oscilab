@@ -53,7 +53,8 @@ workspace.py          Domain layer: owns all registries and wiring
 exporters.py           └─ PNG/SVG/PDF images, CSV/.mat/.h5 data
     │
 oscilab.py            QMainWindow: menus, toolbar, window chrome
-session.py             └─ save/restore a whole setup as JSON
+session.py             ├─ save/restore a whole setup as JSON
+log.py                 └─ logging: console, log file, status bar
     │
 demo.py               Example usage / `uv run demo` entry point
 __main__.py           `uv run oscilab [session.json]` entry point
@@ -163,6 +164,25 @@ producer classes can be saved too, as long as they're defined in an
 importable module (not the script you run) and take JSON-friendly
 constructor arguments. Loading a session imports those modules, so only
 open session files you trust.
+
+### Logging
+
+Everything is logged with [loguru](https://github.com/Delgan/loguru), to
+three places:
+
+- **the console**;
+- **a log file**, when Oscilab starts the application itself (`uv run demo`,
+  `uv run oscilab`): in your per-user app data folder
+  (`%LOCALAPPDATA%\Oscilab\logs\oscilab.log` on Windows), rotated at 1 MB
+  with the last 5 kept, producers' tracebacks included. **Help → Open Log
+  Folder** gets you there, and **Help → About** shows the path;
+- **the window's status bar**, styled by severity: info plain, warnings
+  amber with ⚠ (8 s), errors red and bold with ✖ (until the next message).
+  Debug messages go to the file only.
+
+From your own code, log through the window so messages reach its status bar
+too: `oszi.log("Calibrated", level="success")`, or
+`oszi.logger.warning(...)` with loguru's full API.
 
 ## Notable implementation details
 

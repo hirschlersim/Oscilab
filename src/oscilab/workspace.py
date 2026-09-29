@@ -9,6 +9,7 @@ to test linking/producer logic without spinning up a full window.
 from collections.abc import Sequence
 from pathlib import Path
 
+from loguru import logger as default_logger
 from PyQt6 import QtCore as qtc
 from PyQt6 import QtWidgets as qtw
 
@@ -70,13 +71,15 @@ class _ProducerLink(qtc.QObject):
 
 
 class Workspace:
-    def __init__(self, log=None):
-        self._log = log or (lambda *_args, **_kwargs: None)
+    def __init__(self, logger=None):
+        # Oscilab passes its window's logger, so messages reach its status bar
+        self._logger = logger or default_logger
 
         self.signals: dict[str, SignalModel] = {}
         self.math_signals: dict[str, MathSignal] = {}
         self.views: dict[str, View] = {}  # Every plot, whatever its type, keyed by title
-        self.signal_list = SignalController(title="Signals:")  # ONE flat row per signal, however many plots use it
+        # ONE flat row per signal, however many plots use it
+        self.signal_list = SignalController(title="Signals:", logger=self._logger)
         self.controllers: dict[str, SignalController] = {}  # per-plot: header buttons only (Y-Axis/Color), no rows
         self.producers: dict[str, DataProducer] = {}  # signal label -> the producer feeding it
         self._producer_errors: dict[str, str] = {}  # signal label -> why its producer stopped
@@ -85,6 +88,9 @@ class Workspace:
         self._duration = 10.0  # seconds of history kept/displayed, applied to new signals too
         self._time_mode = "global"  # "global" or "relative", applied to new plots too
         self._downsampling = False  # min-max curve downsampling, applied to new plots too
+
+    def _log(self, message: str, level: str = "info"):
+        self._logger.opt(depth=1).log(level.upper(), message)
 
     @property
     def duration(self) -> float:
@@ -447,7 +453,7 @@ class Workspace:
         format_name = suffix.lstrip(".").upper()
         for title, error in failed.items():
             self._log(f"Failed to export '{title}' to {format_name}: {error}", level="error")
-        self._log(f"Exported {len(written)} plot(s) to {format_name}")
+        self._log(f"Exported {len(written)} plot(s) to {format_name}", level="success")
         return written
 
     def export_png(self, base_path) -> list[Path]:
@@ -465,17 +471,17 @@ class Workspace:
     def export_csv(self, base_path) -> list[Path]:
         """Export every signal's (time, value) buffer to a CSV next to `base_path`."""
         written = exporters.export_csv(self.signals, base_path)
-        self._log(f"Exported {len(written)} signal(s) to CSV")
+        self._log(f"Exported {len(written)} signal(s) to CSV", level="success")
         return written
 
     def export_mat(self, path) -> Path:
         """Export every signal's (time, value) buffer into one MATLAB .mat file."""
         path = exporters.export_mat(self.signals, path)
-        self._log(f"Exported {len(self.signals)} signal(s) to {path.name}")
+        self._log(f"Exported {len(self.signals)} signal(s) to {path.name}", level="success")
         return path
 
     def export_h5(self, path) -> Path:
         """Export every signal's (time, value) buffer into one HDF5 .h5 file."""
         path = exporters.export_h5(self.signals, path)
-        self._log(f"Exported {len(self.signals)} signal(s) to {path.name}")
+        self._log(f"Exported {len(self.signals)} signal(s) to {path.name}", level="success")
         return path

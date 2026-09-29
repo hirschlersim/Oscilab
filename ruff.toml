@@ -87,6 +87,7 @@ lint.ignore = [
     "FBT002", # Flake8-boolean-trap - bool default positional argument. Same as FBT001.
     "N813",  # PEP8 Naming - CamelCase module imported as lowercase. `from PyQt6 import QtWidgets as qtw` is this project's convention.
     "PLR2004", # Pylint - magic value comparison. Small literal counts (2 math operands, 2 CSV columns) read clearer inline.
+    "G004",  # Flake8-logging-format - f-string in a logging call. That's a stdlib `logging` concern (it formats lazily); this project logs with loguru, where f-strings are fine.
 ]
 
 # Qt dialogs take (label, a few current values, parent) — 5 is too tight for that.
