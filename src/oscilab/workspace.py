@@ -173,7 +173,7 @@ class Workspace:
 
         derived = label in self.math_signals
         row = self._link_row(label, model, derived=derived, has_curve=False)
-        row.visibility_changed.connect(lambda _label, visible: spectrogram.setVisible(visible))
+        row.visibility_changed.connect(spectrogram.set_visible)
         return spectrogram, controller
 
     def __check_new_title(self, title: str):
@@ -190,7 +190,7 @@ class Workspace:
         view.set_time_mode(self._time_mode)
         view.set_downsampling(self._downsampling)
 
-        controller = SignalController(title="Plot:")
+        controller = SignalController(title=f"Plot: {title}")
         controller.add_header_button(
             "Y-Axis",
             "Pin an exact Y-axis range instead of always auto-fitting",
@@ -257,6 +257,8 @@ class Workspace:
 
         model = self.signals[label]
         target_plot = self.plots[plot]
+        if label in target_plot.curves:
+            raise ValueError(f"'{label}' is already shown in '{plot}'")
         derived = label in self.math_signals
 
         color = target_plot.add_signal(label=label, model=model)
@@ -280,9 +282,92 @@ class Workspace:
 
         row = self.signal_list.add_signal(label=label, model=model, derived=derived, has_curve=has_curve)
         row.restart_requested.connect(self.restart_producer)
+        row.remove_requested.connect(self.__remove_signal_from_row)
         if label in self._producer_errors:
             row.set_error(self._producer_errors[label])
         return row
+
+    def unlink(self, plot: str, label: str):
+        """Take a signal off a time-series plot. Its row goes once no plot shows it."""
+        if plot not in self.plots:
+            raise ValueError(f"Unknown time-series plot '{plot}'")
+        target = self.plots[plot]
+        if label not in target.curves:
+            raise ValueError(f"'{label}' isn't shown in '{plot}'")
+        self.__disconnect_row(label, target)
+        target.remove_signal(label)
+        self.__drop_row_if_unshown(label)
+
+    def remove_plot(self, title: str):
+        """
+        Remove a plot — time series or spectrogram. Its signals stay; rows of
+        signals no plot shows anymore go.
+        """
+        if title not in self.views:
+            raise ValueError(f"Unknown plot '{title}'")
+        view = self.views.pop(title)
+        controller = self.controllers.pop(title)
+
+        shown = list(view.curves) if isinstance(view, TimeseriesPlot) else [title]
+        for label in shown:
+            self.__disconnect_row(label, view)
+        if isinstance(view, TimeseriesPlot):
+            view.setXLink(None)
+            self.__relink_x_axes()
+        for widget in (view, controller):
+            widget.hide()
+            widget.deleteLater()
+        for label in shown:
+            self.__drop_row_if_unshown(label)
+        self._log(f"Removed plot '{title}'")
+
+    def remove_signal(self, label: str):
+        """
+        Remove a math signal, or one you registered yourself, from every plot
+        and the list. A producer-fed signal can't go on its own — its producer
+        keeps feeding it; stop the producer instead.
+        """
+        if label not in self.signals:
+            raise ValueError(f"Unknown signal '{label}'")
+        if label in self.producers:
+            raise ValueError(f"'{label}' is fed by {type(self.producers[label]).__name__}; stop the producer instead")
+        users = [m.label for m in self.math_signals.values() if label in (m.model_a.label, m.model_b.label)]
+        if users:
+            raise ValueError(f"'{label}' is used by math signal(s) {', '.join(users)}; remove those first")
+
+        for title, plot in list(self.plots.items()):
+            if label in plot.curves:
+                self.unlink(title, label)
+        if label in self.spectrograms:
+            self.remove_plot(label)
+        self.math_signals.pop(label, None)
+        del self.signals[label]
+        self._log(f"Removed signal '{label}'")
+
+    def __remove_signal_from_row(self, label: str):
+        try:
+            self.remove_signal(label)
+        except ValueError as e:  # E.g. another math signal uses it: say so (this is a Qt slot)
+            self._log(str(e), level="warning")
+
+    def __disconnect_row(self, label: str, view: View):
+        row = self.signal_list.rows[label]
+        row.visibility_changed.disconnect(view.set_visible)
+        if isinstance(view, TimeseriesPlot):
+            row.color_changed.disconnect(view.set_color)
+
+    def __drop_row_if_unshown(self, label: str):
+        shown = label in self.spectrograms or any(label in plot.curves for plot in self.plots.values())
+        if not shown and label in self.signal_list.rows:
+            self.signal_list.remove_signal(label)
+
+    def __relink_x_axes(self):
+        """Link every time-series plot's X axis to the first one again (e.g. after the first was removed)."""
+        plots = list(self.plots.values())
+        for plot in plots:
+            plot.setXLink(None)
+        for plot in plots[1:]:
+            plot.setXLink(plots[0])
 
     def attach_producer(
         self, producer: DataProducer, signals: str | Sequence[str], storage: Storage = Storage.ring
@@ -325,23 +410,48 @@ class Workspace:
             if label in self.signal_list.rows:
                 self.signal_list.rows[label].set_error(message)
 
+    def start_producer(self, label: str):
+        """Start the producer feeding `label` (and its other signals) again, if it's stopped."""
+        producer = self.__producer_feeding(label)
+        if not producer.running:
+            self.__start(producer, "Started")
+
+    def stop_producer(self, label: str):
+        """Stop the producer feeding `label` (and its other signals); its data stays."""
+        producer = self.__producer_feeding(label)
+        if producer.running:
+            producer.stop()
+            self._log(f"Stopped {self.__describe(producer)}")
+
     def restart_producer(self, label: str):
         """
         Restart the producer feeding `label` (and its other signals), e.g.
         after it stopped with an error. A running producer is stopped first.
         """
-        producer = self.producers.get(label)
-        if producer is None:
-            raise ValueError(f"No producer feeds '{label}'")
+        producer = self.__producer_feeding(label)
+        producer.stop()
+        self.__start(producer, "Restarted")
 
-        producer.stop()  # Also waits out an error's on_stop() that may still be running
-        labels = [name for name, p in self.producers.items() if p is producer]
-        for name in labels:
+    def __start(self, producer: DataProducer, verb: str):
+        producer.wait()  # An error's on_stop() may still be finishing
+        for name in self.signals_fed_by(producer):
             self._producer_errors.pop(name, None)
             if name in self.signal_list.rows:
                 self.signal_list.rows[name].clear_error()
         producer.start()
-        self._log(f"Restarted {type(producer).__name__} for {', '.join(repr(name) for name in labels)}")
+        self._log(f"{verb} {self.__describe(producer)}")
+
+    def __producer_feeding(self, label: str) -> DataProducer:
+        if label not in self.producers:
+            raise ValueError(f"No producer feeds '{label}'")
+        return self.producers[label]
+
+    def signals_fed_by(self, producer: DataProducer) -> list[str]:
+        """The signals `producer` feeds, in channel order."""
+        return [label for label, p in self.producers.items() if p is producer]
+
+    def __describe(self, producer: DataProducer) -> str:
+        return f"{type(producer).__name__} for {', '.join(repr(name) for name in self.signals_fed_by(producer))}"
 
     def stop_producers(self):
         for producer in dict.fromkeys(self.producers.values()):  # a multi-channel producer is listed once per signal

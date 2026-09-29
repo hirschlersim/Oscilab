@@ -96,6 +96,10 @@ class SpectrogramPlot(qtw.QWidget):
     def set_downsampling(self, _enabled: bool):
         """No-op: a spectrogram's pixels are already STFT-bin aggregates, not raw samples."""
 
+    def set_visible(self, _label: str, visible: bool):
+        """Show/hide the whole spectrogram — its signal row's Visible toggle."""
+        self.setVisible(visible)
+
     def set_y_range(self, auto: bool, y_min: float = 0.0, y_max: float = 1.0):
         """
         Auto: frequency axis keeps auto-fitting to the image (0..Nyquist,

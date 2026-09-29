@@ -293,3 +293,132 @@ def test_h5_round_trip(workspace, tmp_path):
         assert group.attrs["fs"] == 250
         np.testing.assert_allclose(group["time"][()], t)
         np.testing.assert_allclose(group["data"][()], x)
+
+
+# --- removing at runtime ------------------------------------------------------
+
+
+def test_unlink_takes_the_curve_and_legend_entry_off(workspace):
+    fill(workspace, "a", fs=10, n=5)
+    fill(workspace, "b", fs=10, n=5)
+    plot, _ = workspace.add_plot("P")
+    workspace.link(plot="P", label="a")
+    workspace.link(plot="P", label="b")
+
+    workspace.unlink("P", "a")
+
+    assert list(plot.curves) == ["b"]
+    assert [label.text for _sample, label in plot.plotItem.legend.items] == ["b"]
+    assert "a" not in workspace.signal_list.rows  # No plot shows it anymore
+    assert "a" in workspace.signals  # The signal itself stays
+
+
+def test_a_row_stays_while_another_plot_still_shows_the_signal(workspace):
+    fill(workspace, "a", fs=10, n=5)
+    workspace.add_plot("P1")
+    workspace.add_plot("P2")
+    workspace.link(plot="P1", label="a")
+    workspace.link(plot="P2", label="a")
+
+    workspace.unlink("P1", "a")
+    assert "a" in workspace.signal_list.rows
+    workspace.signal_list.rows["a"].set_visible(False)  # Still wired to P2 only
+    assert not workspace.plots["P2"].curves["a"].isVisible()
+
+
+@pytest.mark.parametrize(
+    ("call", "message"),
+    [
+        (lambda ws: ws.link(plot="P", label="a"), "already shown"),
+        (lambda ws: ws.unlink("P", "b"), "isn't shown"),
+        (lambda ws: ws.unlink("nope", "a"), "Unknown time-series plot"),
+        (lambda ws: ws.remove_plot("nope"), "Unknown plot"),
+    ],
+)
+def test_link_and_unlink_mistakes_are_refused(workspace, call, message):
+    fill(workspace, "a", fs=10, n=5)
+    fill(workspace, "b", fs=10, n=5)
+    workspace.add_plot("P")
+    workspace.link(plot="P", label="a")
+    with pytest.raises(ValueError, match=message):
+        call(workspace)
+
+
+def test_remove_plot_keeps_the_signals(workspace):
+    fill(workspace, "a", fs=10, n=5)
+    workspace.add_plot("P")
+    workspace.link(plot="P", label="a")
+
+    workspace.remove_plot("P")
+
+    assert "P" not in workspace.views
+    assert "P" not in workspace.controllers
+    assert "a" in workspace.signals
+    assert "a" not in workspace.signal_list.rows
+
+
+def test_removing_the_first_plot_relinks_the_others_time_axes(workspace):
+    fill(workspace, "a", fs=10, n=5)
+    for title in ("P1", "P2", "P3"):
+        workspace.add_plot(title)
+
+    workspace.remove_plot("P1")  # The one the others were linked to
+    workspace.plots["P2"].setXRange(3.0, 4.0, padding=0)
+
+    x_min, x_max = workspace.plots["P3"].getViewBox().viewRange()[0]
+    assert (x_min, x_max) == pytest.approx((3.0, 4.0))
+
+
+def test_a_removed_spectrogram_no_longer_follows_its_row(workspace, qapp):
+    fill(workspace, "a", fs=1_000, n=10)
+    workspace.add_plot("P")
+    workspace.link(plot="P", label="a")
+    workspace.add_spectrogram("a")
+
+    workspace.remove_plot("a")
+    qapp.processEvents()  # Lets the deleted widget actually go
+    workspace.signal_list.rows["a"].set_visible(False)  # Would crash if still wired to it
+    assert list(workspace.views) == ["P"]
+
+
+def test_remove_signal_removes_a_math_signal_everywhere(workspace):
+    fill(workspace, "a", fs=10, n=5)
+    fill(workspace, "b", fs=10, n=5)
+    workspace.add_math_signal("sum", "+", "a", "b")
+    workspace.add_plot("P")
+    workspace.link(plot="P", label="sum")
+    workspace.add_spectrogram("sum")
+
+    workspace.remove_signal("sum")
+
+    assert "sum" not in workspace.signals
+    assert "sum" not in workspace.math_signals
+    assert "sum" not in workspace.plots["P"].curves
+    assert "sum" not in workspace.views
+    assert "sum" not in workspace.signal_list.rows
+    workspace.refresh()  # Nothing left that still refers to it
+
+
+def test_remove_signal_refuses_what_would_break(workspace):
+    from oscilab.producers import SyntheticProducer  # noqa: PLC0415
+
+    workspace.attach_producer(SyntheticProducer(fs=100), "fed")
+    fill(workspace, "a", fs=10, n=5)
+    workspace.add_math_signal("double", "+", "a", "a")
+
+    with pytest.raises(ValueError, match="stop the producer instead"):
+        workspace.remove_signal("fed")
+    with pytest.raises(ValueError, match="used by math signal"):
+        workspace.remove_signal("a")
+
+
+def test_the_math_rows_remove_button_removes_it(workspace):
+    fill(workspace, "a", fs=10, n=5)
+    workspace.add_math_signal("double", "+", "a", "a")
+    workspace.add_plot("P")
+    workspace.link(plot="P", label="double")
+    row = workspace.signal_list.rows["double"]
+    row.set_expanded(True)
+
+    next(b for b in row.findChildren(qtw.QPushButton) if b.text() == "Remove").click()
+    assert "double" not in workspace.signals

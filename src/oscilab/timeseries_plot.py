@@ -97,6 +97,11 @@ class TimeseriesPlot(pg.PlotWidget):
         self.models[label] = model
         return color
 
+    def remove_signal(self, label: str):
+        """Take a signal's curve (and its legend entry) off this plot."""
+        self.removeItem(self.curves.pop(label))
+        del self.models[label]
+
     def set_downsampling(self, enabled: bool):
         """
         Min-max ("peak") downsampling: for every screen pixel column, keep

@@ -411,3 +411,39 @@ def test_deliveries_still_queued_when_a_workspace_goes_away_are_dropped():
     result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, timeout=60, check=False)  # noqa: S603 — our own script
     assert result.returncode == 0, result.stderr[-2000:]
     assert "survived" in result.stdout
+
+
+def test_stop_and_start_a_producer(qapp, workspace):
+    producer = Ramp(channels=("a", "b"))
+    models = workspace.attach_producer(producer, ["x", "y"])
+    wait_until(qapp, lambda: len(models[0].data) > 0)
+
+    workspace.stop_producer("y")  # Any of its signals names it
+    assert not producer.running
+    assert not producer.isRunning()
+    count = len(models[0].data)
+    qapp.processEvents()
+    workspace.stop_producer("x")  # Already stopped: nothing happens
+
+    workspace.start_producer("x")
+    assert producer.running
+    wait_until(qapp, lambda: len(models[0].data) > count)
+    workspace.start_producer("x")  # Already running: nothing happens
+    assert workspace.signals_fed_by(producer) == ["x", "y"]
+
+
+def test_start_clears_a_producers_error(qapp, workspace):
+    producer = Ramp(fail_after=0)
+    workspace.attach_producer(producer, "s")
+    wait_until(qapp, lambda: "s" in workspace._producer_errors)
+    producer.fail_after = None
+
+    workspace.start_producer("s")
+    assert "s" not in workspace._producer_errors
+    assert producer.running
+
+
+def test_starting_or_stopping_needs_a_producer(workspace):
+    workspace.register_signal("manual", fs=10)
+    with pytest.raises(ValueError, match="No producer feeds 'manual'"):
+        workspace.stop_producer("manual")

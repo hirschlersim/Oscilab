@@ -201,6 +201,11 @@ class DataProducer(qtc.QThread, metaclass=_ProducerMeta):
         self._running = False
         self.wait()
 
+    @property
+    def running(self) -> bool:
+        """True from `start()` until it stops — or is asked to (its thread may still be finishing)."""
+        return self._running
+
     def on_start(self):
         """
         Override to (re)acquire resources or reset per-run state. Runs on the

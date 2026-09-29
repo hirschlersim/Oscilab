@@ -68,6 +68,11 @@ class SignalController(qtw.QGroupBox):
         self._layout.addWidget(row)
         return row
 
+    def remove_signal(self, label: str):
+        row = self.rows.pop(label)
+        row.hide()
+        row.deleteLater()
+
     def refresh(self):
         """Refresh live metric readouts for every row (called each tick)."""
         for row in self.rows.values():
@@ -87,6 +92,7 @@ class SignalRow(qtw.QWidget):
 
     visibility_changed = qtc.pyqtSignal(str, bool)  # (label, visible)
     restart_requested = qtc.pyqtSignal(str)  # (label) — its producer's Restart button
+    remove_requested = qtc.pyqtSignal(str)  # (label) — a math signal's Remove button
     color_changed = qtc.pyqtSignal(str, str)  # (label, color hex)
 
     _METRICS = (("Min", "min"), ("Mean", "mean"), ("Max", "max"), ("P-P", "ptp"), ("RMS", "rms"))
@@ -205,6 +211,13 @@ class SignalRow(qtw.QWidget):
         self.__set_active_style(self.scaling_button, self.scaling_settings["enabled"])
         buttons_layout.addWidget(self.filter_button)
         buttons_layout.addWidget(self.scaling_button)
+        if self.derived:
+            # Math signals exist only in the GUI, so they can be removed from it
+            # (producer-fed signals go with their producer).
+            remove_button = qtw.QPushButton("Remove")
+            remove_button.setToolTip("Remove this math signal from every plot and the list")
+            remove_button.clicked.connect(lambda: self.remove_requested.emit(self.label))
+            buttons_layout.addWidget(remove_button)
         buttons_layout.addStretch()
         layout.addLayout(buttons_layout)
         return details
