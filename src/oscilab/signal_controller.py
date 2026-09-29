@@ -75,6 +75,7 @@ class SignalRow(qtw.QWidget):
     """UI + wiring for a single signal: color, visibility, filter, scaling, metrics."""
 
     visibility_changed = qtc.pyqtSignal(str, bool)  # (label, visible)
+    restart_requested = qtc.pyqtSignal(str)  # (label) — its producer's Restart button
     color_changed = qtc.pyqtSignal(str, str)  # (label, color hex)
 
     _METRICS = (("Min", "min"), ("Mean", "mean"), ("Max", "max"), ("P-P", "ptp"), ("RMS", "rms"))
@@ -128,6 +129,13 @@ class SignalRow(qtw.QWidget):
 
         self.name_label = qtw.QLabel(self.label)
         controls.addWidget(self.name_label)
+
+        # Only shown while the producer is stopped by an error (see `set_error`).
+        self.restart_button = qtw.QPushButton("Restart")
+        self.restart_button.setToolTip("Start this signal's producer again")
+        self.restart_button.clicked.connect(lambda: self.restart_requested.emit(self.label))
+        self.restart_button.setVisible(False)
+        controls.addWidget(self.restart_button)
 
         self.visibility_button = qtw.QPushButton()
         self.visibility_button.setCheckable(True)
@@ -204,10 +212,17 @@ class SignalRow(qtw.QWidget):
         return button
 
     def set_error(self, message: str):
-        """Flag that this signal's producer stopped with an error (shown on the name)."""
+        """Flag that this signal's producer stopped with an error, and offer a Restart."""
         self.name_label.setText(f"⚠ {self.label}")
         self.name_label.setStyleSheet("color: red;")
         self.name_label.setToolTip(f"Producer stopped: {message}")
+        self.restart_button.setVisible(True)
+
+    def clear_error(self):
+        self.name_label.setText(self.label)
+        self.name_label.setStyleSheet("")
+        self.name_label.setToolTip("")
+        self.restart_button.setVisible(False)
 
     def enable_curve(self):
         """

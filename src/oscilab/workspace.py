@@ -231,6 +231,7 @@ class Workspace:
             return row
 
         row = self.signal_list.add_signal(label=label, model=model, derived=derived, has_curve=has_curve)
+        row.restart_requested.connect(self.restart_producer)
         if label in self._producer_errors:
             row.set_error(self._producer_errors[label])
 
@@ -294,6 +295,24 @@ class Workspace:
             self._producer_errors[label] = message
             if label in self.signal_list.rows:
                 self.signal_list.rows[label].set_error(message)
+
+    def restart_producer(self, label: str):
+        """
+        Restart the producer feeding `label` (and its other signals), e.g.
+        after it stopped with an error. A running producer is stopped first.
+        """
+        producer = self.producers.get(label)
+        if producer is None:
+            raise ValueError(f"No producer feeds '{label}'")
+
+        producer.stop()  # Also waits out an error's on_stop() that may still be running
+        labels = [name for name, p in self.producers.items() if p is producer]
+        for name in labels:
+            self._producer_errors.pop(name, None)
+            if name in self.signal_list.rows:
+                self.signal_list.rows[name].clear_error()
+        producer.start()
+        self._log(f"Restarted {type(producer).__name__} for {', '.join(repr(name) for name in labels)}")
 
     def __queue_action(self, producer: DataProducer, action, name: str):
         if not producer.queue_action(action):

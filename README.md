@@ -118,6 +118,9 @@ class ImuProducer(SyncDataProducer):
         t, samples = self.device.read()  # samples: shape (3, n), one row per channel
         return t, samples
 
+    def on_start(self):  # runs on the producer's thread before each run, restarts included
+        self.device.open()
+
     def on_stop(self):  # runs on the producer's thread, however it stops
         self.device.close()
 
@@ -130,7 +133,8 @@ oszi.attach_producer(ImuProducer("COM3"), ["acc-x", "acc-y", "acc-z"])
 
 `x` is shaped `(channels, n)`; a single-channel producer can return a 1-D
 array. An exception inside a producer stops only that producer — it's shown
-in the status bar and on its signals' rows instead of taking the app down.
+in the status bar and on its signals' rows instead of taking the app down,
+and the row's **Restart** button starts it again.
 
 ## Notable implementation details
 

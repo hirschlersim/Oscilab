@@ -28,8 +28,12 @@ What every producer gets from the base class:
 - An exception inside the producer's thread stops only that producer, never
   the app. It's reported through the `error` signal; the workspace shows it
   in the status bar and on the producer's signal rows.
-- `on_stop()` runs on the producer's own thread whenever it stops — at app
-  exit, at the end of its data, or on an error — to release hardware.
+- `on_start()` / `on_stop()` run on the producer's own thread whenever it
+  starts or stops — including at app exit, at the end of its data, on an
+  error, and on a restart — to acquire and release hardware.
+- A producer that stopped can be started again (`Workspace.restart_producer`,
+  or the Restart button on its row after an error). The built-in producers
+  resume where they left off; time keeps running forward.
 - Custom buttons (e.g. "Reconnect", "Zero") via `actions()`. Clicks are
   queued and run on the producer's own thread between reads, so an action
   can safely touch the same connection the producer is reading from. An
@@ -90,11 +94,13 @@ class DataProducer(qtc.QThread, metaclass=_ProducerMeta):
         # Set here, not in run(): a stop() that lands before the new thread
         # gets scheduled must still win, instead of run() flipping it back.
         self._running = True
+        self._pending_actions = queue.SimpleQueue()  # A restart doesn't replay old clicks
         super().start(*args, **kwargs)
 
     def run(self):
         """QThread entry point. Subclass `SyncDataProducer`/`AsyncDataProducer` rather than overriding this."""
         try:
+            self.on_start()
             self._produce()
         except Exception as e:  # noqa: BLE001 — whatever went wrong, only this producer stops
             self.__report(e)
@@ -113,6 +119,13 @@ class DataProducer(qtc.QThread, metaclass=_ProducerMeta):
         """Ask the producer to stop, and wait until it has (including `on_stop()`)."""
         self._running = False
         self.wait()
+
+    def on_start(self):
+        """
+        Override to (re)acquire resources or reset per-run state. Runs on the
+        producer's own thread before it starts producing — on every start,
+        restarts included.
+        """
 
     def on_stop(self):
         """
@@ -180,7 +193,8 @@ class SyncDataProducer(DataProducer):
 
     Subclasses implement `_generate(elapsed)`, returning whatever `(t, x)`
     samples are due given `elapsed` real seconds since the producer started
-    (see the module docstring for the shape of `x`). Setting
+    — counted from the latest start, so it restarts at 0 on a restart (see
+    the module docstring for the shape of `x`). Setting
     `self._running = False` from inside `_generate` ends the producer, e.g.
     at the end of a file.
 
@@ -291,9 +305,16 @@ class SyntheticProducer(SyncDataProducer):
         self.noise = noise
         self._rng = np.random.default_rng()
         self._samples_emitted = 0
+        self._run_origin = 0  # Samples emitted before the current run started
+
+    def on_start(self):
+        # `elapsed` restarts at 0 on every start; count from here so a
+        # restarted producer continues right away instead of going quiet
+        # until the new run's clock catches up with the old sample count.
+        self._run_origin = self._samples_emitted
 
     def _generate(self, elapsed):
-        samples_due = int(elapsed * self.fs) - self._samples_emitted
+        samples_due = self._run_origin + int(elapsed * self.fs) - self._samples_emitted
         if samples_due <= 0:
             return np.array([]), np.array([])
 
@@ -334,6 +355,13 @@ class FileReplayProducer(SyncDataProducer):
         self._pass = 0
         self._cursor = 0
         self._loop_offset = 0.0  # elapsed-time origin of the current pass
+
+    def on_start(self):
+        # `elapsed` restarts at 0 on every start: line the replay clock up
+        # with the next unsent sample, so a restart resumes where it stopped.
+        if len(self._time):
+            resume_t = self._time[min(self._cursor, len(self._time) - 1)]
+            self._loop_offset = float(self._time[0] - resume_t)
 
     @staticmethod
     def __load(path: Path) -> tuple[list[str], np.ndarray, np.ndarray]:
@@ -437,6 +465,10 @@ class SerialProducer(SyncDataProducer):
         self._sample_index += len(rows)
         return n / self.fs, np.asarray(rows).T
 
+    def on_start(self):
+        if not self._connection.is_open:  # Closed by on_stop() when a previous run ended
+            self._connection.open()
+
     def on_stop(self):
         self._connection.close()
 
@@ -472,8 +504,9 @@ class AsyncSyntheticProducer(AsyncDataProducer):
         # sleep: sleeps overshoot (see SyncDataProducer), and a fixed chunk
         # would let this signal fall further and further behind real time.
         start = time.perf_counter()
+        origin = self._sample_index  # Nonzero after a restart: continue from there
         while self._running:
-            due = int((time.perf_counter() - start) * self.fs) - self._sample_index
+            due = origin + int((time.perf_counter() - start) * self.fs) - self._sample_index
             if due > 0:
                 n = np.arange(self._sample_index, self._sample_index + due)
                 self._sample_index += due

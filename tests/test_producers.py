@@ -329,3 +329,81 @@ def test_async_synthetic_reset_phase_keeps_time_running(qapp, workspace):
     assert np.all(np.diff(t) > 0)  # never jumps back
     restart = int(np.flatnonzero(np.isclose(t, producer._phase_origin))[0])
     assert x[restart] == pytest.approx(0.0)  # sine restarts at phase 0 there
+
+
+# --- restarting -------------------------------------------------------------
+
+
+class Flaky(Ramp):
+    """Fails once, 20 samples into its first run; fine after a restart."""
+
+    def __init__(self):
+        super().__init__()
+        self.start_threads: list[int] = []
+
+    def on_start(self):
+        self.start_threads.append(threading.get_ident())
+
+    def _generate(self, elapsed):
+        if len(self.start_threads) == 1 and self._n >= 20:
+            raise RuntimeError("glitch")
+        return super()._generate(elapsed)
+
+
+def test_restart_button_restarts_a_failed_producer(qapp, workspace):
+    producer = Flaky()
+    (model,) = workspace.attach_producer(producer, "s")
+    workspace.add_plot("P")
+    workspace.link(plot="P", label="s")
+    row = workspace.signal_list.rows["s"]
+
+    wait_until(qapp, lambda: "s" in workspace._producer_errors)
+    assert row.restart_button.isVisibleTo(row)
+    count = len(model.data)
+
+    row.restart_button.click()
+    wait_until(qapp, lambda: len(model.data) > count)
+
+    assert producer.isRunning()
+    assert "s" not in workspace._producer_errors
+    assert not row.name_label.text().startswith("⚠")
+    assert not row.restart_button.isVisibleTo(row)
+    assert len(producer.start_threads) == 2
+    assert MAIN_THREAD not in producer.start_threads  # on_start runs on the producer's thread
+    assert np.all(np.diff(model.snapshot()[0]) > 0)
+
+
+def test_synthetic_producer_resumes_right_away_after_a_restart(qapp, workspace):
+    (model,) = workspace.attach_producer(SyntheticProducer(fs=1_000), "s")
+    wait_until(qapp, lambda: len(model.data) >= 300)  # ~0.3 s into the first run
+
+    workspace.restart_producer("s")  # restarting a healthy producer works too
+    count = len(model.data)
+    started = time.monotonic()
+    wait_until(qapp, lambda: len(model.data) > count + 20)
+
+    # Without resuming from its last sample, it would stay silent for as
+    # long as the first run lasted (~0.3 s) while its new clock caught up.
+    assert time.monotonic() - started < 0.25
+    t = model.snapshot()[0]
+    np.testing.assert_allclose(np.diff(t), 1 / 1_000)  # no gap, never backwards
+
+
+def test_file_replay_resumes_where_it_stopped(qapp, tmp_path):  # noqa: ARG001
+    path = tmp_path / "rec.csv"
+    path.write_text("time,value\n" + "".join(f"{i / 10:.1f},{i}\n" for i in range(10)))  # 0.0 .. 0.9 s
+    producer = FileReplayProducer(path)
+
+    producer.on_start()
+    first, _ = producer._generate(elapsed=0.35)  # 0.0 .. 0.3
+    producer.on_start()  # a restart: `elapsed` counts from 0 again
+    resumed, _ = producer._generate(elapsed=0.25)
+
+    np.testing.assert_allclose(first, [0.0, 0.1, 0.2, 0.3])
+    np.testing.assert_allclose(resumed, [0.4, 0.5, 0.6])
+
+
+def test_restart_needs_a_producer(workspace):
+    workspace.register_signal("manual", fs=10)
+    with pytest.raises(ValueError, match="No producer feeds 'manual'"):
+        workspace.restart_producer("manual")
