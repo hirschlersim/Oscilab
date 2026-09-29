@@ -30,6 +30,35 @@ def safe_name(name: str) -> str:
     return re.sub(r"[^\w\-]+", "_", name).strip("_") or "signal"
 
 
+_MATLAB_NAME_MAX = 63  # MATLAB's `namelengthmax`
+
+
+def matlab_names(labels: list[str]) -> dict[str, str]:
+    """
+    A valid, unique MATLAB variable-name base for each label: ASCII letters,
+    digits and underscores, starting with a letter, and short enough that
+    `<base>_time` / `<base>_data` stay within MATLAB's 63-character limit —
+    e.g. `channel-1` → `channel_1`, `1st` → `sig_1st`. Labels that end up
+    the same (`a-b`, `a_b`) are numbered: `a_b`, `a_b_2`.
+    """
+    longest = _MATLAB_NAME_MAX - len("_data")
+    names: dict[str, str] = {}
+    taken: set[str] = set()
+    for label in labels:
+        base = re.sub(r"[^A-Za-z0-9_]+", "_", label).strip("_")
+        if not base[:1].isalpha():  # Empty, or starts with a digit
+            base = f"sig_{base}".rstrip("_")
+        base = candidate = base[:longest]
+        n = 2
+        while candidate in taken:
+            tail = f"_{n}"
+            candidate = base[: longest - len(tail)] + tail
+            n += 1
+        taken.add(candidate)
+        names[label] = candidate
+    return names
+
+
 def spread_path(base_path: Path, name: str, count: int, suffix: str) -> Path:
     """`base_path` as-is for a single item; `<base_path>_<name><suffix>` for several."""
     if count <= 1:
@@ -140,14 +169,18 @@ def export_csv(signals: dict[str, SignalModel], base_path) -> list[Path]:
 
 
 def export_mat(signals: dict[str, SignalModel], path) -> Path:
-    """Every signal into one MATLAB .mat file, as `<label>_time` / `<label>_data` variables."""
+    """
+    Every signal into one MATLAB .mat file, as `<name>_time` / `<name>_data`
+    variables, `<name>` being the label made a valid MATLAB variable name
+    (see `matlab_names`): `channel-1` → `channel_1_time`, `channel_1_data`.
+    """
     path = Path(path).with_suffix(".mat")
+    names = matlab_names(list(signals))
     mat_dict = {}
     for label, model in signals.items():
-        safe = safe_name(label)
         time_arr, data_arr = model.snapshot()
-        mat_dict[f"{safe}_time"] = time_arr
-        mat_dict[f"{safe}_data"] = data_arr
+        mat_dict[f"{names[label]}_time"] = time_arr
+        mat_dict[f"{names[label]}_data"] = data_arr
     savemat(str(path), mat_dict)
     return path
 

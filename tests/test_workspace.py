@@ -6,6 +6,7 @@ needs a main window.
 """
 
 import csv
+import re
 
 import h5py
 import numpy as np
@@ -183,6 +184,25 @@ def test_mat_round_trip(workspace, tmp_path):
     np.testing.assert_allclose(mat["a_data"].ravel(), x_a)
     np.testing.assert_allclose(mat["b_time"].ravel(), t_b)
     np.testing.assert_allclose(mat["b_data"].ravel(), x_b)
+
+
+def test_mat_variable_names_are_valid_in_matlab(workspace, tmp_path):
+    labels = ["channel-1", "1st", "temp °C", "a-b", "a_b", "__", "x" * 80]
+    for i, label in enumerate(labels):
+        workspace.register_signal(label, fs=10).add_data([0.0], [float(i)])
+
+    mat = loadmat(workspace.export_mat(tmp_path / "out"))
+    names = [key for key in mat if not key.startswith("__")]  # skip loadmat's own __header__ etc.
+
+    assert len(names) == 2 * len(labels)  # every signal kept, none overwritten by a clash
+    for name in names:
+        assert re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,62}", name), name  # MATLAB's isvarname
+    assert mat["channel_1_data"].item() == 0.0
+    assert mat["sig_1st_data"].item() == 1.0
+    assert mat["temp_C_data"].item() == 2.0
+    assert mat["a_b_data"].item() == 3.0
+    assert mat["a_b_2_data"].item() == 4.0  # "a_b" clashed with "a-b"
+    assert mat["sig_data"].item() == 5.0
 
 
 def test_h5_round_trip(workspace, tmp_path):
