@@ -43,9 +43,9 @@ math_signal.py        └─ derived signal (A op B)
     │
 timeseries_plot.py   pyqtgraph-based plot widgets, reading model.snapshot()
 spectrogram_plot.py
-axis_dialog.py
     │
 signal_controller.py  Per-signal sidebar controls (SignalRow / SignalController)
+dialogs.py            Modal dialogs: range, filter, scaling, math
     │
 workspace.py          Domain layer: owns all registries, wiring, export
     │

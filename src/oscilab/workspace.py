@@ -18,7 +18,7 @@ from PyQt6 import QtGui as qtg
 from PyQt6 import QtWidgets as qtw
 from scipy.io import savemat
 
-from oscilab.axis_dialog import RangeDialog
+from oscilab.dialogs import RangeDialog
 from oscilab.math_signal import MathSignal
 from oscilab.producers import DataProducer
 from oscilab.signal_controller import SignalController

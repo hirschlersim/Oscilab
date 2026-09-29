@@ -8,7 +8,8 @@ hand SignalModel a cutoff at or above Nyquist.
 
 import pytest
 
-from oscilab.signal_controller import FilterDialog, SignalRow
+from oscilab.dialogs import FilterDialog
+from oscilab.signal_controller import SignalRow
 from oscilab.signal_model import SignalModel
 
 

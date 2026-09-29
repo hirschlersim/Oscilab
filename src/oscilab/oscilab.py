@@ -9,7 +9,8 @@ from PyQt6 import QtCore as qtc
 from PyQt6 import QtGui as qtg
 from PyQt6 import QtWidgets as qtw
 
-from oscilab.math_signal import OPERATORS, MathDialog
+from oscilab.dialogs import MathDialog
+from oscilab.math_signal import OPERATORS
 from oscilab.producers import DataProducer
 from oscilab.storage import Storage
 from oscilab.workspace import Workspace

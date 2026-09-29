@@ -7,7 +7,7 @@ from PyQt6 import QtWidgets as qtw
 
 import oscilab
 from oscilab import workspace as workspace_module
-from oscilab.axis_dialog import RangeDialog
+from oscilab.dialogs import RangeDialog
 from oscilab.oscilab import Oscilab
 
 
