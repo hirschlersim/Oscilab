@@ -104,7 +104,7 @@ def test_signal_names_must_match_the_channels(workspace):
 
 @pytest.mark.parametrize("signals", [["taken", "fresh"], ["dup", "dup"]])
 def test_bad_names_leave_nothing_half_registered(workspace, signals):
-    workspace.reg_signal("taken", fs=10)
+    workspace.register_signal("taken", fs=10)
     with pytest.raises(ValueError, match=r"already registered|Duplicate"):
         workspace.attach_producer(Ramp(channels=("a", "b")), signals)
     assert list(workspace.signals) == ["taken"]

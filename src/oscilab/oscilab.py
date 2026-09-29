@@ -327,13 +327,13 @@ class Oscilab(qtw.QMainWindow):
         """
         self.controller_layout.insertWidget(self.controller_layout.count() - 1, controller)
 
-    def reg_signal(self, label: str, fs: float, storage: Storage = Storage.ring):
+    def register_signal(self, label: str, fs: float, storage: Storage = Storage.ring):
         """
         Register a signal you feed yourself (producer-fed signals are
         registered by `attach_producer`). `storage`: `self.storage.ring`
         (default) or `self.storage.deque` — see `oscilab.ring_buffer.RingBuffer`.
         """
-        return self.workspace.reg_signal(label, fs, storage=storage)
+        return self.workspace.register_signal(label, fs, storage=storage)
 
     def link(self, plot: str, label: str):
         self.workspace.link(plot, label)
@@ -352,10 +352,17 @@ class Oscilab(qtw.QMainWindow):
         getattr(logger, level, logger.info)(message)
         self.statusBar().showMessage(message, timeout_ms)
 
-    def show(self):
-        super().show()
-        self.splash.finish(self)
-        self.app.exec()
+    def run(self) -> int:
+        """Show the window and run the Qt event loop until it's closed. Returns the exit code."""
+        self.show()
+        return self.app.exec()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        # Plain close(), not splash.finish(self): finish() spins a nested event
+        # loop until the window is drawn, running timers (refresh, producers'
+        # queued data) re-entrantly in the middle of showing the window.
+        self.splash.close()
 
     def closeEvent(self, event):
         self.workspace.stop_producers()

@@ -126,7 +126,7 @@ class SignalModel:
         self.sos = signal.butter(N=order, Wn=cutoff, btype="low", analog=False, fs=self.fs, output="sos")
         self.zi = signal.sosfilt_zi(self.sos)
 
-    def rem_filter(self):
+    def remove_filter(self):
         self.sos = None
         self.zi = None
 
@@ -134,6 +134,6 @@ class SignalModel:
         self.gain = gain
         self.offset = offset
 
-    def rem_scaling(self):
+    def remove_scaling(self):
         self.gain = None
         self.offset = None

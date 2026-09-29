@@ -17,7 +17,7 @@ from oscilab.workspace import Workspace
 
 def fill(workspace: Workspace, label: str, fs: float, n: int):
     """Register `label` and write `n` samples of a ramp into it."""
-    model = workspace.reg_signal(label, fs=fs)
+    model = workspace.register_signal(label, fs=fs)
     t = np.arange(n) / fs
     model.add_data(t, t * 10)
     return t, t * 10
@@ -27,9 +27,9 @@ def fill(workspace: Workspace, label: str, fs: float, n: int):
 
 
 def test_duplicate_signal_is_rejected(workspace):
-    workspace.reg_signal("a", fs=10)
+    workspace.register_signal("a", fs=10)
     with pytest.raises(ValueError, match="already registered"):
-        workspace.reg_signal("a", fs=10)
+        workspace.register_signal("a", fs=10)
 
 
 def test_duplicate_plot_is_rejected(workspace):
@@ -50,7 +50,7 @@ def test_duplicate_plot_is_rejected(workspace):
 )
 def test_unknown_names_are_rejected(workspace, call, message):
     workspace.add_plot("P")
-    workspace.reg_signal("a", fs=10)
+    workspace.register_signal("a", fs=10)
     with pytest.raises(ValueError, match=message):
         call(workspace)
 
@@ -58,7 +58,7 @@ def test_unknown_names_are_rejected(workspace, call, message):
 def test_a_signal_on_two_plots_gets_one_row(workspace):
     workspace.add_plot("P1")
     workspace.add_plot("P2")
-    workspace.reg_signal("a", fs=10)
+    workspace.register_signal("a", fs=10)
     workspace.link(plot="P1", label="a")
     workspace.link(plot="P2", label="a")
 
@@ -68,9 +68,9 @@ def test_a_signal_on_two_plots_gets_one_row(workspace):
 
 
 def test_set_duration_applies_to_existing_and_future_signals(workspace):
-    workspace.reg_signal("before", fs=10)
+    workspace.register_signal("before", fs=10)
     workspace.set_duration(3.0)
-    workspace.reg_signal("after", fs=10)
+    workspace.register_signal("after", fs=10)
 
     assert workspace.signals["before"].duration == 3.0
     assert workspace.signals["after"].duration == 3.0

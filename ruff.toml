@@ -94,7 +94,9 @@ lint.pylint.max-args = 7
 lint.pylint.max-positional-args = 7
 
 lint.pep8-naming.extend-ignore-names = [
-    "closeEvent",  # Qt override, name set by Qt
+    # Qt overrides, named by Qt
+    "closeEvent",
+    "showEvent",
 ]
 
 [lint.per-file-ignores]

@@ -270,7 +270,7 @@ class SignalRow(qtw.QWidget):
             self.filter_settings = {"enabled": enabled, "cutoff": cutoff, "order": order}
 
             if not enabled:
-                self.model.rem_filter()
+                self.model.remove_filter()
                 logger.info(f"Filter for '{self.label}' disabled.")
 
             # Update button color: highlighted if active, default otherwise
@@ -296,7 +296,7 @@ class SignalRow(qtw.QWidget):
                 self.model.add_scaling(gain, offset)
                 logger.info(f"Scaling for '{self.label}' enabled: gain={gain}, offset={offset}")
             else:
-                self.model.rem_scaling()
+                self.model.remove_scaling()
                 logger.info(f"Scaling for '{self.label}' disabled.")
 
             # Update button color: highlighted if active, default otherwise

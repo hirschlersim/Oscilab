@@ -1,10 +1,9 @@
 """`uv run demo`: a tour of the public API with synthetic data."""
 
-from oscilab.oscilab import Oscilab
-from oscilab.producers import AsyncSyntheticProducer, SyntheticProducer
+from oscilab import AsyncSyntheticProducer, Oscilab, SyntheticProducer
 
 
-def run():
+def run() -> int:
     oszi = Oscilab()
 
     # Producers. Each registers its own signals — one per channel, at its own
@@ -32,7 +31,7 @@ def run():
 
     # Blocks until the window is closed; also try the Math, Cursors and
     # View > Time menus, and the Filter/Scaling buttons on each row.
-    oszi.show()
+    return oszi.run()
 
 
 if __name__ == "__main__":

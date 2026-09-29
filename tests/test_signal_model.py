@@ -75,7 +75,7 @@ def test_scaling_subtracts_offset_then_applies_gain():
     model.add_data([0.0, 0.1, 0.2], [1.0, 2.0, 4.0])
     assert model.snapshot()[1].tolist() == [0.0, 2.0, 6.0]
 
-    model.rem_scaling()
+    model.remove_scaling()
     model.add_data([0.3], [4.0])
     assert model.snapshot()[1][-1] == 4.0
 
@@ -113,7 +113,7 @@ def test_scaling_is_applied_before_the_filter():
 def test_removing_the_filter_passes_raw_values_again():
     model = SignalModel(label="s", fs=100.0)
     model.add_filter(cutoff=10.0)
-    model.rem_filter()
+    model.remove_filter()
     model.add_data([0.0, 0.01], [3.0, -3.0])
     assert model.snapshot()[1].tolist() == [3.0, -3.0]
 

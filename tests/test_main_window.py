@@ -1,9 +1,11 @@
-"""The main window's File-menu exports, and the range dialogs' pre-fill."""
+"""The main window: run(), package exports, File-menu exports, range dialog pre-fill."""
 
 import numpy as np
 import pytest
+from PyQt6 import QtCore as qtc
 from PyQt6 import QtWidgets as qtw
 
+import oscilab
 from oscilab import workspace as workspace_module
 from oscilab.axis_dialog import RangeDialog
 from oscilab.oscilab import Oscilab
@@ -15,6 +17,18 @@ def window(qapp):
     yield oszi
     oszi.splash.close()
     oszi.close()
+
+
+def test_public_api_is_importable_from_the_package():
+    assert oscilab.__all__
+    for name in oscilab.__all__:
+        assert getattr(oscilab, name) is not None
+
+
+def test_run_shows_the_window_until_it_is_closed(window):
+    qtc.QTimer.singleShot(0, window.close)  # runs once the event loop is up
+    assert window.run() == 0
+    assert not window.splash.isVisible()  # closed when the window appeared
 
 
 def file_action(window: Oscilab, text: str):
@@ -29,7 +43,7 @@ def test_file_menu_lists_every_export(window):
 
 @pytest.mark.parametrize("suffix", [".csv", ".png"])
 def test_export_writes_the_chosen_file(window, tmp_path, monkeypatch, suffix):
-    model = window.reg_signal("s", fs=10)
+    model = window.register_signal("s", fs=10)
     model.add_data(np.arange(5) / 10, np.arange(5.0))
     window.add_timeseries_plot("P")
     window.link(plot="P", label="s")

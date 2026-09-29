@@ -203,7 +203,7 @@ class Workspace:
         self.controllers[label] = controller
         return spectrogram, controller
 
-    def reg_signal(self, label: str, fs: float, storage: Storage = Storage.ring) -> SignalModel:
+    def register_signal(self, label: str, fs: float, storage: Storage = Storage.ring) -> SignalModel:
         """
         Register a signal you feed yourself, via its `SignalModel.add_data`.
         Producer-fed signals are registered by `attach_producer` instead.
@@ -303,7 +303,7 @@ class Workspace:
             if label in self.signals:
                 raise ValueError(f"Signal '{label}' already registered")
 
-        models = [self.reg_signal(label, fs=producer.fs, storage=storage) for label in labels]
+        models = [self.register_signal(label, fs=producer.fs, storage=storage) for label in labels]
 
         def deliver(t, x):
             # Runs on the GUI thread: Qt queues signals emitted from the

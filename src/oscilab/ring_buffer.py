@@ -4,12 +4,12 @@ Fixed-capacity, pre-allocated numpy circular buffer.
 Exposes the same surface `SignalModel` needs from `collections.deque(maxlen=...)`
 — `extend()`, `clear()`, `len()`, `[0]`/`[-1]`, iteration, and `np.asarray()`
 via `__array__` — so it's a drop-in alternative storage backend, picked per
-signal via `SignalModel(..., storage="ring")` / `Workspace.reg_signal(...,
+signal via `SignalModel(..., storage="ring")` / `Workspace.register_signal(...,
 storage="ring")`. See `scripts/benchmark_buffers.py` for a deque-vs-ring
 throughput comparison.
 
 Thread-safe: producer data attached via `Workspace.attach_producer` arrives
-on the GUI thread, but a signal fed by hand (`reg_signal` + `add_data`) may
+on the GUI thread, but a signal fed by hand (`register_signal` + `add_data`) may
 be written from any thread while the GUI thread reads it via
 `to_array()`/`__array__` every refresh tick. `deque.append`/`extend` are
 atomic under the GIL, but writing into a

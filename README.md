@@ -76,8 +76,7 @@ took the shared `demo` launcher with it —
 API:
 
 ```python
-from oscilab.oscilab import Oscilab
-from oscilab.producers import AsyncSyntheticProducer, SyntheticProducer
+from oscilab import AsyncSyntheticProducer, Oscilab, SyntheticProducer
 
 oszi = Oscilab()
 
@@ -93,7 +92,7 @@ oszi.link(plot="Sensors", label="async")
 
 oszi.add_spectrogram_plot(label="channel-3")
 
-oszi.show()  # blocks until the window is closed
+oszi.run()  # shows the window; blocks until it's closed
 ```
 
 ### Writing a producer
