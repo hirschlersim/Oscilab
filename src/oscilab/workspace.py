@@ -9,6 +9,7 @@ to test linking/producer logic without spinning up a full window.
 from collections.abc import Sequence
 from pathlib import Path
 
+from PyQt6 import QtCore as qtc
 from PyQt6 import QtWidgets as qtw
 
 from oscilab import exporters
@@ -37,6 +38,35 @@ def _ask_range(
     if dialog.exec() != qtw.QDialog.DialogCode.Accepted:
         return None
     return dialog.get_values()
+
+
+class _ProducerLink(qtc.QObject):
+    """
+    Receives a producer's signals on the GUI thread and feeds its signals.
+
+    A child of the producer — whose QThread object lives on the GUI thread,
+    unlike the thread it runs — so it's deleted along with the producer, and
+    Qt drops any deliveries still queued for it then. Connecting plain Python
+    callbacks instead let deliveries queued before a window closed be invoked
+    after its producers had been garbage-collected: a hard crash.
+    """
+
+    def __init__(self, producer: DataProducer, models: list[SignalModel], on_error):
+        super().__init__(producer)
+        self._models = models
+        self._on_error = on_error
+        producer.data_ready.connect(self.deliver)
+        producer.error.connect(self.report_error)
+
+    @qtc.pyqtSlot(object, object)
+    def deliver(self, t, x):
+        # Queued from the producer's thread, so this never races the refresh loop
+        for model, row in zip(self._models, x, strict=True):
+            model.add_data(t, row)
+
+    @qtc.pyqtSlot(str)
+    def report_error(self, message: str):
+        self._on_error(message)
 
 
 class Workspace:
@@ -273,14 +303,7 @@ class Workspace:
 
         models = [self.register_signal(label, fs=producer.fs, storage=storage) for label in labels]
 
-        def deliver(t, x):
-            # Runs on the GUI thread: Qt queues signals emitted from the
-            # producer's thread, so this never races the refresh loop.
-            for model, row in zip(models, x, strict=True):
-                model.add_data(t, row)
-
-        producer.data_ready.connect(deliver)
-        producer.error.connect(lambda message: self.__on_producer_error(labels, message))
+        _ProducerLink(producer, models, on_error=lambda message: self.__on_producer_error(labels, message))
         for label in labels:
             self.producers[label] = producer
 

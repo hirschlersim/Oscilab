@@ -6,6 +6,9 @@ queued Qt signals, so `wait_until` pumps the event loop while it waits.
 """
 
 import asyncio
+import subprocess
+import sys
+import textwrap
 import threading
 import time
 
@@ -408,3 +411,32 @@ def test_restart_needs_a_producer(workspace):
     workspace.register_signal("manual", fs=10)
     with pytest.raises(ValueError, match="No producer feeds 'manual'"):
         workspace.restart_producer("manual")
+
+
+def test_deliveries_still_queued_when_a_workspace_goes_away_are_dropped():
+    # A producer's queued deliveries used to be invoked after its workspace had
+    # been garbage-collected — a hard crash (access violation) that kills the
+    # whole interpreter, hence the subprocess.
+    script = textwrap.dedent("""
+        import gc, os, time
+        os.environ["QT_QPA_PLATFORM"] = "offscreen"
+        from PyQt6 import QtWidgets as qtw
+        app = qtw.QApplication([])
+        from loguru import logger
+        logger.remove()
+        from oscilab.producers import SyntheticProducer
+        from oscilab.workspace import Workspace
+
+        for _ in range(5):
+            ws = Workspace()
+            ws.attach_producer(SyntheticProducer(fs=10_000), "s")
+            time.sleep(0.2)  # deliveries pile up in the GUI thread's queue, unprocessed
+            ws.stop_producers()
+            del ws
+            gc.collect()  # the producers are gone...
+            app.processEvents()  # ...then what they queued gets dispatched
+        print("survived")
+    """)
+    result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, timeout=60, check=False)  # noqa: S603 — our own script
+    assert result.returncode == 0, result.stderr[-2000:]
+    assert "survived" in result.stdout

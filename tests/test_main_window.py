@@ -15,7 +15,6 @@ from oscilab.oscilab import Oscilab
 def window(qapp):
     oszi = Oscilab(app=qapp)
     yield oszi
-    oszi.splash.close()
     oszi.close()
 
 
@@ -28,7 +27,7 @@ def test_public_api_is_importable_from_the_package():
 def test_run_shows_the_window_until_it_is_closed(window):
     qtc.QTimer.singleShot(0, window.close)  # runs once the event loop is up
     assert window.run() == 0
-    assert not window.splash.isVisible()  # closed when the window appeared
+    assert window.splash is None  # Only shown when Oscilab starts the application itself
 
 
 def file_action(window: Oscilab, text: str):

@@ -104,8 +104,11 @@ class Oscilab(qtw.QMainWindow):
         # wait until after self.app is assigned below.
         icon_path = resources.files("oscilab.assets").joinpath("icon.png")
 
-        # Initialize QApplication
-        if app is None:
+        # Initialize QApplication — or join the running one (a second
+        # window, e.g. File > Open Session; Qt allows only one per process).
+        app = app or qtw.QApplication.instance()
+        starting_app = app is None
+        if starting_app:
             self.app = qtw.QApplication([])
             self.app.setStyle("windows11")
             self.app.setStyleSheet(self.__load_qss("dark"))
@@ -119,17 +122,22 @@ class Oscilab(qtw.QMainWindow):
         super().__init__()
         self.setWindowIcon(app_icon)  # Also set on the window itself, for the title bar/taskbar
 
-        # Splash Screen
-        with resources.as_file(icon_path) as path:
-            pixmap = qtg.QPixmap(str(path))
-        pixmap = pixmap.scaled(
-            pixmap.width() // 2,
-            pixmap.height() // 2,
-            qtc.Qt.AspectRatioMode.KeepAspectRatio,
-            qtc.Qt.TransformationMode.SmoothTransformation,
-        )
-        self.splash = qtw.QSplashScreen(pixmap)
-        self.splash.show()
+        # Splash screen — only while the application itself is starting up.
+        # Not for a window joining a running app (File > Open Session): a
+        # QSplashScreen pumps the event loop whenever it repaints, which would
+        # run other windows' timers in the middle of building this one.
+        self.splash: qtw.QSplashScreen | None = None
+        if starting_app:
+            with resources.as_file(icon_path) as path:
+                pixmap = qtg.QPixmap(str(path))
+            pixmap = pixmap.scaled(
+                pixmap.width() // 2,
+                pixmap.height() // 2,
+                qtc.Qt.AspectRatioMode.KeepAspectRatio,
+                qtc.Qt.TransformationMode.SmoothTransformation,
+            )
+            self.splash = qtw.QSplashScreen(pixmap)
+            self.splash.show()
 
         # Main Properties
         self.setWindowTitle("Oscilab")
@@ -363,7 +371,8 @@ class Oscilab(qtw.QMainWindow):
         # Plain close(), not splash.finish(self): finish() spins a nested event
         # loop until the window is drawn, running timers (refresh, producers'
         # queued data) re-entrantly in the middle of showing the window.
-        self.splash.close()
+        if self.splash is not None:
+            self.splash.close()
 
     def closeEvent(self, event):
         self.workspace.stop_producers()
