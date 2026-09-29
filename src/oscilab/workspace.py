@@ -83,7 +83,6 @@ class Workspace:
         self.controllers: dict[str, SignalController] = {}  # per-plot: header buttons only (Y-Axis/Color), no rows
         self.producers: dict[str, DataProducer] = {}  # signal label -> the producer feeding it
         self._producer_errors: dict[str, str] = {}  # signal label -> why its producer stopped
-        self._producers_with_buttons: set[DataProducer] = set()  # action buttons placed already
         self._plot_theme = ("#202f46", "#ffffff")  # (background, foreground), applied to new plots too
         self._duration = 10.0  # seconds of history kept/displayed, applied to new signals too
         self._time_mode = "global"  # "global" or "relative", applied to new plots too
@@ -283,18 +282,6 @@ class Workspace:
         row.restart_requested.connect(self.restart_producer)
         if label in self._producer_errors:
             row.set_error(self._producer_errors[label])
-
-        # A producer's buttons (e.g. "Reconnect") act on the whole producer,
-        # not one channel — so they go on the first of its signals to get a row.
-        producer = self.producers.get(label)
-        if producer is not None and producer not in self._producers_with_buttons:
-            self._producers_with_buttons.add(producer)
-            for text, action in producer.actions().items():
-                row.add_action_button(
-                    text,
-                    f"{type(producer).__name__}: {text}",
-                    lambda _checked=False, p=producer, a=action, n=text: self.__queue_action(p, a, n),
-                )
         return row
 
     def attach_producer(
@@ -355,10 +342,6 @@ class Workspace:
                 self.signal_list.rows[name].clear_error()
         producer.start()
         self._log(f"Restarted {type(producer).__name__} for {', '.join(repr(name) for name in labels)}")
-
-    def __queue_action(self, producer: DataProducer, action, name: str):
-        if not producer.queue_action(action):
-            self._log(f"'{name}' ignored: {type(producer).__name__} isn't running", level="warning")
 
     def stop_producers(self):
         for producer in dict.fromkeys(self.producers.values()):  # a multi-channel producer is listed once per signal

@@ -1,4 +1,5 @@
 import ctypes
+import functools
 import itertools
 import sys
 from collections.abc import Callable, Sequence
@@ -78,6 +79,11 @@ _EXPORTS = (
 
 
 _window_ids = itertools.count(1)  # Tells each window's log messages apart (see oscilab.log)
+
+
+def _signals_caption(labels: list[str]) -> str:
+    """Names a producer's toolbar group by its signals, kept short for many channels."""
+    return ", ".join(labels) if len(labels) <= 3 else f"{labels[0]} … {labels[-1]}"
 
 
 class Oscilab(qtw.QMainWindow):
@@ -388,9 +394,19 @@ class Oscilab(qtw.QMainWindow):
         """
         Register one signal per producer channel, named by `signals` (a single
         label for a single-channel producer), and start the producer feeding
-        them. The signals use the producer's `fs`.
+        them. The signals use the producer's `fs`. Its `@button` / `@toggle`
+        methods, if any, go in the toolbar, run on its own thread (see
+        `oscilab.toolbar`).
         """
-        return self.workspace.attach_producer(producer, signals, storage=storage)
+        models = self.workspace.attach_producer(producer, signals, storage=storage)
+        labels = [signals] if isinstance(signals, str) else list(signals)
+        self.__add_toolbar_items(
+            toolbar_items(producer, required=False),
+            run=functools.partial(self.__run_on_producer, producer),
+            caption=f"{_signals_caption(labels)}:",
+            caption_tooltip=f"{type(producer).__name__} feeding {', '.join(labels)}",
+        )
+        return models
 
     def add_toolbar(self, tools) -> list[qtg.QAction]:
         """
@@ -398,14 +414,35 @@ class Oscilab(qtw.QMainWindow):
         own class, or the class itself if they're classmethods — in the
         toolbar, after the built-in controls. See `oscilab.toolbar`.
         """
+        return self.__add_toolbar_items(toolbar_items(tools))
+
+    def __add_toolbar_items(self, items, run=None, caption: str = "", caption_tooltip: str = "") -> list[qtg.QAction]:
+        """
+        Add `items` (from `toolbar_items`) to the toolbar as one group, after an
+        optional caption. `run(method, *args)` calls a method; by default,
+        directly.
+        """
+        if not items:
+            return []
+        if caption:
+            label = qtw.QLabel(caption)
+            label.setToolTip(caption_tooltip)
+            self.toolbar.addWidget(label)
         actions = []
-        for item, method in toolbar_items(tools):
+        for item, method in items:
+            callback = method if run is None else functools.partial(run, method)
             if item.kind == "button":
-                actions.append(self.add_toolbar_button(item.text, method, tooltip=item.tooltip))
+                actions.append(self.add_toolbar_button(item.text, callback, tooltip=item.tooltip))
             else:
-                actions.append(self.add_toolbar_toggle(item.text, method, checked=item.checked, tooltip=item.tooltip))
-        self.toolbar.addSeparator()  # Keeps each class's controls together
+                actions.append(self.add_toolbar_toggle(item.text, callback, checked=item.checked, tooltip=item.tooltip))
+        self.toolbar.addSeparator()  # Keeps each group together
         return actions
+
+    @staticmethod
+    def __run_on_producer(producer: DataProducer, method: Callable, *args):
+        """Queue a producer's toolbar method onto its own thread, between reads."""
+        if not producer.queue_action(functools.partial(method, *args)):
+            raise RuntimeError(f"{type(producer).__name__} isn't running")
 
     def add_toolbar_button(self, text: str, callback: Callable[[], object], tooltip: str = "") -> qtg.QAction:
         """A toolbar button calling `callback()` — e.g. a method of your own class — when clicked."""

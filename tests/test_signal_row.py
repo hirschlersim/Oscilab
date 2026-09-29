@@ -60,20 +60,6 @@ def test_metrics_are_only_computed_while_expanded(row, model, monkeypatch):
     assert calls == [1]
 
 
-def test_producer_buttons_wait_for_the_first_expand(row):
-    clicks = []
-    row.add_action_button("Zero", "tooltip", lambda: clicks.append("zero"))
-    assert "Zero" not in button_texts(row)
-
-    row.set_expanded(True)
-    row.add_action_button("Reconnect", "tooltip", lambda: clicks.append("reconnect"))
-
-    buttons = {b.text(): b for b in row.findChildren(qtw.QPushButton)}
-    buttons["Zero"].click()
-    buttons["Reconnect"].click()
-    assert clicks == ["zero", "reconnect"]
-
-
 def test_settings_applied_while_collapsed_show_once_expanded(row, model):
     assert row.apply_filter(enabled=True, cutoff=10.0, order=2)
     row.apply_scaling(enabled=True, gain=2.0, offset=1.0)

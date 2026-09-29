@@ -1,4 +1,4 @@
-"""`uv run demo`: a tour of the public API with synthetic data."""
+"""`uv run oscilab-demo`: a tour of the public API with synthetic data."""
 
 import time
 
@@ -39,8 +39,7 @@ def run() -> int:
     # sine sampled together, like a multi-channel DAQ.
     oszi.attach_producer(SyntheticProducer(fs=1_000, freq=(1.0, 10.0)), ["channel-2", "channel-3"])
     # "async": an asyncio-based producer, the template for async hardware
-    # clients. Its "Reset Phase" button is on the signal's row — click the
-    # row's name to expand it.
+    # clients. Its "Reset Phase" button (an @button method) is in the toolbar.
     oszi.attach_producer(AsyncSyntheticProducer(fs=200, freq=2.0), "async")
 
     # A time series plot with three of them...

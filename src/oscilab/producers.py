@@ -37,10 +37,12 @@ What every producer gets from the base class:
 - Saving in a session (`oscilab.session`): the arguments a producer was
   constructed with are recorded automatically, so `config()` can rebuild
   it — as long as they're JSON-friendly (numbers, strings, lists, paths).
-- Custom buttons (e.g. "Reconnect", "Zero") via `actions()`. Clicks are
-  queued and run on the producer's own thread between reads, so an action
-  can safely touch the same connection the producer is reading from. An
-  exception in an action stops the producer like any other.
+- Toolbar buttons and toggles (e.g. "Reconnect", "Zero"): mark methods with
+  `@button` / `@toggle` (from `oscilab.toolbar`), just like any other class's
+  toolbar controls. For a producer, clicks are queued and run on its own
+  thread between reads, so a method can safely touch the same connection the
+  producer is reading from. An exception in one stops the producer like any
+  other.
 """
 
 import asyncio
@@ -58,6 +60,8 @@ from pathlib import Path
 import numpy as np
 from loguru import logger
 from PyQt6 import QtCore as qtc
+
+from oscilab.toolbar import button
 
 
 class _ProducerMeta(type(qtc.QThread), ABCMeta):
@@ -210,19 +214,11 @@ class DataProducer(qtc.QThread, metaclass=_ProducerMeta):
         the producer's own thread after it stops, for whatever reason.
         """
 
-    def actions(self) -> dict[str, Callable[[], None]]:
-        """
-        Override to expose custom buttons on this producer's signal row,
-        e.g. `{"Reconnect": self.reconnect, "Zero": self.zero_calibration}`.
-        Each runs on this producer's own thread, between reads (see
-        `queue_action`), so it may use the same connection the producer does.
-        """
-        return {}
-
     def queue_action(self, action: Callable[[], None]) -> bool:
         """
-        Run `action` on this producer's own thread, between reads. Returns
-        False, without running it, if the producer isn't running.
+        Run `action` on this producer's own thread, between reads — how its
+        `@button` / `@toggle` methods get called. Returns False, without
+        running it, if the producer isn't running.
         """
         if not self._running:
             return False
@@ -489,9 +485,8 @@ class SerialProducer(SyncDataProducer):
 
     This is a template more than a one-size-fits-all class: real hardware
     framing (binary packets, checksums, ...) will need a different
-    `_generate()`, but the pacing/threading/`actions()`/`on_stop()` shape
-    below is reusable as-is. Also demonstrates a custom action button
-    ("Reconnect").
+    `_generate()`, but the pacing/threading/`on_start()`/`on_stop()` shape
+    below is reusable as-is. Also demonstrates a toolbar button ("Reconnect").
     """
 
     def __init__(
@@ -549,11 +544,9 @@ class SerialProducer(SyncDataProducer):
     def on_stop(self):
         self._connection.close()
 
-    def actions(self):
-        return {"Reconnect": self.reconnect}
-
+    @button("Reconnect", tooltip="Close and reopen the serial port")
     def reconnect(self):
-        # Runs on this producer's own thread (see `DataProducer.actions`),
+        # Runs on this producer's own thread (see `DataProducer.queue_action`),
         # so it can't pull the port out from under an in-progress readline().
         self._connection.close()
         self._connection.open()
@@ -565,7 +558,7 @@ class AsyncSyntheticProducer(AsyncDataProducer):
     `AsyncDataProducer` instead of `SyncDataProducer` — a template for
     wrapping an asyncio-based hardware client (`aioserial`, an async
     network client, ...) rather than something you'd use for real demo
-    data. Also demonstrates a custom action button ("Reset Phase").
+    data. Also demonstrates a toolbar button ("Reset Phase").
     """
 
     def __init__(self, fs: float, freq: float = 5.0, amplitude: float = 1.0, chunk_size: int = 10, parent=None):
@@ -591,9 +584,7 @@ class AsyncSyntheticProducer(AsyncDataProducer):
                 self.emit_data(t, self.amplitude * np.sin(2 * np.pi * self.freq * (t - self._phase_origin)))
             await asyncio.sleep(self.chunk_size / self.fs)  # Real code: `await client.read_chunk()` etc.
 
-    def actions(self):
-        return {"Reset Phase": self.reset_phase}
-
+    @button("Reset Phase", tooltip="Restart the sine at phase 0")
     def reset_phase(self):
         # Illustrative custom action — a real one might re-sync a device's
         # onboard clock, send a calibration command, etc. Restarts the sine

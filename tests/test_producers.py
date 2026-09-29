@@ -14,7 +14,6 @@ import time
 
 import numpy as np
 import pytest
-from PyQt6 import QtWidgets as qtw
 
 from oscilab.producers import (
     AsyncDataProducer,
@@ -23,6 +22,7 @@ from oscilab.producers import (
     SyncDataProducer,
     SyntheticProducer,
 )
+from oscilab.toolbar import button
 
 MAIN_THREAD = threading.get_ident()
 
@@ -56,23 +56,12 @@ class Ramp(SyncDataProducer):
         x = np.vstack([(k + 1) * t for k in range(len(self.channels))])
         return t, (x.T if self.transpose else x)
 
-    def actions(self):
-        return {"Mark": self.mark, "Explode": self.explode}
-
+    @button("Mark")
     def mark(self):
         self.action_threads.append(threading.get_ident())
 
-    def explode(self):
-        raise RuntimeError("action failed")
-
     def on_stop(self):
         self.on_stop_thread = threading.get_ident()
-
-
-def action_buttons(workspace, label: str) -> dict[str, qtw.QPushButton]:
-    row = workspace.signal_list.rows[label]
-    row.set_expanded(True)  # Producer buttons live in a row's (collapsed by default) details
-    return {b.text(): b for b in row.findChildren(qtw.QPushButton) if b.text() in ("Mark", "Explode")}
 
 
 # --- attaching and multi-channel data ---------------------------------------
@@ -187,34 +176,15 @@ def test_on_stop_runs_on_the_producer_thread(qapp, workspace, fail_after):
     assert producer.on_stop_thread != MAIN_THREAD
 
 
-# --- actions ----------------------------------------------------------------
+# --- actions (the toolbar side is in test_toolbar.py) ----------------------------
 
 
 def test_actions_run_on_the_producer_thread(qapp, workspace):
-    producer = Ramp(channels=("a", "b"))
-    workspace.attach_producer(producer, ["x", "y"])
-    workspace.add_plot("P")
-    workspace.link(plot="P", label="x")
-    workspace.link(plot="P", label="y")
-
-    # One set of buttons per producer, on the first of its signals to get a row
-    assert set(action_buttons(workspace, "x")) == {"Mark", "Explode"}
-    assert action_buttons(workspace, "y") == {}
-
-    action_buttons(workspace, "x")["Mark"].click()
-    wait_until(qapp, lambda: producer.action_threads)
-    assert producer.action_threads[0] != MAIN_THREAD
-
-
-def test_a_failing_action_stops_the_producer(qapp, workspace):
     producer = Ramp()
     workspace.attach_producer(producer, "s")
-    workspace.add_plot("P")
-    workspace.link(plot="P", label="s")
-
-    action_buttons(workspace, "s")["Explode"].click()
-    wait_until(qapp, lambda: "s" in workspace._producer_errors)
-    assert workspace._producer_errors["s"] == "RuntimeError: action failed"
+    wait_until(qapp, lambda: producer.queue_action(producer.mark))
+    wait_until(qapp, lambda: producer.action_threads)
+    assert producer.action_threads[0] != MAIN_THREAD
 
 
 def test_actions_are_refused_once_stopped(qapp, workspace):  # noqa: ARG001
@@ -257,8 +227,9 @@ class Stuck(AsyncDataProducer):
             raise ConnectionError("socket closed")
         await asyncio.Event().wait()
 
-    def actions(self):
-        return {"Mark": lambda: self.action_threads.append(threading.get_ident())}
+    @button("Mark")
+    def mark(self):
+        self.action_threads.append(threading.get_ident())
 
     def on_stop(self):
         self.on_stop_thread = threading.get_ident()
@@ -279,7 +250,7 @@ def test_async_actions_run_on_the_producer_thread(qapp):
     producer = Stuck()
     producer.start()
     try:
-        wait_until(qapp, lambda: producer.queue_action(producer.actions()["Mark"]))
+        wait_until(qapp, lambda: producer.queue_action(producer.mark))
         wait_until(qapp, lambda: producer.action_threads)
         assert producer.action_threads[0] != MAIN_THREAD
     finally:

@@ -25,6 +25,11 @@ click. `@classmethod`s work too — then pass the class itself.
 A method that raises doesn't take the app down: the error shows in the
 status bar, the traceback goes to the log file, and a toggle flips back to
 the state it was in.
+
+Producers (`oscilab.producers`) use the same decorators: a producer's marked
+methods go in the toolbar when it's attached, captioned with its signals'
+names, and run on the producer's own thread between reads — so they can use
+its device connection safely. A producer that isn't running refuses them.
 """
 
 from collections.abc import Callable
@@ -69,11 +74,12 @@ def _marked(attr) -> ToolbarItem | None:
     return getattr(attr, _MARK, None) or getattr(getattr(attr, "__func__", None), _MARK, None)
 
 
-def toolbar_items(tools) -> list[tuple[ToolbarItem, Callable]]:
+def toolbar_items(tools, required: bool = True) -> list[tuple[ToolbarItem, Callable]]:
     """
     The `@button` / `@toggle` methods of `tools` — an instance, or a class whose
     marked methods are all classmethods — as (item, bound method) pairs, in
-    definition order, base classes first.
+    definition order, base classes first. With `required`, having none is an
+    error; producers pass False, since most have no controls.
     """
     cls = tools if isinstance(tools, type) else type(tools)
     found: dict[str, tuple[ToolbarItem, object]] = {}
@@ -82,7 +88,7 @@ def toolbar_items(tools) -> list[tuple[ToolbarItem, Callable]]:
             item = _marked(attr)
             if item is not None:
                 found[name] = (item, attr)  # A subclass's override keeps the base's position
-    if not found:
+    if not found and required:
         raise ValueError(f"{cls.__name__} has no @button or @toggle methods")
 
     items = []

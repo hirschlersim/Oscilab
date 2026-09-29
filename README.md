@@ -56,7 +56,7 @@ oscilab.py            QMainWindow: menus, toolbar, window chrome
 session.py             ├─ save/restore a whole setup as JSON
 log.py                 └─ logging: console, log file, status bar
     │
-demo.py               Example usage / `uv run demo` entry point
+demo.py               Example usage / `uv run oscilab-demo` entry point
 __main__.py           `uv run oscilab [session.json]` entry point
 ```
 
@@ -73,13 +73,8 @@ Requires Python 3.12+ and [uv](https://docs.astral.sh/uv/).
 
 ```bash
 uv sync
-uv run demo
+uv run oscilab-demo
 ```
-
-If `uv run demo` says `program not found` in an environment that also had
-the project installed under its old name (`oszilab`), uninstalling that
-took the shared `demo` launcher with it —
-`uv sync --reinstall-package oscilab` puts it back.
 
 [`demo.py`](src/oscilab/demo.py) is a good starting point for the public
 API:
@@ -92,7 +87,7 @@ oszi = Oscilab()
 # Each producer registers its own signals, one per channel, at its own fs
 oszi.attach_producer(SyntheticProducer(fs=100, freq=5.0), "channel-1", storage=oszi.storage.deque)
 oszi.attach_producer(SyntheticProducer(fs=1_000, freq=(1.0, 10.0)), ["channel-2", "channel-3"])
-oszi.attach_producer(AsyncSyntheticProducer(fs=200, freq=2.0), "async")  # has a "Reset Phase" button
+oszi.attach_producer(AsyncSyntheticProducer(fs=200, freq=2.0), "async")  # adds a "Reset Phase" toolbar button
 
 oszi.add_timeseries_plot("Sensors")
 oszi.link(plot="Sensors", label="channel-1")
@@ -111,6 +106,9 @@ blocking APIs) or `AsyncDataProducer` (for `asyncio`-based ones) from
 `producers.py` and implement its one abstract method:
 
 ```python
+from oscilab import SyncDataProducer, button
+
+
 class ImuProducer(SyncDataProducer):
     channels = ("ax", "ay", "az")
 
@@ -128,8 +126,9 @@ class ImuProducer(SyncDataProducer):
     def on_stop(self):  # runs on the producer's thread, however it stops
         self.device.close()
 
-    def actions(self):  # buttons on the signal's row, run on the producer's thread
-        return {"Zero": self.device.zero}
+    @button("Zero")  # a toolbar button, run on the producer's thread
+    def zero(self):
+        self.device.zero()
 
 
 oszi.attach_producer(ImuProducer("COM3"), ["acc-x", "acc-y", "acc-z"])
@@ -172,6 +171,10 @@ goes to the log file, and a toggle flips back. For a one-off,
 `oszi.add_toolbar_button("Zero", device.zero)` and `add_toolbar_toggle` take
 any callable.
 
+Producers use the same decorators (see the `ImuProducer` above): their
+buttons and toggles go in the toolbar when they're attached, captioned with
+their signals' names, and run on the producer's own thread between reads.
+
 ### Sessions
 
 Set a layout up once, then reopen it without writing Python.
@@ -203,7 +206,7 @@ Everything is logged with [loguru](https://github.com/Delgan/loguru), to
 three places:
 
 - **the console**;
-- **a log file**, when Oscilab starts the application itself (`uv run demo`,
+- **a log file**, when Oscilab starts the application itself (`uv run oscilab-demo`,
   `uv run oscilab`): in your per-user app data folder
   (`%LOCALAPPDATA%\Oscilab\logs\oscilab.log` on Windows), rotated at 1 MB
   with the last 5 kept, producers' tracebacks included. **Help → Open Log

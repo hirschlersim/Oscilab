@@ -15,7 +15,7 @@ dependencies = [
 ]
 
 [project.scripts]
-demo = "oscilab.demo:run"
+oscilab-demo = "oscilab.demo:run"
 oscilab = "oscilab.__main__:main"
 
 [tool.setuptools.packages.find]

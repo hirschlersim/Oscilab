@@ -1,4 +1,3 @@
-from collections.abc import Callable
 from typing import ClassVar
 
 from loguru import logger as default_logger
@@ -81,9 +80,9 @@ class SignalRow(qtw.QWidget):
 
     Collapsed by default: just the curve color, the name and Visible (plus
     Restart while its producer is stopped by an error). Clicking the name
-    expands the details — live metrics, Filter/Scaling and the producer's
-    buttons — which are only built the first time, and whose metrics are
-    only computed while expanded.
+    expands the details — live metrics and Filter/Scaling — which are only
+    built the first time, and whose metrics are only computed while expanded.
+    (A producer's own buttons live in the toolbar, see `oscilab.toolbar`.)
     """
 
     visibility_changed = qtc.pyqtSignal(str, bool)  # (label, visible)
@@ -98,7 +97,7 @@ class SignalRow(qtw.QWidget):
         "P-P": "Peak-to-peak: Max minus Min",
         "RMS": "Root mean square: a measure of the signal's overall magnitude",
     }
-    _NAME_TOOLTIP = "Show or hide this signal's metrics, Filter/Scaling and producer buttons"
+    _NAME_TOOLTIP = "Show or hide this signal's metrics and Filter/Scaling"
 
     def __init__(self, label: str, model, derived: bool = False, has_curve: bool = True, parent=None, logger=None):
         super().__init__(parent)
@@ -115,14 +114,11 @@ class SignalRow(qtw.QWidget):
         self.filter_settings = {"enabled": False, "cutoff": min(50.0, model.fs / 4), "order": 4}
         self.scaling_settings = {"enabled": False, "gain": 1.0, "offset": 0.0}
 
-        # Built on first expand (see `set_expanded`); producer buttons added
-        # before then wait here.
+        # Built on first expand (see `set_expanded`)
         self._details: qtw.QWidget | None = None
         self.filter_button: qtw.QPushButton | None = None
         self.scaling_button: qtw.QPushButton | None = None
         self.metric_labels: dict[str, qtw.QLabel] = {}
-        self._actions_layout: qtw.QHBoxLayout | None = None
-        self._pending_actions: list[tuple[str, str, Callable]] = []
 
         self._outer = qtw.QVBoxLayout(self)
         self._outer.setContentsMargins(0, 0, 0, 6)
@@ -189,9 +185,9 @@ class SignalRow(qtw.QWidget):
         metrics_layout.addStretch()
         layout.addLayout(metrics_layout)
 
-        # Filter/Scaling, then the producer's own buttons (e.g. "Reconnect")
-        self._actions_layout = qtw.QHBoxLayout()
-        self._actions_layout.setContentsMargins(0, 0, 0, 0)
+        # Filter/Scaling
+        buttons_layout = qtw.QHBoxLayout()
+        buttons_layout.setContentsMargins(0, 0, 0, 0)
 
         self.filter_button = qtw.QPushButton("Filter")
         self.filter_button.setToolTip("Apply a low-pass Butterworth filter to this signal")
@@ -207,14 +203,10 @@ class SignalRow(qtw.QWidget):
                 button.setToolTip("Not available for derived (math) signals")
         self.__set_active_style(self.filter_button, self.filter_settings["enabled"])
         self.__set_active_style(self.scaling_button, self.scaling_settings["enabled"])
-        self._actions_layout.addWidget(self.filter_button)
-        self._actions_layout.addWidget(self.scaling_button)
-
-        for text, tooltip, callback in self._pending_actions:
-            self.__add_action_button_now(text, tooltip, callback)
-        self._pending_actions.clear()
-        self._actions_layout.addStretch()
-        layout.addLayout(self._actions_layout)
+        buttons_layout.addWidget(self.filter_button)
+        buttons_layout.addWidget(self.scaling_button)
+        buttons_layout.addStretch()
+        layout.addLayout(buttons_layout)
         return details
 
     @property
@@ -222,7 +214,7 @@ class SignalRow(qtw.QWidget):
         return self.name_button.isChecked()
 
     def set_expanded(self, expanded: bool):
-        """Show or hide the details (metrics, Filter/Scaling, producer buttons)."""
+        """Show or hide the details (metrics, Filter/Scaling)."""
         if expanded and self._details is None:
             self._details = self.__build_details()
             self._outer.addWidget(self._details)
@@ -266,28 +258,6 @@ class SignalRow(qtw.QWidget):
 
     def set_visible(self, visible: bool):
         self.visibility_button.setChecked(not visible)
-
-    def add_action_button(self, text: str, tooltip: str, callback: Callable):
-        """
-        Add a producer-specific action button (e.g. "Reconnect") next to
-        Filter/Scaling — see `oscilab.producers.DataProducer.actions`. On a
-        collapsed row that hasn't been expanded yet, it's created on expand.
-        """
-        if self._actions_layout is None:
-            self._pending_actions.append((text, tooltip, callback))
-        else:
-            self.__add_action_button_now(text, tooltip, callback)
-
-    def __add_action_button_now(self, text: str, tooltip: str, callback: Callable):
-        button = qtw.QPushButton(text)
-        button.setToolTip(tooltip)
-        button.clicked.connect(callback)
-        # Before the trailing stretch, if it's there already
-        stretch_at = self._actions_layout.count() - 1
-        if stretch_at >= 0 and self._actions_layout.itemAt(stretch_at).spacerItem() is not None:
-            self._actions_layout.insertWidget(stretch_at, button)
-        else:
-            self._actions_layout.addWidget(button)
 
     def set_error(self, message: str):
         """Flag that this signal's producer stopped with an error, and offer a Restart."""

@@ -50,19 +50,6 @@ working list, roughly in the order they'd make sense within each section.
 - **API docs.** The README covers usage; reference docs could be generated
   from the docstrings (e.g. with pdoc) and published.
 
-## Open questions
-
-- **Custom GUI from a class, beyond buttons.** Producer buttons
-  (`DataProducer.actions()`) and toolbar buttons/toggles (`@button` /
-  `@toggle` + `add_toolbar`) work. A whole side panel from an add-on (its
-  own widgets, e.g. a settings form) would need more. Is it needed?
-- **Where producer buttons go.** They sit on the first of a producer's
-  signals to get a row. With many buttons, a per-producer section could be
-  clearer.
-- **The `demo` launcher name** is generic. Another installed package with a
-  `demo` script would collide, which is how the old `oszilab` install took
-  it with it on uninstall. `oscilab-demo` would be safer.
-
 ## Dump
 
 - contoller bt producer
