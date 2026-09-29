@@ -26,8 +26,13 @@ class View(Protocol):
         """The `PlotItem` the image exporters render."""
         ...
 
-    def refresh(self) -> None:
-        """Redraw from the current signal buffers. Called every tick."""
+    def refresh(self, now: float | None = None) -> None:
+        """
+        Redraw from the current signal buffers. Called every tick with `now`,
+        the newest timestamp among all shown signals: relative time mode puts
+        it at 0, the same for every plot. Without it, a plot uses its own
+        newest sample.
+        """
         ...
 
     def set_theme(self, bg: str, fg: str) -> None: ...

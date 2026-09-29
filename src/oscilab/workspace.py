@@ -369,11 +369,26 @@ class Workspace:
             t, x = math_signal.compute()
             self.signals[math_signal.label].set_data(t, x)
 
+        self.__refresh_views()
+        self.signal_list.refresh()
+
+    def __refresh_views(self):
+        now = self.__newest_shown_time()
         for view in self.views.values():
-            view.refresh()
+            view.refresh(now)
         for title in self.plots:
             self.__refresh_cursor_readout(title)
-        self.signal_list.refresh()
+
+    def __newest_shown_time(self) -> float | None:
+        """
+        "Now" for relative time: the newest timestamp among the signals shown
+        in some plot. One value for every plot, so signals that arrive with
+        different delays, on the same or on X-linked plots, stay in step.
+        Signals not shown anywhere don't count (they might even run on
+        another clock).
+        """
+        newest = [self.signals[label].time[-1] for label in self.signal_list.rows if self.signals[label].time]
+        return max(newest, default=None)
 
     def reset_views(self):
         for view in self.views.values():
@@ -422,6 +437,7 @@ class Workspace:
         self._time_mode = mode
         for view in self.views.values():
             view.set_time_mode(mode)
+        self.__refresh_views()  # On the shared "now" right away, even while paused
 
     def set_downsampling(self, enabled: bool):
         """

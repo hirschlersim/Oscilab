@@ -3,20 +3,6 @@
 Rough notes on what's missing or could be added next. Not commitments, just a
 working list, roughly in the order they'd make sense within each section.
 
-## Known issues
-
-- **Math signals pair samples by position, not by time.** `MathSignal`
-  combines the last *n* samples of A and B index by index. With different
-  sampling rates (the demo's `channel-1` at 100 Hz vs `channel-2` at 1 kHz —
-  the Math menu offers both) or producers that started at different moments,
-  it combines values from different times. Fix: interpolate B onto A's
-  timestamps (`np.interp`) over their overlapping time range.
-- **Relative time mode can draw signals out of step.** Each curve is shifted
-  by its *own* newest sample (`TimeseriesPlot.refresh`), so a signal that
-  arrives later than the others is drawn misaligned against them. Shift
-  every curve (and the cursor readout) by the plot's newest timestamp
-  instead.
-
 ## Next up
 
 1. **Network/UDP producer template.** An `AsyncDataProducer` over an

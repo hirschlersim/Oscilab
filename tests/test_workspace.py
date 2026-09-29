@@ -135,6 +135,84 @@ def test_math_signal_is_recomputed_on_refresh(workspace):
     np.testing.assert_allclose(workspace.signals["sum"].snapshot()[1], a * 2)
 
 
+# --- relative time ----------------------------------------------------------
+
+
+def lagging_pair(workspace: Workspace, fs: float = 10.0):
+    """'a' has data up to t = 10.0 s; 'b', on the same clock but arriving later, up to 9.5 s."""
+    t_a = np.arange(round(10.0 * fs) + 1) / fs
+    t_b = np.arange(round(9.5 * fs) + 1) / fs
+    workspace.register_signal("a", fs=fs).add_data(t_a, t_a)  # a(t) = t
+    workspace.register_signal("b", fs=fs).add_data(t_b, 2 * t_b)  # b(t) = 2t
+
+
+def newest_x(plot, label: str) -> float:
+    return float(plot.curves[label].getData()[0][-1])
+
+
+def test_relative_time_puts_signals_on_one_clock(workspace):
+    lagging_pair(workspace)
+    plot, _ = workspace.add_plot("P")
+    workspace.link(plot="P", label="a")
+    workspace.link(plot="P", label="b")
+    workspace.set_time_mode("relative")
+    workspace.refresh()
+
+    assert newest_x(plot, "a") == pytest.approx(0.0)
+    assert newest_x(plot, "b") == pytest.approx(-0.5)  # Its newest sample is half a second older
+
+
+def test_relative_time_is_shared_across_plots(workspace):
+    lagging_pair(workspace)
+    plot_a, _ = workspace.add_plot("A")
+    plot_b, _ = workspace.add_plot("B")  # X-linked to A, so both axes must mean the same time
+    workspace.link(plot="A", label="a")
+    workspace.link(plot="B", label="b")
+    workspace.set_time_mode("relative")
+    workspace.refresh()
+
+    assert newest_x(plot_a, "a") == pytest.approx(0.0)
+    assert newest_x(plot_b, "b") == pytest.approx(-0.5)
+
+
+def test_relative_cursor_readout_uses_the_shared_clock(workspace):
+    lagging_pair(workspace)
+    plot, _ = workspace.add_plot("P")
+    workspace.link(plot="P", label="a")
+    workspace.link(plot="P", label="b")
+    workspace.set_time_mode("relative")
+    workspace.refresh()
+    workspace.set_cursors("P", enabled=True)
+    plot.cursor_region.setRegion((-1.0, -0.5))  # t = 9.0 s and 9.5 s, for both signals
+
+    readout = plot.cursor_readout()["signals"]
+    assert readout["a"]["value_a"] == pytest.approx(9.0)
+    assert readout["b"]["value_a"] == pytest.approx(18.0)  # b(9.0), not b at 9.0 s before b's own newest
+
+
+def test_relative_spectrogram_uses_the_shared_clock(workspace):
+    lagging_pair(workspace, fs=1_000.0)  # enough samples for STFT windows
+    workspace.add_plot("P")
+    workspace.link(plot="P", label="a")
+    spectrogram, _ = workspace.add_spectrogram("b")
+    workspace.set_time_mode("relative")
+    workspace.refresh()
+
+    right = spectrogram.img.mapRectToView(spectrogram.img.boundingRect()).right()
+    assert -0.6 < right < -0.4  # b's newest column, 0.5 s before a's newest sample (± a column)
+
+
+def test_signals_not_shown_anywhere_dont_move_now(workspace):
+    lagging_pair(workspace)
+    workspace.register_signal("elsewhere", fs=1).add_data([1e9], [0.0])  # Another clock entirely
+    plot, _ = workspace.add_plot("P")
+    workspace.link(plot="P", label="b")
+    workspace.set_time_mode("relative")
+    workspace.refresh()
+
+    assert newest_x(plot, "b") == pytest.approx(0.0)
+
+
 # --- exports ----------------------------------------------------------------
 
 

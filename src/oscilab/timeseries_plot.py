@@ -19,6 +19,7 @@ class TimeseriesPlot(pg.PlotWidget):
         self.y_range_min = 0.0
         self.y_range_max = 1.0
         self.cursor_region: pg.LinearRegionItem | None = None
+        self._shift = 0.0  # Subtracted from time on screen by the last refresh(): `now` in relative mode
 
         # Curve colors, assigned round-robin as signals are added
         self.colors = ["#FF5555", "#55FF55", "#5555FF", "#FFFF55", "#FF55FF"]
@@ -63,8 +64,17 @@ class TimeseriesPlot(pg.PlotWidget):
         label = "Time (relative to now)" if self.time_mode == "relative" else "Time"
         self.setLabel("bottom", label, units="s")
 
-    def refresh(self):
-        """Redraw every visible curve from its signal's current buffer (called each tick)."""
+    def refresh(self, now: float | None = None):
+        """
+        Redraw every visible curve from its signal's current buffer (called
+        each tick). In relative time mode, `now` is shown as 0 — one shift for
+        every curve, so signals that arrive with different delays stay in step
+        (see `oscilab.view.View.refresh`).
+        """
+        if self.time_mode == "relative":
+            self._shift = now if now is not None else self.__newest_time()
+        else:
+            self._shift = 0.0
         for label, curve in self.curves.items():
             if not curve.isVisible():
                 continue
@@ -72,9 +82,11 @@ class TimeseriesPlot(pg.PlotWidget):
             if not model.time:
                 continue
             x, y = model.snapshot()
-            if self.time_mode == "relative":
-                x = x - x[-1]  # Newest sample at 0, older samples negative
-            curve.setData(x, y)
+            curve.setData(x - self._shift, y)
+
+    def __newest_time(self) -> float:
+        newest = [model.time[-1] for model in self.models.values() if model.time]
+        return max(newest, default=0.0)
 
     def add_signal(self, label: str, model) -> str:
         color = self.colors[len(self.curves) % len(self.colors)]
@@ -192,13 +204,12 @@ class TimeseriesPlot(pg.PlotWidget):
                 continue
 
             time_arr, data_arr = model.snapshot()
-            # Displayed coordinates are shifted by -now in relative time
-            # mode (see `refresh()`); map back to the model's own real time
-            # to look up samples. The shift cancels in `t_b - t_a`, so ΔT
-            # above is already correct regardless of time mode.
-            shift = time_arr[-1] if self.time_mode == "relative" else 0.0
-            idx_a = int(np.argmin(np.abs(time_arr - (t_a + shift))))
-            idx_b = int(np.argmin(np.abs(time_arr - (t_b + shift))))
+            # Displayed coordinates are shifted by the last refresh's `now` in
+            # relative time mode (see `refresh()`); map back to real time to
+            # look up samples. The shift cancels in `t_b - t_a`, so ΔT above
+            # is already correct regardless of time mode.
+            idx_a = int(np.argmin(np.abs(time_arr - (t_a + self._shift))))
+            idx_b = int(np.argmin(np.abs(time_arr - (t_b + self._shift))))
             value_a, value_b = float(data_arr[idx_a]), float(data_arr[idx_b])
             signals[label] = {"value_a": value_a, "value_b": value_b, "delta": value_b - value_a}
 

@@ -124,8 +124,12 @@ class SpectrogramPlot(qtw.QWidget):
             self.img.setLevels((lo, hi))
             self._levels_initialized = True  # stop the auto-snapshot logic in refresh() from overriding this
 
-    def refresh(self):
-        """Extend the STFT with the samples that arrived since last tick and redraw (called each tick)."""
+    def refresh(self, now: float | None = None):
+        """
+        Extend the STFT with the samples that arrived since last tick and
+        redraw (called each tick). `now` is shown as 0 in relative time mode;
+        without it, this signal's newest sample is (see `oscilab.view.View`).
+        """
         time_full, data_full = self.model.snapshot()
         if len(data_full) < self.nperseg:
             return  # Not enough samples yet for even one STFT window
@@ -141,7 +145,7 @@ class SpectrogramPlot(qtw.QWidget):
         else:
             display_cols, display_times = self._cached_cols, self._cached_times
 
-        self.__draw(display_cols, display_times, freqs, newest=time_full[-1])
+        self.__draw(display_cols, display_times, freqs, newest=now if now is not None else time_full[-1])
 
     def __update_cache(self, time_full: np.ndarray, data_full: np.ndarray):
         """
