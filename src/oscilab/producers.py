@@ -37,12 +37,12 @@ What every producer gets from the base class:
 - Saving in a session (`oscilab.session`): the arguments a producer was
   constructed with are recorded automatically, so `config()` can rebuild
   it — as long as they're JSON-friendly (numbers, strings, lists, paths).
-- Toolbar buttons and toggles (e.g. "Reconnect", "Zero"): mark methods with
-  `@button` / `@toggle` (from `oscilab.toolbar`), just like any other class's
-  toolbar controls. For a producer, clicks are queued and run on its own
-  thread between reads, so a method can safely touch the same connection the
-  producer is reading from. An exception in one stops the producer like any
-  other.
+- An entry in the window's Producers menu, with Start and Stop — plus its
+  own functions (e.g. "Reconnect", "Zero"): methods marked with `@button` /
+  `@toggle` (from `oscilab.toolbar`), the same decorators as toolbar
+  controls. They're queued and run on the producer's own thread between
+  reads, so a method can safely touch the same connection the producer is
+  reading from. An exception in one stops the producer like any other.
 """
 
 import asyncio
@@ -491,7 +491,8 @@ class SerialProducer(SyncDataProducer):
     This is a template more than a one-size-fits-all class: real hardware
     framing (binary packets, checksums, ...) will need a different
     `_generate()`, but the pacing/threading/`on_start()`/`on_stop()` shape
-    below is reusable as-is. Also demonstrates a toolbar button ("Reconnect").
+    below is reusable as-is. Also demonstrates a Producers-menu function
+    ("Reconnect").
     """
 
     def __init__(
@@ -563,7 +564,7 @@ class AsyncSyntheticProducer(AsyncDataProducer):
     `AsyncDataProducer` instead of `SyncDataProducer` — a template for
     wrapping an asyncio-based hardware client (`aioserial`, an async
     network client, ...) rather than something you'd use for real demo
-    data. Also demonstrates a toolbar button ("Reset Phase").
+    data. Also demonstrates a Producers-menu function ("Reset Phase").
     """
 
     def __init__(self, fs: float, freq: float = 5.0, amplitude: float = 1.0, chunk_size: int = 10, parent=None):

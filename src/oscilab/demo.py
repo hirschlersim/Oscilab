@@ -39,7 +39,8 @@ def run() -> int:
     # sine sampled together, like a multi-channel DAQ.
     oszi.attach_producer(SyntheticProducer(fs=1_000, freq=(1.0, 10.0)), ["channel-2", "channel-3"])
     # "async": an asyncio-based producer, the template for async hardware
-    # clients. Its "Reset Phase" button (an @button method) is in the toolbar.
+    # clients. Its "Reset Phase" function (an @button method) is in the
+    # Producers menu, next to its Start and Stop.
     oszi.attach_producer(AsyncSyntheticProducer(fs=200, freq=2.0), "async")
 
     # A time series plot with three of them...

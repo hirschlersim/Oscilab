@@ -24,9 +24,9 @@ architecture in Python; still under active development (see
 - **Signal math** — derive a new signal as `A op B` (`+ - * /`) from two
   existing signals.
 - **Pluggable data producers** — background `QThread`-based producers
-  with a synchronous or `asyncio` base class, multi-channel, with their
-  own buttons on the signal rows; an error stops only the producer that
-  hit it. Ships with a synthetic signal generator, a CSV file-replay
+  with a synchronous or `asyncio` base class, multi-channel; the Producers
+  menu starts and stops them and runs their own functions. An error stops
+  only the producer that hit it. Ships with a synthetic signal generator, a CSV file-replay
   producer, and templates for serial and `asyncio` sources.
 - **Two storage backends** — a plain `collections.deque` or a
   thread-safe, pre-allocated numpy ring buffer, selectable per signal
@@ -87,7 +87,7 @@ oszi = Oscilab()
 # Each producer registers its own signals, one per channel, at its own fs
 oszi.attach_producer(SyntheticProducer(fs=100, freq=5.0), "channel-1", storage=oszi.storage.deque)
 oszi.attach_producer(SyntheticProducer(fs=1_000, freq=(1.0, 10.0)), ["channel-2", "channel-3"])
-oszi.attach_producer(AsyncSyntheticProducer(fs=200, freq=2.0), "async")  # adds a "Reset Phase" toolbar button
+oszi.attach_producer(AsyncSyntheticProducer(fs=200, freq=2.0), "async")  # has a "Reset Phase" function
 
 oszi.add_timeseries_plot("Sensors")
 oszi.link(plot="Sensors", label="channel-1")
@@ -126,7 +126,7 @@ class ImuProducer(SyncDataProducer):
     def on_stop(self):  # runs on the producer's thread, however it stops
         self.device.close()
 
-    @button("Zero")  # a toolbar button, run on the producer's thread
+    @button("Zero")  # in its Producers-menu entry, run on the producer's thread
     def zero(self):
         self.device.zero()
 
@@ -171,9 +171,10 @@ goes to the log file, and a toggle flips back. For a one-off,
 `oszi.add_toolbar_button("Zero", device.zero)` and `add_toolbar_toggle` take
 any callable.
 
-Producers use the same decorators (see the `ImuProducer` above): their
-buttons and toggles go in the toolbar when they're attached, captioned with
-their signals' names, and run on the producer's own thread between reads.
+Producers use the same decorators (see the `ImuProducer` above), but their
+functions go in the **Producers** menu instead: every attached producer has
+an entry there with **Start**, **Stop** and its `@button` / `@toggle`
+methods, which run on the producer's own thread between reads.
 
 ### Sessions
 

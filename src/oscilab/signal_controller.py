@@ -87,7 +87,7 @@ class SignalRow(qtw.QWidget):
     Restart while its producer is stopped by an error). Clicking the name
     expands the details — live metrics and Filter/Scaling — which are only
     built the first time, and whose metrics are only computed while expanded.
-    (A producer's own buttons live in the toolbar, see `oscilab.toolbar`.)
+    (A producer's own functions live in the Producers menu.)
     """
 
     visibility_changed = qtc.pyqtSignal(str, bool)  # (label, visible)

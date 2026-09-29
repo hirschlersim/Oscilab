@@ -18,7 +18,7 @@ from oscilab.log import StatusLine, log_file, log_to_file
 from oscilab.math_signal import OPERATORS
 from oscilab.producers import DataProducer
 from oscilab.storage import Storage
-from oscilab.toolbar import toolbar_items
+from oscilab.toolbar import ToolbarItem, toolbar_items
 from oscilab.workspace import Workspace
 
 
@@ -197,6 +197,7 @@ class Oscilab(qtw.QMainWindow):
         self.__build_file_menu()
         self.__build_view_menu()
         self.__build_math_menu()
+        self.__build_producers_menu()
         self.__build_cursors_menu()
         self.__build_help_menu()
 
@@ -267,6 +268,16 @@ class Oscilab(qtw.QMainWindow):
             math_action.setToolTip(f"Create a new signal as A {operator} B, picked from a dialog")
             math_action.triggered.connect(lambda _checked=False, op=operator: self.__open_math_dialog(op))
             math_menu.addAction(math_action)
+
+    def __build_producers_menu(self):
+        # One submenu per attached producer, added by attach_producer()
+        self.producers_menu = self.menuBar().addMenu("Producers")
+        self.producers_menu.menuAction().setToolTip("Start and stop the attached producers, and run their functions")
+        self.producers_menu.setToolTipsVisible(True)
+        self._no_producers_action = self.producers_menu.addAction("No producers attached")
+        self._no_producers_action.setEnabled(False)
+        self._producer_menus: list[tuple[str, qtw.QMenu, qtg.QAction, qtg.QAction]] = []
+        self.producers_menu.aboutToShow.connect(self.__update_producer_menus)
 
     def __build_cursors_menu(self):
         # One checkable entry per timeseries plot, added as
@@ -394,19 +405,52 @@ class Oscilab(qtw.QMainWindow):
         """
         Register one signal per producer channel, named by `signals` (a single
         label for a single-channel producer), and start the producer feeding
-        them. The signals use the producer's `fs`. Its `@button` / `@toggle`
-        methods, if any, go in the toolbar, run on its own thread (see
-        `oscilab.toolbar`).
+        them. The signals use the producer's `fs`. It gets an entry in the
+        Producers menu — Start, Stop, and its `@button` / `@toggle` methods,
+        which run on its own thread (see `oscilab.toolbar`).
         """
         models = self.workspace.attach_producer(producer, signals, storage=storage)
-        labels = [signals] if isinstance(signals, str) else list(signals)
-        self.__add_toolbar_items(
-            toolbar_items(producer, required=False),
-            run=functools.partial(self.__run_on_producer, producer),
-            caption=f"{_signals_caption(labels)}:",
-            caption_tooltip=f"{type(producer).__name__} feeding {', '.join(labels)}",
-        )
+        self.__add_producer_menu(producer)
         return models
+
+    def __add_producer_menu(self, producer: DataProducer):
+        if self._no_producers_action is not None:
+            self.producers_menu.removeAction(self._no_producers_action)
+            self._no_producers_action = None
+
+        labels = self.workspace.signals_fed_by(producer)
+        menu = self.producers_menu.addMenu(f"{type(producer).__name__}: {_signals_caption(labels)}")
+        menu.setToolTipsVisible(True)
+        menu.menuAction().setToolTip(f"Feeds {', '.join(labels)}")
+        start = menu.addAction("Start")
+        start.setToolTip("Start producing again (after Stop, or an error)")
+        start.triggered.connect(lambda: self.__producer_command(self.workspace.start_producer, labels[0]))
+        stop = menu.addAction("Stop")
+        stop.setToolTip("Stop producing; the data received so far stays")
+        stop.triggered.connect(lambda: self.__producer_command(self.workspace.stop_producer, labels[0]))
+
+        items = toolbar_items(producer, required=False)
+        if items:
+            menu.addSeparator()
+        for item, method in items:
+            run = functools.partial(self.__run_on_producer, producer, method)
+            menu.addAction(self.__control_action(item, run, dot=False))
+
+        self._producer_menus.append((labels[0], menu, start, stop))
+        self.__update_producer_menus()
+
+    def __update_producer_menus(self):
+        """Start/Stop enabled, and a dot for the state: running green, stopped gray, error red."""
+        colors = {"running": "green", "stopped": "gray", "error": "red"}
+        for label, menu, start, stop in self._producer_menus:
+            state = self.workspace.producer_state(label)
+            menu.menuAction().setIcon(self._dot_icon(colors[state]))
+            start.setEnabled(state != "running")
+            stop.setEnabled(state == "running")
+
+    def __producer_command(self, command: Callable[[str], None], label: str):
+        self.__run_tool(command.__name__, command, label)
+        self.__update_producer_menus()
 
     def add_toolbar(self, tools) -> list[qtg.QAction]:
         """
@@ -414,41 +458,14 @@ class Oscilab(qtw.QMainWindow):
         own class, or the class itself if they're classmethods — in the
         toolbar, after the built-in controls. See `oscilab.toolbar`.
         """
-        return self.__add_toolbar_items(toolbar_items(tools))
-
-    def __add_toolbar_items(self, items, run=None, caption: str = "", caption_tooltip: str = "") -> list[qtg.QAction]:
-        """
-        Add `items` (from `toolbar_items`) to the toolbar as one group, after an
-        optional caption. `run(method, *args)` calls a method; by default,
-        directly.
-        """
-        if not items:
-            return []
-        if caption:
-            label = qtw.QLabel(caption)
-            label.setToolTip(caption_tooltip)
-            self.toolbar.addWidget(label)
-        actions = []
-        for item, method in items:
-            callback = method if run is None else functools.partial(run, method)
-            if item.kind == "button":
-                actions.append(self.add_toolbar_button(item.text, callback, tooltip=item.tooltip))
-            else:
-                actions.append(self.add_toolbar_toggle(item.text, callback, checked=item.checked, tooltip=item.tooltip))
-        self.toolbar.addSeparator()  # Keeps each group together
+        actions = [self.__control_action(item, method) for item, method in toolbar_items(tools)]
+        self.toolbar.addActions(actions)
+        self.toolbar.addSeparator()  # Keeps each class's controls together
         return actions
-
-    @staticmethod
-    def __run_on_producer(producer: DataProducer, method: Callable, *args):
-        """Queue a producer's toolbar method onto its own thread, between reads."""
-        if not producer.queue_action(functools.partial(method, *args)):
-            raise RuntimeError(f"{type(producer).__name__} isn't running")
 
     def add_toolbar_button(self, text: str, callback: Callable[[], object], tooltip: str = "") -> qtg.QAction:
         """A toolbar button calling `callback()` — e.g. a method of your own class — when clicked."""
-        action = qtg.QAction(text, self)
-        action.setToolTip(tooltip or text)
-        action.triggered.connect(lambda _checked=False: self.__run_tool(text, callback))
+        action = self.__control_action(ToolbarItem("button", text, tooltip), callback)
         self.toolbar.addAction(action)
         return action
 
@@ -459,14 +476,33 @@ class Oscilab(qtw.QMainWindow):
         A toolbar toggle calling `callback(on)` with its new state whenever it
         changes. `checked`: the initial state, which isn't reported to `callback`.
         """
-        action = qtg.QAction(text, self)
-        action.setCheckable(True)
-        action.setChecked(checked)
-        action.setIcon(self._dot_icon("green" if checked else "gray"))
-        action.setToolTip(tooltip or text)
-        action.toggled.connect(lambda on: self.__run_toggle(action, callback, on))
+        action = self.__control_action(ToolbarItem("toggle", text, tooltip, checked), callback)
         self.toolbar.addAction(action)
         return action
+
+    def __control_action(self, item: ToolbarItem, callback: Callable, dot: bool = True) -> qtg.QAction:
+        """
+        The QAction for a `@button` / `@toggle` control, wherever it goes. A
+        toggle shows its state as a green/gray `dot` (in the toolbar), or just
+        a check mark (in a menu).
+        """
+        action = qtg.QAction(item.text, self)
+        action.setToolTip(item.tooltip or item.text)
+        if item.kind == "button":
+            action.triggered.connect(lambda _checked=False: self.__run_tool(item.text, callback))
+        else:
+            action.setCheckable(True)
+            action.setChecked(item.checked)
+            if dot:
+                action.setIcon(self._dot_icon("green" if item.checked else "gray"))
+            action.toggled.connect(lambda on: self.__run_toggle(action, callback, on, dot))
+        return action
+
+    @staticmethod
+    def __run_on_producer(producer: DataProducer, method: Callable, *args):
+        """Queue a producer's control method onto its own thread, between reads."""
+        if not producer.queue_action(functools.partial(method, *args)):
+            raise RuntimeError(f"{type(producer).__name__} isn't running")
 
     def __run_tool(self, name: str, callback: Callable, *args) -> bool:
         """Run a custom toolbar callback. An exception is reported (status bar, log file), never fatal."""
@@ -477,9 +513,10 @@ class Oscilab(qtw.QMainWindow):
             return False
         return True
 
-    def __run_toggle(self, action: qtg.QAction, callback: Callable[[bool], object], on: bool):
+    def __run_toggle(self, action: qtg.QAction, callback: Callable[[bool], object], on: bool, dot: bool):
         if self.__run_tool(action.text(), callback, on):
-            action.setIcon(self._dot_icon("green" if on else "gray"))
+            if dot:
+                action.setIcon(self._dot_icon("green" if on else "gray"))
         else:
             with qtc.QSignalBlocker(action):
                 action.setChecked(not on)  # It didn't take: show the state it's still in

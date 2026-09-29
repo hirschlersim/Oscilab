@@ -26,10 +26,11 @@ A method that raises doesn't take the app down: the error shows in the
 status bar, the traceback goes to the log file, and a toggle flips back to
 the state it was in.
 
-Producers (`oscilab.producers`) use the same decorators: a producer's marked
-methods go in the toolbar when it's attached, captioned with its signals'
-names, and run on the producer's own thread between reads — so they can use
-its device connection safely. A producer that isn't running refuses them.
+Producers (`oscilab.producers`) use the same decorators, but their marked
+methods go in the producer's entry of the Producers menu instead (next to
+Start and Stop), and run on the producer's own thread between reads — so
+they can use its device connection safely. A producer that isn't running
+refuses them.
 """
 
 from collections.abc import Callable

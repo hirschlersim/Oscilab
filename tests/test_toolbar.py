@@ -1,16 +1,9 @@
-"""Custom toolbar buttons and toggles, defined as methods of your own class — or a producer's."""
+"""Custom toolbar buttons and toggles, defined as methods of your own class."""
 
-import threading
-import time
-
-import numpy as np
 import pytest
-from PyQt6 import QtWidgets as qtw
 
-from oscilab import SyncDataProducer, SyntheticProducer, button, toggle
+from oscilab import SyntheticProducer, button, toggle
 from oscilab.oscilab import Oscilab, _signals_caption
-
-MAIN_THREAD = threading.get_ident()
 
 
 @pytest.fixture
@@ -158,89 +151,10 @@ def test_a_failing_toggle_flips_back(window):
     assert not stuck.isChecked()  # Its method failed, so it's still off
 
 
-# --- producers' controls ------------------------------------------------------
-
-
-class Device(SyncDataProducer):
-    """A producer with toolbar controls, recording which thread each ran on."""
-
-    channels = ("a", "b")
-
-    def __init__(self):
-        super().__init__(fs=100.0, interval_s=0.005)
-        self.calls: list[tuple] = []
-
-    def _generate(self, _elapsed):
-        return np.array([]), np.array([])
-
-    @button("Zero", tooltip="Zero the sensor")
-    def zero(self):
-        self.calls.append(("zero", threading.get_ident()))
-
-    @toggle("Heater")
-    def heater(self, on: bool):
-        self.calls.append(("heater", on, threading.get_ident()))
-
-    @button("Explode")
-    def explode(self):
-        raise RuntimeError("action failed")
-
-
-def wait_until(qapp, condition, timeout: float = 5.0):
-    deadline = time.monotonic() + timeout
-    while not condition():
-        assert time.monotonic() < deadline, "timed out waiting for condition"
-        qapp.processEvents()
-        time.sleep(0.005)
-
-
-def test_producer_controls_go_in_the_toolbar_captioned_with_its_signals(window):
-    window.attach_producer(Device(), ["x", "y"])
-
-    assert texts(window)[-3:] == ["Zero", "Heater", "Explode"]
-    captions = [label.text() for label in window.toolbar.findChildren(qtw.QLabel)]
-    assert "x, y:" in captions  # Tells two producers' "Zero" buttons apart
-
-
-def test_producer_controls_run_on_the_producer_thread(qapp, window):
-    device = Device()
-    window.attach_producer(device, ["x", "y"])
-
-    action(window, "Zero").trigger()
-    action(window, "Heater").trigger()
-    wait_until(qapp, lambda: len(device.calls) == 2)
-
-    (zero, zero_thread), (heater, on, heater_thread) = device.calls
-    assert (zero, heater, on) == ("zero", "heater", True)
-    assert MAIN_THREAD not in (zero_thread, heater_thread)
-
-
-def test_a_failing_producer_control_stops_the_producer(qapp, window):
-    window.attach_producer(Device(), ["x", "y"])
-    action(window, "Explode").trigger()
-    wait_until(qapp, lambda: "x" in window.workspace._producer_errors)
-    assert window.workspace._producer_errors["x"] == "RuntimeError: action failed"
-
-
-def test_producer_controls_are_refused_while_it_is_stopped(window, monkeypatch):
-    shown = []
-    monkeypatch.setattr(window.statusBar(), "showMessage", lambda text, _timeout=0: shown.append(text))
-    device = Device()
-    window.attach_producer(device, ["x", "y"])
-    device.stop()
-
-    action(window, "Zero").trigger()
-    assert shown[-1] == "✕ 'Zero' failed: RuntimeError: Device isn't running"
-    heater = action(window, "Heater")
-    heater.trigger()
-    assert not heater.isChecked()  # Didn't take, so it flips back
-    assert device.calls == []
-
-
-def test_producers_without_controls_add_nothing(window):
+def test_producers_add_nothing_to_the_toolbar(window):
     before = len(window.toolbar.actions())
     window.attach_producer(SyntheticProducer(fs=100), "s")
-    assert len(window.toolbar.actions()) == before
+    assert len(window.toolbar.actions()) == before  # Their controls are in the Producers menu
 
 
 def test_long_captions_are_shortened():

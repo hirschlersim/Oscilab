@@ -441,6 +441,13 @@ class Workspace:
         producer.start()
         self._log(f"{verb} {self.__describe(producer)}")
 
+    def producer_state(self, label: str) -> str:
+        """The producer feeding `label`: "running", "stopped", or "error" (stopped by one)."""
+        producer = self.__producer_feeding(label)
+        if producer.running:
+            return "running"
+        return "error" if label in self._producer_errors else "stopped"
+
     def __producer_feeding(self, label: str) -> DataProducer:
         if label not in self.producers:
             raise ValueError(f"No producer feeds '{label}'")
