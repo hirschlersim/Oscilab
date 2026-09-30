@@ -157,7 +157,7 @@ class Recorder:
         part = len(self.files) + 1
         stamp = self._started.strftime("%Y%m%d-%H%M%S")
         path = self.base_path.with_name(f"{self.base_path.stem}_{stamp}_{part:03d}{self.base_path.suffix}")
-        file = h5py.File(path, "w")
+        file = h5py.File(path, "w", track_order=True)  # Its signals listed in order, not alphabetically
         file.attrs["started"] = self._started.isoformat(timespec="seconds")
         file.attrs["part"] = part
         file.attrs["oscilab_version"] = _version()

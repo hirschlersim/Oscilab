@@ -7,7 +7,7 @@ Filter/Scaling/Range ones put their fields behind an enable (or "Auto")
 checkbox, so turning a setting off doesn't lose what was typed in.
 """
 
-from collections.abc import Collection
+from collections.abc import Callable, Collection
 
 from PyQt6 import QtCore as qtc
 from PyQt6 import QtWidgets as qtw
@@ -461,3 +461,93 @@ class StreamDialog(qtw.QDialog):
         """Return (path, the size in MB a file may reach before the next one — None for no limit)."""
         size = self.spin_size.value()
         return self.edit_path.text().strip(), size or None
+
+
+class ReplayDialog(qtw.QDialog):
+    """
+    Pick a recording to replay — a file, or a folder of them — which of its
+    signals, and whether to loop. `scan(path)` lists a path's files and
+    signals, raising ValueError for one that has none.
+    """
+
+    def __init__(
+        self,
+        path: str,
+        scan: Callable[[str], tuple[list[str], list[str]]],
+        parent: qtw.QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Replay Recording")
+        self.setMinimumWidth(460)
+        self._scan = scan
+
+        layout = qtw.QVBoxLayout(self)
+        path_row = qtw.QHBoxLayout()
+        self.edit_path = qtw.QLineEdit(path)
+        self.edit_path.setToolTip("A recording file, or a folder: then every .h5 file in it plays, in name order")
+        self.edit_path.editingFinished.connect(self.__update)
+        path_row.addWidget(self.edit_path)
+        for text, pick in (("File...", self.__pick_file), ("Folder...", self.__pick_folder)):
+            button = qtw.QPushButton(text)
+            button.clicked.connect(pick)
+            path_row.addWidget(button)
+        layout.addLayout(path_row)
+
+        self.files_label = qtw.QLabel()
+        self.files_label.setWordWrap(True)
+        self.files_label.setStyleSheet("font-size: 9pt; color: gray;")
+        layout.addWidget(self.files_label)
+
+        layout.addWidget(qtw.QLabel("Signals:"))
+        self.signal_list = qtw.QListWidget()
+        self.signal_list.setToolTip("Tick the signals to replay: each gets its own producer")
+        layout.addWidget(self.signal_list)
+
+        self.check_loop = qtw.QCheckBox("Loop: after the last file, start again from the first")
+        layout.addWidget(self.check_loop)
+
+        button_box = qtw.QDialogButtonBox(
+            qtw.QDialogButtonBox.StandardButton.Ok | qtw.QDialogButtonBox.StandardButton.Cancel
+        )
+        button_box.accepted.connect(self.accept)
+        button_box.rejected.connect(self.reject)
+        self._ok = button_box.button(qtw.QDialogButtonBox.StandardButton.Ok)
+        layout.addWidget(button_box)
+        self.__update()
+
+    def __pick_file(self) -> None:
+        path, _ = qtw.QFileDialog.getOpenFileName(self, "Replay File", self.edit_path.text(), "HDF5 (*.h5)")
+        if path:
+            self.edit_path.setText(path)
+            self.__update()
+
+    def __pick_folder(self) -> None:
+        path = qtw.QFileDialog.getExistingDirectory(self, "Replay Folder", self.edit_path.text())
+        if path:
+            self.edit_path.setText(path)
+            self.__update()
+
+    def __update(self) -> None:
+        """List what's at the path: its files, and its signals (all ticked)."""
+        self.signal_list.clear()
+        try:
+            files, signals = self._scan(self.edit_path.text().strip())
+        except (ValueError, OSError) as e:
+            self.files_label.setText(str(e))
+            files, signals = [], []
+        else:
+            shown = files if len(files) <= 3 else [files[0], "…", files[-1]]
+            self.files_label.setText(f"{len(files)} file(s), played in this order: {', '.join(shown)}")
+        for label in signals:
+            item = qtw.QListWidgetItem(label)
+            item.setFlags(item.flags() | qtc.Qt.ItemFlag.ItemIsUserCheckable)
+            item.setCheckState(qtc.Qt.CheckState.Checked)
+            self.signal_list.addItem(item)
+        if self._ok is not None:
+            self._ok.setEnabled(bool(signals))
+
+    def get_values(self) -> tuple[str, list[str], bool]:
+        """Return (path, ticked signals, loop)."""
+        items = [self.signal_list.item(i) for i in range(self.signal_list.count())]
+        ticked = [item.text() for item in items if item is not None and item.checkState() == qtc.Qt.CheckState.Checked]
+        return self.edit_path.text().strip(), ticked, self.check_loop.isChecked()

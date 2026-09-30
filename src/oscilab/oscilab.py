@@ -13,12 +13,13 @@ from PyQt6 import QtGui as qtg
 from PyQt6 import QtWidgets as qtw
 
 from oscilab import session
-from oscilab.dialogs import MathDialog, PlotDialog, SpectrogramDialog, StreamDialog
+from oscilab.dialogs import MathDialog, PlotDialog, ReplayDialog, SpectrogramDialog, StreamDialog
 from oscilab.display import FPS_CHOICES, TIME_MODES, Fps, Theme, TimeMode
 from oscilab.log import StatusLine, log_file, log_to_file
 from oscilab.math_signal import OPERATORS
 from oscilab.producers import DataProducer
 from oscilab.recorder import Recorder
+from oscilab.replay import RecordingReplayProducer, recorded_signals, recording_files, replay_labels
 from oscilab.signal_controller import SignalController
 from oscilab.signal_model import SignalModel
 from oscilab.spectrogram_plot import SpectrogramPlot
@@ -244,6 +245,9 @@ class Oscilab(qtw.QMainWindow):
         self.stream_folder_action = qtg.QAction("Open Stream Folder", self)
         self.stream_folder_action.setToolTip("Open the folder the stream is saved in")
         self.stream_folder_action.triggered.connect(self.__open_stream_folder)
+        self.replay_action = qtg.QAction("Replay Recording...", self)
+        self.replay_action.setToolTip("Play a Save Stream recording back — a file, or a folder of them — looped or not")
+        self.replay_action.triggered.connect(self.__replay_dialog)
         self._stream_timer = qtc.QTimer(self)  # Its own: the refresh loop stops while paused, recording doesn't
         self._stream_timer.setInterval(500)
         self._stream_timer.timeout.connect(self.__update_stream_status)
@@ -257,7 +261,9 @@ class Oscilab(qtw.QMainWindow):
             file_menu.addAction(action)
 
         file_menu.addSeparator()
-        file_menu.addActions([self.stream_action, self.stream_settings_action, self.stream_folder_action])
+        file_menu.addActions(
+            [self.stream_action, self.stream_settings_action, self.stream_folder_action, self.replay_action]
+        )
 
         file_menu.addSeparator()
         open_action = qtg.QAction("Open Session...", self)
@@ -1024,6 +1030,47 @@ class Oscilab(qtw.QMainWindow):
         folder = self._recording_path.parent
         folder.mkdir(parents=True, exist_ok=True)
         qtg.QDesktopServices.openUrl(qtc.QUrl.fromLocalFile(str(folder)))
+
+    def replay_recording(self, path: str | Path, signals: Sequence[str] | None = None, loop: bool = False) -> list[str]:
+        """
+        Replay a Save Stream recording — a file, or a folder of them, played
+        in name order — with one `RecordingReplayProducer` per signal (every
+        one by default), and show them in a new plot. With `loop`, after the
+        last file it starts again from the first. Each keeps its recorded
+        name, with " (replay)" added where that's taken. Returns their names.
+        """
+        chosen = recorded_signals(path) if signals is None else list(signals)
+        if not chosen:
+            raise ValueError(f"No signals to replay from {path}")
+        producers = [RecordingReplayProducer(path, label, loop=loop) for label in chosen]  # All, before attaching any
+        names = replay_labels(list(self.workspace.signals), chosen)
+        for producer, name in zip(producers, names, strict=True):
+            self.attach_producer(producer, name)
+
+        title, n = f"Replay: {Path(path).name}", 2
+        while title in self.workspace.views:
+            title, n = f"Replay: {Path(path).name} ({n})", n + 1
+        self.add_timeseries_plot(title)
+        for name in names:
+            self.link(plot=title, label=name)
+        self.log(f"Replaying {len(names)} signal(s) from {Path(path).name}{', looped' if loop else ''}")
+        return names
+
+    def __replay_dialog(self) -> None:
+        def scan(path: str) -> tuple[list[str], list[str]]:
+            return [file.name for file in recording_files(path)], recorded_signals(path)
+
+        dialog = ReplayDialog(str(self.recording_options[0].parent), scan, parent=self)
+        if dialog.exec() != qtw.QDialog.DialogCode.Accepted:
+            return
+        path, signals, loop = dialog.get_values()
+        if not signals:
+            self.log("No signals ticked to replay", level="warning")
+            return
+        try:
+            self.replay_recording(path, signals, loop=loop)
+        except (ValueError, OSError) as e:  # E.g. a file being recorded to right now: report it, don't raise
+            self.log(f"Couldn't replay {path}: {e}", level="error")
 
     def __save_session_dialog(self) -> None:
         path, _ = qtw.QFileDialog.getSaveFileName(self, "Save Session", "", "Oscilab session (*.json)")

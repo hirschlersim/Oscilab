@@ -32,6 +32,7 @@ MODULES = [
     "oscilab.spectrogram_plot",
     "oscilab.exporters",
     "oscilab.recorder",
+    "oscilab.replay",
 ]
 
 if __name__ == "__main__":

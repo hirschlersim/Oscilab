@@ -41,7 +41,8 @@ architecture in Python; still under active development (see
   (see `scripts/benchmark_buffers.py` for the throughput difference).
 - **Save Stream** — record every sample of every signal to HDF5 files
   while it's on, not just what's still in the buffers; a new file at a
-  size you choose.
+  size you choose. **Replay Recording** plays them back — a file or a
+  whole folder, looped if you like.
 - **Light/dark theming**, tooltips throughout, and export to
   PNG/SVG/PDF/CSV/MAT/HDF5.
 
@@ -63,7 +64,8 @@ dialogs.py            Modal dialogs: range, filter, scaling, math
     │
 workspace.py          Domain layer: owns all registries and wiring
 exporters.py           ├─ PNG/SVG/PDF images, CSV/.mat/.h5 data
-recorder.py            └─ Save Stream: every sample to HDF5, as it arrives
+recorder.py            ├─ Save Stream: every sample to HDF5, as it arrives
+replay.py              └─ ...and playing those recordings back
     │
 oscilab.py            QMainWindow: menus, toolbar, window chrome
 session.py             ├─ save/restore a whole setup as JSON
@@ -248,6 +250,30 @@ attributes. The values are what the signal holds (after its filter and
 scaling); math signals aren't recorded, since they're recomputed from the
 others. The writing happens on a thread of its own, so a slow disk never
 holds up the plots or the producers.
+
+### Replaying a recording
+
+**File → Replay Recording…** plays a recording back. Pick a file, or a
+folder: then every `.h5` file in it plays, in name order, which for Save
+Stream's files is the order they were recorded in (1, 2, … 5). The dialog
+lists the files and the recorded signals to choose from. With **Loop**, after
+the last file it starts again from the first (… 5, 1, 2, …), and time keeps
+going forward.
+
+```python
+scope.replay_recording("D:/runs", loop=True)  # every signal, in a new plot
+scope.replay_recording("D:/runs/test_20260930-101500_003.h5", signals=["channel-1"])
+```
+
+Each signal gets a `RecordingReplayProducer` of its own, with the rate and
+unit it was recorded at — a recording's signals can have different rates,
+and a producer's channels share one. They lay the files out on the same
+timeline, so they stay in step: the parts of one recording keep their
+times, and a separate recording in the same folder follows right after the
+previous one ends. Replays can be stopped, started (from where they
+stopped, or from the top once they've played through) and saved in
+sessions like any producer. A signal whose name is taken already is
+replayed as `name (replay)`.
 
 ### Signal units
 
