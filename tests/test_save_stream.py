@@ -63,13 +63,13 @@ def test_saves_what_producers_send_until_its_turned_off(qapp, window, shown):
 
     window.stream_action.trigger()
     assert window.recording
-    assert not window._stream_label.isHidden()  # Shown in the status bar
-    assert "Saving: run_" in window._stream_label.text()
+    assert not window.recording_ui.label.isHidden()  # Shown in the status bar
+    assert "Saving: run_" in window.recording_ui.label.text()
     wait_until(qapp, lambda: len(window.workspace.signals["s"].data) > 200)
     window.stream_action.trigger()
 
     assert not window.recording
-    assert window._stream_label.isHidden()
+    assert window.recording_ui.label.isHidden()
     assert not window.stream_action.isChecked()
     assert shown[-1].startswith("✓ Stream saved: 1 file(s) in")
     (path,) = (window.recording_options[0].parent).glob("run_*_001.h5")
@@ -111,10 +111,10 @@ def test_a_write_error_turns_it_off_and_says_so(qapp, window, shown, monkeypatch
     monkeypatch.setattr(Recorder, "_Recorder__append", staticmethod(fail))
     model = window.register_signal("s", fs=10)
     window.set_recording(True)
-    recorder = window._recorder
+    recorder = window.recording_ui.recorder
     model.add_data([0.0], [1.0])
     wait_until(qapp, lambda: recorder.error is not None)
-    window._stream_timer.timeout.emit()  # Its next status check
+    window.recording_ui.timer.timeout.emit()  # Its next status check
 
     assert not window.recording
     assert not window.stream_action.isChecked()
@@ -168,7 +168,7 @@ def test_closing_or_clearing_the_window_ends_the_recording(qapp, tmp_path, end):
     scope.set_recording_options(tmp_path / "run.h5")
     scope.register_signal("s", fs=10).add_data([0.0], [1.0])
     scope.set_recording(True)
-    recorder = scope._recorder
+    recorder = scope.recording_ui.recorder
 
     getattr(scope, end)()
 

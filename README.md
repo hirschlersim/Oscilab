@@ -86,7 +86,10 @@ exporters.py           ├─ PNG/SVG/PDF images, CSV/.mat/.h5 data
 recorder.py            ├─ Save Stream: every sample to HDF5, as it arrives
 replay.py              └─ ...and playing those recordings back
     │
-oscilab.py            QMainWindow: menus, toolbar, window chrome
+oscilab.py            QMainWindow: puts the parts together; the API scripts use
+ui/                    ├─ each feature's menus, toolbar entries, panels, dialogs:
+                       │    file_menu, plots_menu, producers_menu, controls,
+                       │    recording (Save Stream, Replay), trigger
 session.py             ├─ save/restore a whole setup as JSON
 log.py                 └─ logging: console, log file, status bar
     │
@@ -96,7 +99,8 @@ __main__.py           `uv run oscilab [session.json]` entry point
 
 Roughly bottom-up: data model → producers → plots → per-signal controls →
 the `Workspace` layer that wires everything together → the `QMainWindow`
-shell on top. To add a plot type (FFT, XY, ...), implement `View` in
+on top, assembled from one small part per feature in `ui/` — so a new
+feature's menus and panels go in a module of their own. To add a plot type (FFT, XY, ...), implement `View` in
 [view.py](src/oscilab/view.py) and add a `Workspace.add_*` method for it —
 theming, time modes, Reset View, the Y-Axis button and image export then
 work for it without further changes.

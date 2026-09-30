@@ -48,10 +48,10 @@ module = ["pyqtgraph", "pyqtgraph.*", "h5py"]
 ignore_missing_imports = true
 
 # PyQt6's stubs type menuBar(), addMenu(), addAction(), addToolBar(), ... as
-# possibly returning None, which they never do here; the window module is
-# made of such calls.
+# possibly returning None, which they never do here; the window and its
+# parts (oscilab.ui) are made of such calls.
 [[tool.mypy.overrides]]
-module = "oscilab.oscilab"
+module = ["oscilab.oscilab", "oscilab.ui.*"]
 disable_error_code = ["union-attr"]
 
 # Tests are checked for how they use the API, but needn't be annotated
