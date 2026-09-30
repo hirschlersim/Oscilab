@@ -24,7 +24,7 @@ from oscilab.spectrogram_plot import SpectrogramPlot
 from oscilab.storage import Storage
 from oscilab.timeseries_plot import TimeseriesPlot
 from oscilab.toolbar import ToolbarItem, toolbar_items
-from oscilab.workspace import Workspace
+from oscilab.workspace import Workspace, signals_caption
 
 
 class _ProducerEntry(NamedTuple):
@@ -96,11 +96,6 @@ _EXPORTS = (
 
 
 _window_ids = itertools.count(1)  # Tells each window's log messages apart (see oscilab.log)
-
-
-def _signals_caption(labels: list[str]) -> str:
-    """Names a producer's Producers-menu entry by its signals, kept short for many channels."""
-    return ", ".join(labels) if len(labels) <= 3 else f"{labels[0]} … {labels[-1]}"
 
 
 class Oscilab(qtw.QMainWindow):
@@ -501,7 +496,7 @@ class Oscilab(qtw.QMainWindow):
     def __add_producer_menu(self, producer: DataProducer) -> None:
         self.__show_no_producers(False)
         labels = self.workspace.signals_fed_by(producer)
-        caption = f"{type(producer).__name__}: {_signals_caption(labels)}"
+        caption = f"{type(producer).__name__}: {signals_caption(labels)}"
         menu = qtw.QMenu(caption, self.producers_menu)
         self.producers_menu.addMenu(menu)
         menu.setToolTipsVisible(True)

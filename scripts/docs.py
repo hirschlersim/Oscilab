@@ -17,6 +17,7 @@ from pdoc.__main__ import cli
 MODULES = [
     "oscilab",
     "oscilab.producers",
+    "oscilab.xbox",
     "oscilab.toolbar",
     "oscilab.session",
     "oscilab.view",

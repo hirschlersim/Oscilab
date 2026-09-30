@@ -3,7 +3,8 @@
 import pytest
 
 from oscilab import SyntheticProducer, button, toggle
-from oscilab.oscilab import Oscilab, _signals_caption
+from oscilab.oscilab import Oscilab
+from oscilab.workspace import signals_caption
 
 
 @pytest.fixture
@@ -158,9 +159,9 @@ def test_producers_add_nothing_to_the_toolbar_by_default(window):
 
 
 def test_long_captions_are_shortened():
-    assert _signals_caption(["a"]) == "a"
-    assert _signals_caption(["a", "b", "c"]) == "a, b, c"
-    assert _signals_caption([f"ch{i}" for i in range(1, 17)]) == "ch1 … ch16"
+    assert signals_caption(["a"]) == "a"
+    assert signals_caption(["a", "b", "c"]) == "a, b, c"
+    assert signals_caption([f"ch{i}" for i in range(1, 17)]) == "ch1 … ch16"
 
 
 def test_one_off_controls_take_any_callable(window):

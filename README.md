@@ -34,7 +34,8 @@ architecture in Python; still under active development (see
   menu starts, stops and removes them and runs their own functions (which
   can go in the toolbar too). An error stops
   only the producer that hit it. Ships with a synthetic signal generator, a CSV file-replay
-  producer, and templates for serial and `asyncio` sources.
+  producer, an Xbox controller producer (Bluetooth or USB, on Windows), and
+  templates for serial and `asyncio` sources.
 - **Two storage backends** — a plain `collections.deque` or a
   thread-safe, pre-allocated numpy ring buffer, selectable per signal
   (see `scripts/benchmark_buffers.py` for the throughput difference).
@@ -45,6 +46,7 @@ architecture in Python; still under active development (see
 
 ```
 producers.py          Background QThread data sources (Sync/Async base classes)
+xbox.py                └─ an Xbox controller, through XInput
     │
 signal_model.py       Rolling buffer, filtering, scaling, metrics per signal
 math_signal.py         └─ derived signal (A op B)
@@ -146,6 +148,35 @@ scope.attach_producer(ImuProducer("COM3"), ["acc-x", "acc-y", "acc-z"])
 array. An exception inside a producer stops only that producer — it's shown
 in the status bar and on its signals' rows instead of taking the app down,
 and the row's **Restart** button starts it again.
+
+### An Xbox controller
+
+`XboxControllerProducer` turns an Xbox One S / Series controller's sticks,
+triggers and buttons into signals — over Bluetooth (pair it first, in
+Windows' Settings → Bluetooth & devices → Add device), USB or the Xbox
+Wireless Adapter. It reads the controller through Windows' XInput, so it
+needs no extra packages, and works on Windows only.
+
+```bash
+uv run scripts/xbox_controller.py   # plots of its sticks, triggers and buttons
+```
+
+```python
+from oscilab import XboxControllerProducer
+
+pad = XboxControllerProducer()  # 20 channels: left_x ... right_y, left_trigger, right_trigger, a, b, ... dpad_right
+scope.attach_producer(pad, pad.channels)  # one signal per channel, named like it
+
+# Or just some, from a given controller (0-3; by default the first connected)
+scope.attach_producer(XboxControllerProducer(slot=1, channels=["left_x", "left_y", "a"]), ["x", "y", "fire"])
+```
+
+Sticks read -1 to 1 (up and right positive) with XInput's recommended dead
+zones (`deadzone=False` for raw values), triggers 0 to 1, buttons 1 while
+held. With no controller connected, or once it goes to sleep, the producer
+stops with an error on its rows; connect it and press **Restart**. Its
+Producers-menu entry has **Rumble**, a short buzz to tell which controller
+it's reading.
 
 ### Custom toolbar buttons and toggles
 

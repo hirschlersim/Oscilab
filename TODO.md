@@ -8,8 +8,6 @@
    asyncio datagram endpoint, same shape as the existing producers. Sessions
    save it like any other producer (import path + constructor arguments).
 
-2. **xBox Controller via Bluetooth.** A producer that connects via Bluetooth to a Controller and sends all of its signals like Button Press Triggers etc to the UI,
-
 ## Features
 
 - **Trigger.** Oscilloscope-style triggering: freeze the display when a

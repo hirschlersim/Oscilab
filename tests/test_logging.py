@@ -146,7 +146,7 @@ def test_log_file_gets_everything_including_tracebacks(qapp, window, tmp_path):
     assert "details" in text
     assert "Traceback" in text  # from the producer's thread
     assert "RuntimeError: device unplugged" in text
-    assert "Producer for 's' stopped" in text  # what the status bar said
+    assert "Failing for s stopped: RuntimeError: device unplugged" in text  # what the status bar said
     assert log.log_file() is None
 
 

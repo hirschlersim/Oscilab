@@ -27,6 +27,7 @@ from oscilab.producers import (
 from oscilab.signal_model import SignalModel
 from oscilab.storage import Storage
 from oscilab.toolbar import button, toggle
+from oscilab.xbox import XboxControllerProducer
 
 try:
     __version__ = metadata.version("oscilab")
@@ -44,6 +45,7 @@ __all__ = [
     "Storage",
     "SyncDataProducer",
     "SyntheticProducer",
+    "XboxControllerProducer",
     "button",
     "toggle",
 ]

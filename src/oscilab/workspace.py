@@ -52,6 +52,11 @@ def _ask_range(
     return dialog.get_values()
 
 
+def signals_caption(labels: list[str]) -> str:
+    """A producer's signals, named briefly: all of them up to three, else the first and last."""
+    return ", ".join(labels) if len(labels) <= 3 else f"{labels[0]} … {labels[-1]}"
+
+
 class _ProducerLink(qtc.QObject):
     """
     Receives a producer's signals on the GUI thread and feeds its signals.
@@ -482,8 +487,9 @@ class Workspace:
         return list(units)
 
     def __on_producer_error(self, labels: list[str], message: str) -> None:
-        names = ", ".join(repr(label) for label in labels)
-        self._log(f"Producer for {names} stopped: {message}", level="error")
+        # Named briefly, so the reason still fits the status bar for a producer of many channels
+        producer = type(self.producers[labels[0]]).__name__
+        self._log(f"{producer} for {signals_caption(labels)} stopped: {message}", level="error")
         for label in labels:
             self._producer_errors[label] = message
             if label in self.signal_list.rows:
