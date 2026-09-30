@@ -11,3 +11,6 @@ wheels/
 
 # Ruff
 .ruff_cache
+
+# API docs (scripts/docs.py -o site)
+site/

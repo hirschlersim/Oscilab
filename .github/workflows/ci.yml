@@ -45,3 +45,17 @@ jobs:
       - uses: astral-sh/setup-uv@v10
       - run: uv sync --locked
       - run: uv run --locked pytest
+
+  docs:
+    name: API docs
+    # pdoc imports oscilab, and so PyQt6 (see the test job on Linux)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+      - run: uv run --locked --group docs scripts/docs.py -o site
+      # The HTML, under this run's Artifacts: download, open index.html
+      - uses: actions/upload-artifact@v4
+        with:
+          name: api-docs
+          path: site/

@@ -37,5 +37,7 @@
 
 ## Code quality
 
-- **API docs.** The README covers usage; reference docs could be generated
-  from the docstrings (e.g. with pdoc) and published.
+- **Publish the API docs.** CI builds them on every run (the `api-docs`
+  artifact, see `scripts/docs.py`); GitHub Pages could host the latest from
+  `main`. Needs Pages turned on for the repo — for a private repo, that takes
+  a paid GitHub plan.

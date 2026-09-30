@@ -228,6 +228,20 @@ From your own code, log through the window so messages reach its status bar
 too: `scope.log("Calibrated", level="success")`, or
 `scope.logger.warning(...)` with loguru's full API.
 
+## API reference
+
+Generated from the docstrings with [pdoc](https://pdoc.dev):
+
+```bash
+uv run --group docs scripts/docs.py           # browse it live at localhost:8080
+uv run --group docs scripts/docs.py -o site   # or write static HTML into site/
+```
+
+It covers what `from oscilab import ...` offers plus the modules to read when
+extending Oscilab — producers, toolbar controls, the session format, the
+`View` interface for new plot types, the workspace. CI builds it on every
+run too: the HTML is in the run's `api-docs` artifact.
+
 ## Notable implementation details
 
 A few things worth reading the source for if you're interested in the DSP

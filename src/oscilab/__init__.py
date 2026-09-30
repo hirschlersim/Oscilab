@@ -1,7 +1,7 @@
 """
 Oscilab: live signal visualization with PyQt6 and pyqtgraph.
 
-The public API is importable from the package itself::
+The public API is importable from the package itself:
 
     from oscilab import Oscilab, SyntheticProducer
 
