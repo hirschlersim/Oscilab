@@ -6,7 +6,7 @@ holdoff), and acquiring records (Run, Single, Stop, Auto, Force).
 import numpy as np
 import pytest
 
-from oscilab.trigger import TIME_PER_DIV, Acquisition, TriggerDetector, TriggerSettings
+from oscilab.trigger import TIME_PER_DIV, Acquisition, TriggerDetector, TriggerSettings, autoset
 
 
 def events(settings: TriggerSettings, x, t=None, chunk: int | None = None) -> list[float]:
@@ -226,3 +226,54 @@ def test_an_event_too_early_for_the_buffer_is_passed_over():
     t = np.arange(50, 200) / 100  # The buffer starts at 0.5 s
     acquisition.tick(t[:10], np.sin(2 * np.pi * t[:10]))
     assert acquisition.tick(t, np.sin(2 * np.pi * t)) is None  # The crossing at 1 s has no 0.9 s before it
+
+
+# --- Autoset ------------------------------------------------------------------------------------------
+
+
+def test_autoset_puts_the_level_mid_signal_and_shows_about_two_periods():
+    t = np.arange(0, 5, 0.001)
+    x = 3 + 2 * np.sin(2 * np.pi * 5 * t)  # 5 Hz, from 1 to 5
+    settings = autoset("s", t, x)
+    assert settings.source == "s"
+    assert settings.level == pytest.approx(3.0, abs=0.01)
+    assert settings.time_per_div == 0.05  # Two periods (0.4 s) over ten divisions: 40 ms, up to 50
+    assert (settings.type, settings.slope, settings.auto) == ("edge", "rising", True)
+
+
+def test_autoset_on_a_flat_or_empty_signal_keeps_the_defaults():
+    assert autoset("s", np.array([]), np.array([])).time_per_div == TriggerSettings().time_per_div
+    flat = autoset("s", np.arange(10.0), np.ones(10))
+    assert flat.level == 1.0
+    assert flat.time_per_div == TriggerSettings().time_per_div
+
+
+def test_new_settings_keep_it_stopped_or_running():
+    acquisition = Acquisition(settings())
+    acquisition.apply(settings(level=0.5))
+    assert acquisition.state == "stopped"
+    acquisition.run()
+    acquisition.apply(settings(level=-0.5))
+    assert (acquisition.state, acquisition.settings.level) == ("armed", -0.5)
+    with pytest.raises(ValueError, match="reference"):
+        acquisition.apply(settings(reference=2.0))
+
+
+def test_the_status_says_what_a_scope_would():
+    acquisition = Acquisition(settings(auto=False))
+    assert acquisition.status()[0] == "Stopped"
+    acquisition.run()
+    source = Source()
+    acquisition.tick(*source.grow(0.5))
+    assert acquisition.status()[0] == "Armed"
+    acquisition.tick(*source.grow(0.52))
+    assert acquisition.status()[0] == "Triggered"  # Waiting for the rest of the record
+    acquisition.tick(*source.grow(0.1))
+    assert acquisition.status()[0] == "Triggered"  # Just took one
+    acquisition.apply(settings(level=5.0, auto=False))  # Now it never triggers
+    acquisition.tick(*source.grow(1.0))
+    assert acquisition.status()[0] == "Armed"
+    acquisition.apply(settings(level=5.0, auto=True))
+    acquisition.tick(*source.grow(0.1))
+    acquisition.tick(*source.grow(0.3))
+    assert acquisition.status()[0] == "Auto"

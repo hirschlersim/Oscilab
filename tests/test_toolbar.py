@@ -37,7 +37,7 @@ def action(window: Oscilab, text: str):
 
 def test_controls_go_after_the_built_in_ones_in_definition_order(window):
     window.add_toolbar(Lab())
-    assert texts(window)[-3:] == ["Save Stream", "Zero", "Heater"]  # Save Stream is the last built-in control
+    assert texts(window)[-3:] == ["Trigger", "Zero", "Heater"]  # Trigger is the last built-in control
 
 
 def test_a_button_calls_its_method(window):

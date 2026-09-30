@@ -214,6 +214,34 @@ class Acquisition:
         self._armed_at: float | None = None  # Source time of the last record, or of arming: Auto counts from it
         self._force = False
 
+    def apply(self, settings: TriggerSettings) -> None:
+        """New settings, keeping Run / Single / Stop — armed afresh with them, unless stopped."""
+        settings.check()
+        self.settings = settings
+        self._pending.clear()
+        self.detector = TriggerDetector(settings)
+        if self.state != "stopped":
+            self.__arm()
+
+    @property
+    def idle(self) -> float:
+        """Seconds of the source since the last record ended (or since arming): how long it's been waiting."""
+        if self._fed_up_to is None or self._armed_at is None:
+            return 0.0
+        return max(self._fed_up_to - self._armed_at, 0.0)
+
+    def status(self) -> tuple[str, str]:
+        """(What a scope's status line would say, a color for it): Stopped, Armed, Triggered or Auto."""
+        if self.state == "stopped":
+            return "Stopped", "#e5484d"
+        if self.state == "waiting":
+            return "Triggered", "#30a46c"
+        if self.last in ("trigger", "immediate") and self.idle < 0.5:
+            return "Triggered", "#30a46c"
+        if self.last == "auto" and self.idle < self.settings.auto_timeout + 0.5:
+            return "Auto", "#4ea3ff"
+        return "Armed", "#f0b429"
+
     def run(self) -> None:
         """Acquire record after record."""
         self.single = False
@@ -238,6 +266,7 @@ class Acquisition:
 
     def __arm(self) -> None:
         self.state = "armed"
+        self.last = None  # No record yet, this time
         self._pending.clear()
         self._armed_at = None
         self.detector = TriggerDetector(self.settings)  # Only what comes after arming counts
@@ -284,3 +313,26 @@ class Acquisition:
         self._armed_at = event + self.settings.after
         self.state = "stopped" if self.single else "armed"
         return event
+
+
+def autoset(source: str, t: np.ndarray, x: np.ndarray) -> TriggerSettings:
+    """
+    Settings that trigger on `source` right away, as a scope's Auto Setup
+    picks them from the signal: a rising edge at the middle of its range,
+    and time per division showing about two periods (from how often it
+    crosses that middle), Auto on.
+    """
+    finite = np.isfinite(x)
+    t, x = t[finite], x[finite]
+    settings = TriggerSettings(source=source)
+    if x.size < 2:
+        return settings
+    low, high = float(x.min()), float(x.max())
+    settings.level = (low + high) / 2
+    settings.hysteresis = (high - low) * 0.05
+    rising = np.count_nonzero((x[:-1] < settings.level) & (x[1:] >= settings.level))
+    if rising >= 2:
+        period = float(t[-1] - t[0]) / rising
+        wanted = 2 * period / 10  # Two periods over the ten divisions
+        settings.time_per_div = min((step for step in TIME_PER_DIV if step >= wanted), default=TIME_PER_DIV[-1])
+    return settings

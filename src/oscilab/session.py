@@ -24,6 +24,7 @@ trust.
 
 from __future__ import annotations
 
+from dataclasses import asdict
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any, Literal
 
@@ -38,6 +39,7 @@ from oscilab.producers import DataProducer, resolve_producer
 from oscilab.spectrogram_plot import SpectrogramPlot
 from oscilab.storage import Storage
 from oscilab.timeseries_plot import TimeseriesPlot
+from oscilab.trigger import Coupling, Slope, TriggerSettings, TriggerType, WindowCondition
 from oscilab.xy_plot import XYPlot
 
 if TYPE_CHECKING:
@@ -116,6 +118,25 @@ class RecordingSpec(_Model):
 
     path: str = Field(description="Each recording's files are named after this, and the time it started")
     max_file_mb: float | None = Field(100.0, gt=0, description="The size of file it moves on at; null = no limit")
+
+
+class TriggerSpec(_Model):
+    """The trigger (see `oscilab.trigger`), saved while it's on; it runs when the session opens."""
+
+    source: str = Field(description="The signal it triggers on")
+    type: TriggerType = "edge"
+    slope: Slope = "rising"
+    level: float = 0.0
+    hysteresis: float = Field(0.1, ge=0)
+    low: float = Field(-0.5, description="A window trigger's range")
+    high: float = 0.5
+    condition: WindowCondition = "entering"
+    coupling: Coupling = "dc"
+    holdoff: float = Field(0.0, ge=0, description="Seconds")
+    delay: float = Field(0.0, ge=0, description="Seconds")
+    time_per_div: float = Field(0.01, gt=0, description="Seconds; a record is ten divisions")
+    reference: float = Field(0.2, ge=0, le=1, description="Where the trigger sits in the record, 0 to 1")
+    auto: bool = Field(True, description="A record anyway when no trigger comes; false: Normal")
 
 
 class MathSignalSpec(_Model):
@@ -242,6 +263,7 @@ class Session(_Model):
         description='Your toolbar toggles\' states: add_toolbar ones keyed "ClassName.method", '
         "add_toolbar_toggle ones by their text",
     )
+    trigger: TriggerSpec | None = Field(None, description="null = not triggering: the plots scroll")
 
     @model_validator(mode="after")
     def _check_references(self) -> Session:
@@ -259,6 +281,8 @@ class Session(_Model):
         for label in self.signal_settings:
             if label not in defined:
                 raise ValueError(f"signal_settings has '{label}', which no producer or signal provides")
+        if self.trigger is not None and self.trigger.source not in defined:
+            raise ValueError(f"The trigger's source '{self.trigger.source}' isn't a signal the session provides")
         return self
 
     def __defined_signals(self) -> set[str]:
@@ -328,6 +352,7 @@ def capture(window: Oscilab) -> Session:
         plots=[_capture_view(title, view) for title, view in ws.views.items()],
         signal_settings={label: _capture_row(row) for label, row in ws.signal_list.rows.items()},
         toggles=window.toggle_states(),
+        trigger=TriggerSpec(**asdict(window.trigger_settings)) if window.trigger_settings is not None else None,
     )
 
 
@@ -446,6 +471,8 @@ def restore(window: Oscilab, session: Session, replace: bool = False) -> None:
             _restore_row(row, settings)
 
     window.set_toggle_states(session.toggles)  # Ones your code adds later switch when it does
+    if session.trigger is not None:
+        window.set_trigger(TriggerSettings(**session.trigger.model_dump()))
 
 
 def _restore_settings(window: Oscilab, session: Session) -> None:

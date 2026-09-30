@@ -2,12 +2,6 @@
 
 ---
 
-## Features
-
-- **Trigger.** Oscilloscope-style triggering: freeze the display when a
-  signal crosses a level (rising/falling edge), in single-shot or repeating
-  mode, so a fast event can be looked at instead of scrolling past.
-
 ## Code quality
 
 - **Publish the API docs.** CI builds them on every run (the `api-docs`

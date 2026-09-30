@@ -42,6 +42,12 @@ QPushButton:pressed {
     background-color: #005a9e;
 }
 
+/* A checkable button that's on (the trigger's slope, Equal Axes): pressed in */
+QPushButton:checked {
+    background-color: #00457a;
+    border: 1px solid #9fd0ff;
+}
+
 /* Disabled state — without this, disabled widgets look identical to enabled
    ones, since the explicit colors above override Qt's native dimming.
    Covers e.g. Auto-locked Min/Max spinboxes and derived-signal buttons. */

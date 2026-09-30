@@ -30,6 +30,7 @@ MODULES = [
     "oscilab.signal_model",
     "oscilab.math_signal",
     "oscilab.ring_buffer",
+    "oscilab.trigger",
     "oscilab.timeseries_plot",
     "oscilab.logic_plot",
     "oscilab.xy_plot",

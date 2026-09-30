@@ -11,6 +11,10 @@ architecture in Python; still under active development (see
 
 ## Features
 
+- **Trigger** — as on an NI digitizer: edge, hysteresis, window or
+  immediate; DC/AC coupling, holdoff, delay; a timebase and reference
+  position; Run / Single / Stop / Force, Auto or Normal, and Autoset. The
+  time plots hold the record around each trigger, the level a line to drag.
 - **Time-series plots** — multi-signal, auto-scrolling, with global or
   "relative to now" time modes, peak-preserving downsampling for large
   buffers, manual or auto Y-ranging, and classic two-cursor (ΔT, 1/ΔT,
@@ -71,6 +75,8 @@ logic_plot.py          ├─ logic lanes (a kind of time-series plot)
 xy_plot.py             ├─ one signal against another
 histogram_plot.py      ├─ a signal's value distribution
 spectrogram_plot.py    └─ live STFT spectrogram
+trigger.py            Triggering: detection and Run/Single/Stop (no Qt)
+trigger_panel.py       └─ its controls, in the sidebar
     │
 signal_controller.py  Per-signal sidebar controls (SignalRow / SignalController)
 dialogs.py            Modal dialogs: range, filter, scaling, math
@@ -310,6 +316,47 @@ one in the toolbar as well — `@button("Zero", toolbar=True)`. It's the same
 control in both places, so a toggle shows the same state in each; its
 toolbar tooltip names the producer.
 
+### Trigger
+
+Like a digitizer's soft front panel (NI-SCOPE's terms). Turn **Trigger** on
+in the toolbar: it sets itself up on the first signal a plot shows — a
+rising edge through the middle of its range, a timebase showing about two
+periods (**Autoset**) — and the time plots stop scrolling. Each shows the
+*record* around the latest trigger instead, held until the next: time
+counted from the trigger, marked **T**, and the level a dashed line you can
+drag. All of them show the same record, as a scope's channels do; the
+spectrograms, XY plots and histograms carry on live.
+
+The **Trigger** panel, atop the sidebar:
+
+- **Source** and **Type**: *Immediate* (free running), *Edge* (crossing the
+  **Level** on the **Slope**: rising, falling or either), *Hysteresis* (an
+  edge that only counts once the source has been the hysteresis beyond the
+  level — noise can't set it off), *Window* (the source entering or leaving
+  the range from **Low** to **High**)
+- **Coupling**: DC, or AC to trigger relative to the average; **Holdoff**:
+  how long after a trigger before another can count; **Delay**: where the
+  record's reference point is after the trigger
+- **Timebase**: time per division, a record spanning ten; **Reference**:
+  where the trigger sits in it (20 % = a fifth before it)
+- **Auto trigger**: a record anyway when no trigger comes for a while, so
+  the display never freezes; off, it's *Normal*, for rare events
+- **Run** / **Single** (one record, then hold) / **Stop** / **Force** (a
+  record now), and **Autoset** — also in the toolbar button's drop-down,
+  whose dot says **Armed** (amber), **Triggered** (green), **Auto** (blue) or
+  **Stopped** (red)
+
+Trigger times are interpolated between samples, so records line up to
+better than a sample. The cursors measure within the record, from the
+trigger. Sessions save the trigger; from code:
+
+```python
+from oscilab.trigger import TriggerSettings
+
+scope.set_trigger(TriggerSettings(source="channel-1", level=0.5, time_per_div=0.01, reference=0.2))
+scope.workspace.trigger.single_shot()  # .run(), .stop(), .force()
+```
+
 ### Save Stream: recording to disk
 
 The File menu's exports write what's still in the rolling buffers — the
@@ -499,8 +546,9 @@ without a display, and CI runs them plus ruff and mypy on every pull request.
 They cover the ring buffer, signal model (filter/scaling/resize), math
 signals, the spectrogram's incremental STFT cache, the producer base classes
 (threads, errors, actions, multi-channel data, keeping up with real time),
-`SerialProducer` (against a fake port), the cursor readout, the menus and
-toolbar, sessions, workspace rules, and the File-menu exports.
+`SerialProducer` (against a fake port), the trigger (detection, acquisition,
+its panel), the cursor readout, the menus and toolbar, sessions, workspace
+rules, and the File-menu exports.
 
 ## Status
 

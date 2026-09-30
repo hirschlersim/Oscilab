@@ -36,6 +36,8 @@ from oscilab.spectrogram_plot import SpectrogramPlot
 from oscilab.storage import Storage
 from oscilab.timeseries_plot import TimeseriesPlot
 from oscilab.toolbar import ToolbarItem, toolbar_items
+from oscilab.trigger import TIME_PER_DIV, TriggerSettings, autoset
+from oscilab.trigger_panel import TriggerPanel
 from oscilab.workspace import Workspace, signals_caption
 from oscilab.xy_plot import XYPlot
 
@@ -220,6 +222,7 @@ class Oscilab(qtw.QMainWindow):
         self.refresh_timer.start(1000 // self._fps)
 
         self.__build_stream_actions()  # Before the menu bar and toolbar, which both show them
+        self.__build_trigger()
 
         self.__build_menu_bar()
         self.__build_toolbar()  # After the menu bar: Start/Stop keeps View > Reset View in sync
@@ -445,15 +448,19 @@ class Oscilab(qtw.QMainWindow):
         self.downsample_action.toggled.connect(self.__set_downsampling)
         self.toolbar.addAction(self.downsample_action)
         self.toolbar.addSeparator()
-        # Save Stream, its settings in the button's drop-down
-        self.toolbar.addAction(self.stream_action)
-        stream_button = self.toolbar.widgetForAction(self.stream_action)
-        if isinstance(stream_button, qtw.QToolButton):
-            stream_menu = qtw.QMenu(stream_button)
-            stream_menu.addActions([self.stream_settings_action, self.stream_folder_action])
-            stream_button.setMenu(stream_menu)
-            stream_button.setPopupMode(qtw.QToolButton.ToolButtonPopupMode.MenuButtonPopup)
-        self.toolbar.addSeparator()
+        # Save Stream and the Trigger, each with a drop-down of its commands
+        for action, entries in (
+            (self.stream_action, [self.stream_settings_action, self.stream_folder_action]),
+            (self.trigger_action, self._trigger_commands),
+        ):
+            self.toolbar.addAction(action)
+            button = self.toolbar.widgetForAction(action)
+            if isinstance(button, qtw.QToolButton):
+                menu = qtw.QMenu(button)
+                menu.addActions(entries)
+                button.setMenu(menu)
+                button.setPopupMode(qtw.QToolButton.ToolButtonPopupMode.MenuButtonPopup)
+            self.toolbar.addSeparator()
 
     def __build_status_bar(self) -> None:
         self.statusBar().setSizeGripEnabled(False)  # Disables the resize diagonal gripper lines in the corner
@@ -970,6 +977,7 @@ class Oscilab(qtw.QMainWindow):
         timer.start()
 
         self.workspace.refresh()
+        self.__update_trigger_status()
 
         progress = int((timer.elapsed() / self.refresh_timer.interval()) * 100)
         self.load_bar.setValue(min(progress, 100))
@@ -986,6 +994,142 @@ class Oscilab(qtw.QMainWindow):
         )
         if path:
             export.write(workspace, path)
+
+    # --- Trigger ---------------------------------------------------------------------
+
+    def __build_trigger(self) -> None:
+        """The Trigger toggle (the toolbar; its commands in the drop-down) and its panel, atop the sidebar."""
+        self.trigger_action = qtg.QAction("Trigger", self)
+        self.trigger_action.setCheckable(True)
+        self.trigger_action.setIcon(self._dot_icon("gray"))
+        self.trigger_action.setToolTip(
+            "Trigger the time plots, as a scope does: each shows the record around a trigger, held until the next.\n"
+            "Its settings: the Trigger panel; Run, Single, Stop and Force: the drop-down"
+        )
+        self.trigger_action.toggled.connect(self.__set_triggering)
+        self._trigger_commands = []
+        for text, tip, command in (
+            ("Run", "Acquire record after record", "run"),
+            ("Single", "Acquire one record, then stop", "single"),
+            ("Stop", "Stop acquiring; the record on show stays", "stop"),
+            ("Force Trigger", "Take a record now, trigger or not", "force"),
+            ("Autoset", "Level and timebase from the source signal", "autoset"),
+        ):
+            action = qtg.QAction(text, self)
+            action.setToolTip(tip)
+            action.triggered.connect(lambda _checked=False, c=command: self.__trigger_command(c))
+            self._trigger_commands.append(action)
+
+        self.trigger_panel = TriggerPanel()
+        self.trigger_panel.hide()
+        self.controller_layout.insertWidget(0, self.trigger_panel)  # Atop the sidebar, above the plots' panels
+        self.trigger_panel.changed.connect(self.__trigger_edited)
+        for signal, command in (
+            (self.trigger_panel.run_requested, "run"),
+            (self.trigger_panel.single_requested, "single"),
+            (self.trigger_panel.stop_requested, "stop"),
+            (self.trigger_panel.force_requested, "force"),
+            (self.trigger_panel.autoset_requested, "autoset"),
+        ):
+            signal.connect(lambda c=command: self.__trigger_command(c))
+        self.workspace.trigger_changed = self.__trigger_moved
+
+    @property
+    def trigger_settings(self) -> TriggerSettings | None:
+        """The trigger's settings while triggering is on, else None."""
+        acquisition = self.workspace.trigger
+        return acquisition.settings if acquisition is not None else None
+
+    def set_trigger(self, settings: TriggerSettings | None) -> None:
+        """
+        Trigger the time plots on `settings` — as the Trigger button and
+        panel do (see `oscilab.trigger`) — or, with None, go back to
+        scrolling. Run, Single, Stop and Force: `workspace.trigger`.
+        """
+        self.workspace.set_trigger(settings)
+        with qtc.QSignalBlocker(self.trigger_action):
+            self.trigger_action.setChecked(settings is not None)
+        self.trigger_panel.setVisible(settings is not None)
+        if settings is not None:
+            self.trigger_panel.set_signals(list(self.workspace.signals))
+            self.trigger_panel.set_settings(settings)
+            self.trigger_panel.set_unit(self.workspace.signals[settings.source].unit)
+        self.__update_trigger_status()
+
+    def __set_triggering(self, on: bool) -> None:
+        if not on:
+            self.set_trigger(None)
+            self.log("Trigger off: the plots scroll again")
+            return
+        source = self.__default_trigger_source()
+        if source is None:
+            self.log("No signals to trigger on", level="warning")
+            with qtc.QSignalBlocker(self.trigger_action):
+                self.trigger_action.setChecked(False)
+            return
+        self.set_trigger(self.__autoset(source))
+        self.log(f"Triggering on '{source}'")
+
+    def __default_trigger_source(self) -> str | None:
+        """The first signal a time plot shows — or, with none shown, the first signal."""
+        for plot in self.workspace.plots.values():
+            if plot.signals:
+                return plot.signals[0]
+        return next(iter(self.workspace.signals), None)
+
+    def __autoset(self, source: str) -> TriggerSettings:
+        """Auto Setup on `source`, the record kept to what the buffers hold."""
+        settings = autoset(source, *self.workspace.signals[source].snapshot())
+        fitting = [step for step in TIME_PER_DIV if 10 * step <= self.workspace.duration]
+        if fitting and settings.time_per_div > fitting[-1]:
+            settings.time_per_div = fitting[-1]
+        return settings
+
+    def __trigger_edited(self) -> None:
+        settings = self.trigger_panel.settings()
+        try:
+            self.workspace.set_trigger(settings)
+        except ValueError as e:  # E.g. a window upside down, or a record longer than the buffers
+            self.log(str(e), level="warning")
+            return
+        self.trigger_panel.set_unit(self.workspace.signals[settings.source].unit)
+
+    def __trigger_moved(self) -> None:
+        """A level line was dragged on a plot: the panel shows the new level."""
+        if self.workspace.trigger is not None:
+            self.trigger_panel.set_settings(self.workspace.trigger.settings)
+
+    def __trigger_command(self, command: str) -> None:
+        acquisition = self.workspace.trigger
+        if acquisition is None:
+            self.log("Turn the trigger on first", level="warning")
+            return
+        if command == "autoset":
+            self.set_trigger(self.__autoset(acquisition.settings.source))
+        elif command == "run":
+            acquisition.run()
+        elif command == "single":
+            acquisition.single_shot()
+        elif command == "stop":
+            acquisition.stop()
+        else:
+            acquisition.force()
+        self.__update_trigger_status()
+
+    def __update_trigger_status(self) -> None:
+        """The acquisition's status on the toolbar button and in the panel."""
+        acquisition = self.workspace.trigger
+        if acquisition is None:
+            if self.trigger_action.isChecked():  # Turned off by the workspace: its source went
+                self.set_trigger(None)
+            self.trigger_action.setText("Trigger")
+            self.trigger_action.setIcon(self._dot_icon("gray"))
+            return
+        text, color = acquisition.status()
+        self.trigger_action.setText(f"Trigger: {text}")
+        self.trigger_action.setIcon(self._dot_icon(color))
+        self.trigger_panel.set_status(text, color)
+        self.trigger_panel.set_signals(list(self.workspace.signals))
 
     # --- Save Stream ----------------------------------------------------------------
 

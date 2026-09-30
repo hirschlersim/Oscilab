@@ -686,6 +686,7 @@ class Workspace:
         Trigger the time-based plots (`oscilab.trigger`): each shows the
         record around a trigger, held until the next, instead of scrolling —
         all of them the same record, as a scope's channels. Starts running;
+        while triggering, new settings keep Run / Single / Stop as it was.
         None turns triggering off, back to scrolling live. Returns the
         acquisition, to Run, Single, Stop or Force.
         """
@@ -702,11 +703,13 @@ class Workspace:
                 f"A record of {settings.span:g} s doesn't fit the {self._duration:g} s of history kept: "
                 "choose less time per division, or a longer duration"
             )
-        acquisition = Acquisition(settings)  # Checks the settings
-        acquisition.run()
-        self._trigger = acquisition
+        if self._trigger is not None:
+            self._trigger.apply(settings)  # Checks them
+        else:
+            self._trigger = Acquisition(settings)  # Checks them
+            self._trigger.run()
         self.__update_trigger_levels()
-        return acquisition
+        return self._trigger
 
     def __trigger_tick(self) -> None:
         acquisition = self._trigger
