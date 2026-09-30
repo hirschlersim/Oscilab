@@ -1,13 +1,15 @@
 # TODO / ideas
 
-Rough notes on what's missing or could be added next. Not commitments, just a
-working list, roughly in the order they'd make sense within each section.
+---
 
 ## Next up
 
 1. **Network/UDP producer template.** An `AsyncDataProducer` over an
    asyncio datagram endpoint, same shape as the existing producers. Sessions
    save it like any other producer (import path + constructor arguments).
+
+2. **xBox Controller via Bluetooth.** An Producer which connect via Bluetooth to a Controller ands all of the Signals like Button Press Triggers etc to the UI,
+
 2. **Open Session replaces the current setup.** Plots, links and math
    signals can now be removed at runtime, but producers are attached in code
    and stay — so a session opened in a window that's in use still gets a new
@@ -45,7 +47,3 @@ working list, roughly in the order they'd make sense within each section.
   ...). A changelog with a short migration list would help existing scripts.
 - **API docs.** The README covers usage; reference docs could be generated
   from the docstrings (e.g. with pdoc) and published.
-
-## Dump
-
-- contoller bt producer
