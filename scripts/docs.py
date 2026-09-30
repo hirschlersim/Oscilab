@@ -31,6 +31,7 @@ MODULES = [
     "oscilab.timeseries_plot",
     "oscilab.spectrogram_plot",
     "oscilab.exporters",
+    "oscilab.recorder",
 ]
 
 if __name__ == "__main__":

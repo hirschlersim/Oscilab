@@ -2,12 +2,12 @@
 Save and restore a whole Oscilab setup as JSON.
 
 A session holds what it takes to rebuild a window: its size and position,
-the display settings (theme, FPS, duration, time mode, downsampling), the
-producers (class, constructor arguments, the signals they feed and their
-toggles' states), hand-fed and math signals with their units, every plot
-with its links, pinned ranges and cursors, each signal row's color,
-visibility, filter, scaling and expanded state, and your own toolbar
-toggles' states. Buffered data isn't saved: producers start afresh.
+the display settings (theme, FPS, duration, time mode, downsampling), Save
+Stream's settings, the producers (class, constructor arguments, the signals
+they feed and their toggles' states), hand-fed and math signals with their
+units, every plot with its links, pinned ranges and cursors, each signal
+row's color, visibility, filter, scaling and expanded state, and your own
+toolbar toggles' states. Buffered data isn't saved: producers start afresh.
 
 The pydantic models below *are* the file format — their fields and
 descriptions document it, and `Session.model_json_schema()` (or
@@ -108,6 +108,13 @@ class WindowSpec(_Model):
     maximized: bool = Field(False, description="x/y/width/height are then where it goes when restored down")
 
 
+class RecordingSpec(_Model):
+    """Save Stream's settings — not whether it's on: opening a session never starts a recording."""
+
+    path: str = Field(description="Each recording's files are named after this, and the time it started")
+    max_file_mb: float | None = Field(100.0, gt=0, description="The size of file it moves on at; null = no limit")
+
+
 class MathSignalSpec(_Model):
     """A math signal. Its unit follows from its operands'."""
 
@@ -154,6 +161,7 @@ class Session(_Model):
     duration: float = Field(10.0, gt=0, description="Seconds of history kept and shown per signal")
     time_mode: TimeMode = "global"
     downsampling: bool = False
+    recording: RecordingSpec | None = Field(None, description="null = the default settings")
     producers: list[ProducerSpec] = Field(default_factory=list)
     manual_signals: list[ManualSignal] = Field(default_factory=list)
     math_signals: list[MathSignalSpec] = Field(default_factory=list, description="In order: each may use earlier ones")
@@ -230,6 +238,7 @@ def capture(window: Oscilab) -> Session:
         )
 
     x, y, width, height, maximized = window.window_geometry()
+    recording_path, max_file_mb = window.recording_options
     return Session(
         window=WindowSpec(x=x, y=y, width=width, height=height, maximized=maximized),
         theme=window.theme,
@@ -237,6 +246,7 @@ def capture(window: Oscilab) -> Session:
         duration=ws.duration,
         time_mode=ws.time_mode,
         downsampling=ws.downsampling,
+        recording=RecordingSpec(path=str(recording_path), max_file_mb=max_file_mb),
         producers=producers,
         manual_signals=[
             ManualSignal(label=label, fs=model.fs, storage=model.storage, unit=model.unit)
@@ -330,15 +340,7 @@ def restore(window: Oscilab, session: Session, replace: bool = False) -> None:
     if in_use:
         window.clear()
 
-    # Settings first, so the signals and plots created below start with them
-    if session.window is not None:
-        geometry = session.window
-        window.set_window_geometry(geometry.x, geometry.y, geometry.width, geometry.height, geometry.maximized)
-    window.set_theme(session.theme)
-    window.set_fps(session.fps)
-    window.set_duration(session.duration)
-    window.set_time_mode(session.time_mode)
-    window.set_downsampling(session.downsampling)
+    _restore_settings(window, session)  # First, so the signals and plots created below start with them
 
     for producer, spec in zip(producers, session.producers, strict=True):
         window.attach_producer(producer, spec.signals, storage=spec.storage, units=spec.units)
@@ -357,6 +359,19 @@ def restore(window: Oscilab, session: Session, replace: bool = False) -> None:
             _restore_row(row, settings)
 
     window.set_toggle_states(session.toggles)  # Ones your code adds later switch when it does
+
+
+def _restore_settings(window: Oscilab, session: Session) -> None:
+    if session.window is not None:
+        geometry = session.window
+        window.set_window_geometry(geometry.x, geometry.y, geometry.width, geometry.height, geometry.maximized)
+    window.set_theme(session.theme)
+    window.set_fps(session.fps)
+    window.set_duration(session.duration)
+    window.set_time_mode(session.time_mode)
+    window.set_downsampling(session.downsampling)
+    if session.recording is not None:
+        window.set_recording_options(session.recording.path, session.recording.max_file_mb)
 
 
 def _build_producers(window: Oscilab, specs: list[ProducerSpec], pause_current: bool) -> list[DataProducer]:

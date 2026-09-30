@@ -165,7 +165,7 @@ def test_toolbar_functions_go_in_the_toolbar_too(window):
     menu = submenus(window)["Device: x, y"]
 
     toolbar = [a.text() for a in window.toolbar.actions() if a.text()]
-    assert toolbar[-3:] == ["Full Detail", "Zero", "Heater"]  # After Downsample; not Explode, it's menu-only
+    assert toolbar[-3:] == ["Save Stream", "Zero", "Heater"]  # After the built-in ones; not Explode, it's menu-only
     assert entries(menu) == ["Start", "Stop", "Remove", "Zero", "Heater", "Explode"]  # The menu has them all
     assert toolbar_action(window, "Zero") is entry(menu, "Zero")  # One control, in both places
     assert toolbar_action(window, "Zero").toolTip() == "Zero the sensor (Device: x, y)"  # Says whose it is

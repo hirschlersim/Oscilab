@@ -1,4 +1,5 @@
 from collections import deque
+from collections.abc import Callable
 
 import numpy as np
 import numpy.typing as npt
@@ -52,6 +53,7 @@ class SignalModel:
         self.gain: float | None = None  # Scaling
         self.offset: float | None = None
         self._cache: tuple[np.ndarray, np.ndarray] | None = None  # (time_array, data_array), see `snapshot()`
+        self._listeners: list[Callable[[np.ndarray, np.ndarray], None]] = []
 
     @property
     def display_name(self) -> str:
@@ -93,9 +95,23 @@ class SignalModel:
         if self.sos is not None and self.zi is not None:
             samples, self.zi = signal.sosfilt(sos=self.sos, x=samples, zi=self.zi)
 
+        times = np.asarray(t)
         self.data.extend(samples)
-        self.time.extend(np.asarray(t))
+        self.time.extend(times)
+        for listener in tuple(self._listeners):  # A copy: one may be removed from another thread meanwhile
+            listener(times, samples)
         self._cache = None
+
+    def add_listener(self, listener: Callable[[np.ndarray, np.ndarray], None]) -> None:
+        """
+        Call `listener(t, x)` with every chunk `add_data` takes in, as stored
+        (filtered and scaled) — on the thread that called `add_data`. How a
+        recording (`oscilab.recorder`) gets every sample.
+        """
+        self._listeners.append(listener)
+
+    def remove_listener(self, listener: Callable[[np.ndarray, np.ndarray], None]) -> None:
+        self._listeners.remove(listener)
 
     def set_data(self, t: npt.ArrayLike, x: npt.ArrayLike) -> None:
         """

@@ -35,10 +35,14 @@ def file_action(window: Oscilab, text: str):
     return next(a for a in file_menu.actions() if a.text() == text)
 
 
-def test_file_menu_lists_every_export_then_sessions(window):
+def test_file_menu_lists_every_export_the_stream_then_sessions(window):
     file_menu = window.menuBar().actions()[0].menu()
     texts = [a.text() for a in file_menu.actions() if not a.isSeparator()]
-    assert texts == [".png", ".svg", ".pdf", ".csv", ".mat", ".h5", "Open Session...", "Save Session..."]
+    assert texts == [
+        *(".png", ".svg", ".pdf", ".csv", ".mat", ".h5"),
+        *("Save Stream", "Save Stream Settings...", "Open Stream Folder"),
+        *("Open Session...", "Save Session..."),
+    ]
 
 
 @pytest.mark.parametrize("suffix", [".png", ".svg", ".pdf", ".csv", ".mat", ".h5"])

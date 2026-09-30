@@ -5,6 +5,7 @@ before anything is built.
 
 import json
 import time
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -83,6 +84,7 @@ def build_everything(window: Oscilab):
     window.set_duration(5)
     window.set_time_mode("relative")
     window.set_downsampling(True)
+    window.set_recording_options("recordings/run.h5", max_file_mb=5)
     window.set_window_geometry(30, 40, 700, 500)
 
     window.attach_producer(SyntheticProducer(fs=100, freq=5.0), "slow", storage=window.storage.deque)
@@ -156,6 +158,7 @@ def test_the_file_is_plain_readable_json(make_window, tmp_path):
     assert data["manual_signals"][0]["unit"] == "mA"
     assert data["window"] == {"x": 30, "y": 40, "width": 700, "height": 500, "maximized": False}
     assert data["toggles"] == {"Bench.lamp": True, "Bench.fan": False}
+    assert data["recording"] == {"path": str(Path("recordings/run.h5")), "max_file_mb": 5.0}
     assert data["signal_settings"]["a"]["filter"] == {"cutoff": 20.0, "order": 2}
     assert data["plots"][1] == {
         "kind": "spectrogram",

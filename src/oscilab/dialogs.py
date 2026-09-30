@@ -406,3 +406,58 @@ class SpectrogramDialog(qtw.QDialog):
     def get_values(self) -> tuple[str, int]:
         """Return (signal, window length)."""
         return self.combo_signal.currentText(), int(self.combo_window.currentText())
+
+
+class StreamDialog(qtw.QDialog):
+    """Where Save Stream records to, and how big each of its files gets."""
+
+    def __init__(self, path: str, max_file_mb: float | None, parent: qtw.QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Save Stream Settings")
+        self.setMinimumWidth(420)
+
+        layout = qtw.QVBoxLayout(self)
+        form = qtw.QFormLayout()
+        path_row = qtw.QHBoxLayout()
+        self.edit_path = qtw.QLineEdit(path)
+        self.edit_path.setToolTip("Each recording's files are named after this, and the time it started")
+        path_row.addWidget(self.edit_path)
+        browse = qtw.QPushButton("Browse...")
+        browse.setToolTip("Pick the folder and name")
+        browse.clicked.connect(self.__browse)
+        path_row.addWidget(browse)
+        form.addRow("File:", path_row)
+
+        self.spin_size = qtw.QDoubleSpinBox()
+        self.spin_size.setRange(0.0, 1_000_000.0)
+        self.spin_size.setDecimals(0)
+        self.spin_size.setSuffix(" MB")
+        self.spin_size.setSpecialValueText("No limit")  # Shown at 0
+        self.spin_size.setValue(max_file_mb or 0.0)
+        self.spin_size.setToolTip("Once a file reaches this size, the recording carries on in a new one")
+        form.addRow("New file every:", self.spin_size)
+        layout.addLayout(form)
+
+        info_label = qtw.QLabel(
+            "A recording started at 10:15:00 writes name_20260930-101500_001.h5, then _002.h5, ...\n"
+            "Changes apply from the next recording."
+        )
+        info_label.setStyleSheet("font-size: 9pt; color: gray;")
+        layout.addWidget(info_label)
+
+        button_box = qtw.QDialogButtonBox(
+            qtw.QDialogButtonBox.StandardButton.Ok | qtw.QDialogButtonBox.StandardButton.Cancel
+        )
+        button_box.accepted.connect(self.accept)
+        button_box.rejected.connect(self.reject)
+        layout.addWidget(button_box)
+
+    def __browse(self) -> None:
+        path, _ = qtw.QFileDialog.getSaveFileName(self, "Save Stream To", self.edit_path.text(), "HDF5 (*.h5)")
+        if path:
+            self.edit_path.setText(path)
+
+    def get_values(self) -> tuple[str, float | None]:
+        """Return (path, the size in MB a file may reach before the next one — None for no limit)."""
+        size = self.spin_size.value()
+        return self.edit_path.text().strip(), size or None

@@ -39,6 +39,9 @@ architecture in Python; still under active development (see
 - **Two storage backends** — a plain `collections.deque` or a
   thread-safe, pre-allocated numpy ring buffer, selectable per signal
   (see `scripts/benchmark_buffers.py` for the throughput difference).
+- **Save Stream** — record every sample of every signal to HDF5 files
+  while it's on, not just what's still in the buffers; a new file at a
+  size you choose.
 - **Light/dark theming**, tooltips throughout, and export to
   PNG/SVG/PDF/CSV/MAT/HDF5.
 
@@ -59,7 +62,8 @@ signal_controller.py  Per-signal sidebar controls (SignalRow / SignalController)
 dialogs.py            Modal dialogs: range, filter, scaling, math
     │
 workspace.py          Domain layer: owns all registries and wiring
-exporters.py           └─ PNG/SVG/PDF images, CSV/.mat/.h5 data
+exporters.py           ├─ PNG/SVG/PDF images, CSV/.mat/.h5 data
+recorder.py            └─ Save Stream: every sample to HDF5, as it arrives
     │
 oscilab.py            QMainWindow: menus, toolbar, window chrome
 session.py             ├─ save/restore a whole setup as JSON
@@ -217,6 +221,33 @@ run on the producer's own thread between reads. Add `toolbar=True` to put
 one in the toolbar as well — `@button("Zero", toolbar=True)`. It's the same
 control in both places, so a toggle shows the same state in each; its
 toolbar tooltip names the producer.
+
+### Save Stream: recording to disk
+
+The File menu's exports write what's still in the rolling buffers — the
+last few seconds. **Save Stream**, in the toolbar, records everything: turn
+it on, and every sample of every signal goes to HDF5 files on disk as it
+arrives, until you turn it off. It keeps recording while the display is
+paused.
+
+Its drop-down (and the File menu) has **Save Stream Settings…**: the file
+to save to, and the size at which it starts a new file (or no limit). Each
+recording gets its own files, named after that path and when it started:
+`recording.h5` → `recording_20260930-101500_001.h5`, then `…_002.h5`. By
+default they go to `Documents\Oscilab`; **Open Stream Folder** gets you
+there. From code:
+
+```python
+scope.set_recording_options("D:/runs/test.h5", max_file_mb=500)  # None: no limit
+scope.set_recording(True)  # ... and False to stop
+```
+
+Each file stands on its own, laid out like the `.h5` export: a group per
+signal with `time` and `data` datasets and `fs`, `label` and `unit`
+attributes. The values are what the signal holds (after its filter and
+scaling); math signals aren't recorded, since they're recomputed from the
+others. The writing happens on a thread of its own, so a slow disk never
+holds up the plots or the producers.
 
 ### Signal units
 

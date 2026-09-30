@@ -13,11 +13,12 @@ from PyQt6 import QtGui as qtg
 from PyQt6 import QtWidgets as qtw
 
 from oscilab import session
-from oscilab.dialogs import MathDialog, PlotDialog, SpectrogramDialog
+from oscilab.dialogs import MathDialog, PlotDialog, SpectrogramDialog, StreamDialog
 from oscilab.display import FPS_CHOICES, TIME_MODES, Fps, Theme, TimeMode
 from oscilab.log import StatusLine, log_file, log_to_file
 from oscilab.math_signal import OPERATORS
 from oscilab.producers import DataProducer
+from oscilab.recorder import Recorder
 from oscilab.signal_controller import SignalController
 from oscilab.signal_model import SignalModel
 from oscilab.spectrogram_plot import SpectrogramPlot
@@ -206,6 +207,8 @@ class Oscilab(qtw.QMainWindow):
         self.refresh_timer.timeout.connect(self.__refresh)
         self.refresh_timer.start(1000 // self._fps)
 
+        self.__build_stream_actions()  # Before the menu bar and toolbar, which both show them
+
         self.__build_menu_bar()
         self.__build_toolbar()  # After the menu bar: Start/Stop keeps View > Reset View in sync
         self.__build_status_bar()
@@ -221,6 +224,30 @@ class Oscilab(qtw.QMainWindow):
         self.__build_cursors_menu()
         self.__build_help_menu()
 
+    def __build_stream_actions(self) -> None:
+        """Save Stream's toggle and settings — in the toolbar, with a drop-down, and the File menu."""
+        documents = qtc.QStandardPaths.writableLocation(qtc.QStandardPaths.StandardLocation.DocumentsLocation)
+        self._recording_path = Path(documents) / "Oscilab" / "recording.h5"
+        self._recording_max_mb: float | None = 100.0
+        self._recorder: Recorder | None = None  # While recording (see oscilab.recorder)
+        self.stream_action = qtg.QAction("Save Stream", self)
+        self.stream_action.setCheckable(True)
+        self.stream_action.setIcon(self._dot_icon("gray"))
+        self.stream_action.setToolTip(
+            "While on, record every signal to HDF5 files on disk — every sample, not just what the plots keep.\n"
+            "Where to, and how big each file gets: Save Stream Settings, in its drop-down"
+        )
+        self.stream_action.toggled.connect(self.__set_recording)
+        self.stream_settings_action = qtg.QAction("Save Stream Settings...", self)
+        self.stream_settings_action.setToolTip("Where the stream is saved, and the size at which it starts a new file")
+        self.stream_settings_action.triggered.connect(self.__stream_settings_dialog)
+        self.stream_folder_action = qtg.QAction("Open Stream Folder", self)
+        self.stream_folder_action.setToolTip("Open the folder the stream is saved in")
+        self.stream_folder_action.triggered.connect(self.__open_stream_folder)
+        self._stream_timer = qtc.QTimer(self)  # Its own: the refresh loop stops while paused, recording doesn't
+        self._stream_timer.setInterval(500)
+        self._stream_timer.timeout.connect(self.__update_stream_status)
+
     def __build_file_menu(self) -> None:
         file_menu = self.menuBar().addMenu("File")
         for export in _EXPORTS:
@@ -228,6 +255,9 @@ class Oscilab(qtw.QMainWindow):
             action.setToolTip(export.tooltip)
             action.triggered.connect(lambda _checked=False, e=export: self.__export(e))
             file_menu.addAction(action)
+
+        file_menu.addSeparator()
+        file_menu.addActions([self.stream_action, self.stream_settings_action, self.stream_folder_action])
 
         file_menu.addSeparator()
         open_action = qtg.QAction("Open Session...", self)
@@ -390,9 +420,22 @@ class Oscilab(qtw.QMainWindow):
         self.downsample_action.toggled.connect(self.__set_downsampling)
         self.toolbar.addAction(self.downsample_action)
         self.toolbar.addSeparator()
+        # Save Stream, its settings in the button's drop-down
+        self.toolbar.addAction(self.stream_action)
+        stream_button = self.toolbar.widgetForAction(self.stream_action)
+        if isinstance(stream_button, qtw.QToolButton):
+            stream_menu = qtw.QMenu(stream_button)
+            stream_menu.addActions([self.stream_settings_action, self.stream_folder_action])
+            stream_button.setMenu(stream_menu)
+            stream_button.setPopupMode(qtw.QToolButton.ToolButtonPopupMode.MenuButtonPopup)
+        self.toolbar.addSeparator()
 
     def __build_status_bar(self) -> None:
         self.statusBar().setSizeGripEnabled(False)  # Disables the resize diagonal gripper lines in the corner
+        self._stream_label = qtw.QLabel()  # "● Saving: ..." while the stream's being saved
+        self._stream_label.setToolTip("Save Stream is recording to this file")
+        self._stream_label.hide()
+        self.statusBar().addPermanentWidget(self._stream_label)
         load_label = qtw.QLabel("Load [%]:")
         load_tooltip = "Percent of the refresh interval spent redrawing on the last tick"
         load_label.setToolTip(load_tooltip)
@@ -571,9 +614,10 @@ class Oscilab(qtw.QMainWindow):
     def clear(self) -> None:
         """
         Remove the whole setup: every plot, math signal, signal you registered
-        and producer (stopped first). The settings, your toolbar controls and
-        the window itself stay.
+        and producer (stopped first), ending a recording (Save Stream). The
+        settings, your toolbar controls and the window itself stay.
         """
+        self.set_recording(False)
         ws = self.workspace
         for title in list(ws.views):
             self.remove_plot(title)
@@ -855,6 +899,7 @@ class Oscilab(qtw.QMainWindow):
 
     def closeEvent(self, event: qtg.QCloseEvent | None) -> None:
         self.workspace.stop_producers()
+        self.__stop_recording()  # After the producers: the last of their data gets saved too
         self._status_line.close()
         Oscilab._extra_windows.discard(self)
         super().closeEvent(event)
@@ -880,6 +925,105 @@ class Oscilab(qtw.QMainWindow):
         )
         if path:
             export.write(workspace, path)
+
+    # --- Save Stream ----------------------------------------------------------------
+
+    @property
+    def recording(self) -> bool:
+        """Whether Save Stream is on."""
+        return self._recorder is not None
+
+    def set_recording(self, on: bool) -> None:
+        """Start or stop saving the stream, as the Save Stream button does (see `oscilab.recorder`)."""
+        self.stream_action.setChecked(on)
+
+    @property
+    def recording_options(self) -> tuple[Path, float | None]:
+        """Save Stream's base file path, and the size in MB its files reach before the next (None: no limit)."""
+        return self._recording_path, self._recording_max_mb
+
+    def set_recording_options(self, path: str | Path, max_file_mb: float | None = 100.0) -> None:
+        """
+        Where Save Stream records to — each recording's files are named after
+        `path` and the time it started — and the size in MB at which it moves
+        on to a new file (None: no limit). Applies from the next recording.
+        """
+        if max_file_mb is not None and max_file_mb <= 0:
+            raise ValueError(f"max_file_mb must be positive (or None for no limit), got {max_file_mb}")
+        self._recording_path = Path(path)
+        self._recording_max_mb = max_file_mb
+
+    def __set_recording(self, on: bool) -> None:
+        if on:
+            self.__start_recording()
+        else:
+            self.__stop_recording()
+
+    def __start_recording(self) -> None:
+        ws = self.workspace
+        models = {label: model for label, model in ws.signals.items() if label not in ws.math_signals}
+        max_bytes = round(self._recording_max_mb * 1_000_000) if self._recording_max_mb else None
+        try:
+            recorder = Recorder(models, self._recording_path, max_file_bytes=max_bytes)
+            first = recorder.start()
+        except (ValueError, OSError) as e:  # No signals, or a path that can't be written: report, don't raise
+            self.log(f"Couldn't save the stream: {e}", level="error")
+            with qtc.QSignalBlocker(self.stream_action):
+                self.stream_action.setChecked(False)
+            return
+        self._recorder = recorder
+        self.stream_action.setIcon(self._dot_icon("red"))
+        self._stream_timer.start()
+        self.__update_stream_status()
+        self.log(f"Saving the stream of {len(models)} signal(s) to {first.name}")
+
+    def __stop_recording(self) -> None:
+        recorder = self._recorder
+        if recorder is None:
+            return
+        self._recorder = None
+        files = recorder.stop()
+        self._stream_timer.stop()
+        self._stream_label.hide()
+        with qtc.QSignalBlocker(self.stream_action):  # Also when a write error ended it
+            self.stream_action.setChecked(False)
+        self.stream_action.setIcon(self._dot_icon("gray"))
+        if recorder.error is not None:
+            error = recorder.error
+            self.logger.opt(exception=error).error(f"Saving the stream stopped: {type(error).__name__}: {error}")
+        else:
+            self.log(f"Stream saved: {len(files)} file(s) in {files[0].parent}", level="success")
+
+    def __update_stream_status(self) -> None:
+        recorder = self._recorder
+        if recorder is None:
+            return
+        if recorder.error is not None:
+            self.__stop_recording()
+            return
+        size_mb = recorder.current_size / 1_000_000
+        self._stream_label.setText(
+            f"<span style='color: #e5484d'>●</span> Saving: {recorder.files[-1].name} ({size_mb:.1f} MB)"
+        )
+        self._stream_label.show()
+
+    def __stream_settings_dialog(self) -> None:
+        path, max_mb = self.recording_options
+        dialog = StreamDialog(str(path), max_mb, parent=self)
+        if dialog.exec() != qtw.QDialog.DialogCode.Accepted:
+            return
+        new_path, new_max_mb = dialog.get_values()
+        if not new_path:
+            self.log("Save Stream needs a file to save to", level="warning")
+            return
+        self.set_recording_options(new_path, new_max_mb)
+        limit = f"a new file every {new_max_mb:g} MB" if new_max_mb else "no size limit"
+        self.log(f"Save Stream: to {new_path}, {limit}")
+
+    def __open_stream_folder(self) -> None:
+        folder = self._recording_path.parent
+        folder.mkdir(parents=True, exist_ok=True)
+        qtg.QDesktopServices.openUrl(qtc.QUrl.fromLocalFile(str(folder)))
 
     def __save_session_dialog(self) -> None:
         path, _ = qtw.QFileDialog.getSaveFileName(self, "Save Session", "", "Oscilab session (*.json)")
