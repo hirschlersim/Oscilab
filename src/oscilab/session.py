@@ -31,11 +31,14 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic_core import PydanticSerializationError, to_jsonable_python
 
 from oscilab.display import Fps, Theme, TimeMode
+from oscilab.histogram_plot import HistogramPlot
+from oscilab.logic_plot import LogicPlot
 from oscilab.math_signal import OPERATORS
 from oscilab.producers import DataProducer, resolve_producer
 from oscilab.spectrogram_plot import SpectrogramPlot
 from oscilab.storage import Storage
 from oscilab.timeseries_plot import TimeseriesPlot
+from oscilab.xy_plot import XYPlot
 
 if TYPE_CHECKING:
     from oscilab.oscilab import Oscilab
@@ -131,6 +134,57 @@ class TimeseriesPlotSpec(_Model):
     y_range: Range | None = None
     cursors: tuple[float, float] | None = Field(None, description="Cursor A/B positions on the time axis; null = off")
 
+    @property
+    def shown(self) -> list[str]:
+        return self.signals
+
+
+class LogicPlotSpec(_Model):
+    """Logic lanes: on/off signals in a lane each."""
+
+    kind: Literal["logic"] = "logic"
+    title: str
+    signals: list[str] = Field(default_factory=list, description="Linked signals, a lane each, top to bottom")
+    threshold: float = Field(0.5, description="A value above it is high")
+    y_range: Range | None = None
+    cursors: tuple[float, float] | None = Field(None, description="Cursor A/B positions on the time axis; null = off")
+
+    @property
+    def shown(self) -> list[str]:
+        return self.signals
+
+
+class XYPlotSpec(_Model):
+    """One signal against another."""
+
+    kind: Literal["xy"] = "xy"
+    title: str
+    x: str
+    y: str
+    trail: float | None = Field(None, gt=0, description="Seconds of history drawn; null = the whole buffer")
+    equal_axes: bool = False
+    x_range: Range | None = None
+    y_range: Range | None = None
+
+    @property
+    def shown(self) -> list[str]:
+        return [self.x, self.y]
+
+
+class HistogramSpec(_Model):
+    """One signal's value distribution."""
+
+    kind: Literal["histogram"] = "histogram"
+    title: str
+    signal: str
+    bins: int = Field(50, ge=1, le=10_000)
+    value_range: Range | None = Field(None, description="The range the bins cover; null = the data's own")
+    y_range: Range | None = Field(None, description="The count axis")
+
+    @property
+    def shown(self) -> list[str]:
+        return [self.signal]
+
 
 class SpectrogramSpec(_Model):
     kind: Literal["spectrogram"] = "spectrogram"
@@ -139,6 +193,17 @@ class SpectrogramSpec(_Model):
     noverlap: int = Field(128, ge=0, description="Samples each window overlaps the previous one by")
     y_range: Range | None = Field(None, description="Frequency axis, Hz")
     color_levels: Range | None = Field(None, description="Colormap range, dB; null = auto snapshot")
+
+    @property
+    def title(self) -> str:
+        return self.signal  # A spectrogram is named after its signal
+
+    @property
+    def shown(self) -> list[str]:
+        return [self.signal]
+
+
+type PlotSpec = TimeseriesPlotSpec | LogicPlotSpec | XYPlotSpec | HistogramSpec | SpectrogramSpec
 
 
 class SignalSettings(_Model):
@@ -165,9 +230,12 @@ class Session(_Model):
     producers: list[ProducerSpec] = Field(default_factory=list)
     manual_signals: list[ManualSignal] = Field(default_factory=list)
     math_signals: list[MathSignalSpec] = Field(default_factory=list, description="In order: each may use earlier ones")
-    plots: list[Annotated[TimeseriesPlotSpec | SpectrogramSpec, Field(discriminator="kind")]] = Field(
-        default_factory=list, description="Top to bottom"
-    )
+    plots: list[
+        Annotated[
+            TimeseriesPlotSpec | LogicPlotSpec | XYPlotSpec | HistogramSpec | SpectrogramSpec,
+            Field(discriminator="kind"),
+        ]
+    ] = Field(default_factory=list, description="Top to bottom")
     signal_settings: dict[str, SignalSettings] = Field(default_factory=dict, description="Keyed by signal name")
     toggles: dict[str, bool] = Field(
         default_factory=dict,
@@ -180,11 +248,11 @@ class Session(_Model):
         defined = self.__defined_signals()
         titles: set[str] = set()
         for plot in self.plots:
-            title, shown = (plot.title, plot.signals) if plot.kind == "timeseries" else (plot.signal, [plot.signal])
+            title = plot.title
             if title in titles:
                 raise ValueError(f"Plot '{title}' is defined twice")
             titles.add(title)
-            for label in shown:
+            for label in plot.shown:
                 if label not in defined:
                     raise ValueError(f"Plot '{title}' shows '{label}', which no producer or signal provides")
 
@@ -280,11 +348,30 @@ def _pinned(auto: bool, lo: float, hi: float) -> Range | None:
     return None if auto else Range(min=lo, max=hi)
 
 
-def _capture_view(title: str, view: View) -> TimeseriesPlotSpec | SpectrogramSpec:
+def _capture_view(title: str, view: View) -> PlotSpec:
     y_range = _pinned(view.y_range_auto, view.y_range_min, view.y_range_max)
-    if isinstance(view, TimeseriesPlot):
+    if isinstance(view, TimeseriesPlot):  # Logic lanes too
         region = view.cursor_region.getRegion() if view.cursor_region is not None else None
-        return TimeseriesPlotSpec(title=title, signals=list(view.curves), y_range=y_range, cursors=region)
+        if isinstance(view, LogicPlot):
+            return LogicPlotSpec(
+                title=title, signals=view.signals, threshold=view.threshold, y_range=y_range, cursors=region
+            )
+        return TimeseriesPlotSpec(title=title, signals=view.signals, y_range=y_range, cursors=region)
+    if isinstance(view, XYPlot):
+        return XYPlotSpec(
+            title=title,
+            x=view.x_model.label,
+            y=view.y_model.label,
+            trail=view.trail,
+            equal_axes=view.equal_axes,
+            x_range=_pinned(view.x_range_auto, view.x_range_min, view.x_range_max),
+            y_range=y_range,
+        )
+    if isinstance(view, HistogramPlot):
+        value_range = Range(min=view.value_range[0], max=view.value_range[1]) if view.value_range else None
+        return HistogramSpec(
+            title=title, signal=view.model.label, bins=view.bins, value_range=value_range, y_range=y_range
+        )
     if isinstance(view, SpectrogramPlot):
         return SpectrogramSpec(
             signal=title,
@@ -402,15 +489,26 @@ def _build_producer(spec: ProducerSpec) -> DataProducer:
         raise ValueError(f"Can't create {spec.type} with {spec.args}: {e}") from e
 
 
-def _restore_plot(window: Oscilab, spec: TimeseriesPlotSpec | SpectrogramSpec) -> None:
+def _restore_plot(window: Oscilab, spec: PlotSpec) -> None:
     view: View
-    if spec.kind == "timeseries":
-        view = plot = window.add_timeseries_plot(spec.title)
+    if isinstance(spec, TimeseriesPlotSpec | LogicPlotSpec):
+        if isinstance(spec, LogicPlotSpec):
+            view = plot = window.add_logic_plot(spec.title, threshold=spec.threshold)
+        else:
+            view = plot = window.add_timeseries_plot(spec.title)
         for label in spec.signals:
             window.link(plot=spec.title, label=label)
         if spec.cursors is not None:
             window.set_cursors(spec.title, enabled=True)
             plot.move_cursors(*spec.cursors)
+    elif isinstance(spec, XYPlotSpec):
+        view = xy = window.add_xy_plot(spec.title, spec.x, spec.y, trail=spec.trail)
+        xy.set_equal_axes(spec.equal_axes)
+        if spec.x_range is not None:
+            xy.set_x_range(False, spec.x_range.min, spec.x_range.max)
+    elif isinstance(spec, HistogramSpec):
+        value_range = (spec.value_range.min, spec.value_range.max) if spec.value_range else None
+        view = window.add_histogram(spec.signal, bins=spec.bins, value_range=value_range, title=spec.title)
     else:
         view = spectrogram = window.add_spectrogram_plot(spec.signal, nperseg=spec.nperseg, noverlap=spec.noverlap)
         if spec.color_levels is not None:

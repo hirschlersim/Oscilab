@@ -13,9 +13,19 @@ from PyQt6 import QtGui as qtg
 from PyQt6 import QtWidgets as qtw
 
 from oscilab import session
-from oscilab.dialogs import MathDialog, PlotDialog, ReplayDialog, SpectrogramDialog, StreamDialog
+from oscilab.dialogs import (
+    HistogramDialog,
+    MathDialog,
+    PlotDialog,
+    ReplayDialog,
+    SpectrogramDialog,
+    StreamDialog,
+    XYDialog,
+)
 from oscilab.display import FPS_CHOICES, TIME_MODES, Fps, Theme, TimeMode
+from oscilab.histogram_plot import HistogramPlot
 from oscilab.log import StatusLine, log_file, log_to_file
+from oscilab.logic_plot import LogicPlot
 from oscilab.math_signal import OPERATORS
 from oscilab.producers import DataProducer
 from oscilab.recorder import Recorder
@@ -27,6 +37,7 @@ from oscilab.storage import Storage
 from oscilab.timeseries_plot import TimeseriesPlot
 from oscilab.toolbar import ToolbarItem, toolbar_items
 from oscilab.workspace import Workspace, signals_caption
+from oscilab.xy_plot import XYPlot
 
 
 class _ProducerEntry(NamedTuple):
@@ -319,14 +330,22 @@ class Oscilab(qtw.QMainWindow):
     def __build_plots_menu(self) -> None:
         plots_menu = self.menuBar().addMenu("Plots")
         plots_menu.menuAction().setToolTip("Add plots; each plot's panel can change its signals or remove it")
-        add_plot = qtg.QAction("Add Time Series Plot...", self)
-        add_plot.setToolTip("A new scrolling plot, showing the signals you pick")
-        add_plot.triggered.connect(self.__add_plot_dialog)
-        plots_menu.addAction(add_plot)
-        add_spectrogram = qtg.QAction("Add Spectrogram...", self)
-        add_spectrogram.setToolTip("A live STFT spectrogram of one signal")
-        add_spectrogram.triggered.connect(self.__add_spectrogram_dialog)
-        plots_menu.addAction(add_spectrogram)
+        entries = (
+            ("Add Time Series Plot...", "A new scrolling plot, showing the signals you pick", self.__add_plot_dialog),
+            (
+                "Add Logic Plot...",
+                "On/off signals (buttons, digital lines) in a lane each, like a logic analyzer",
+                self.__add_logic_plot_dialog,
+            ),
+            ("Add XY Plot...", "One signal against another: a joystick, a Lissajous figure", self.__add_xy_dialog),
+            ("Add Histogram...", "How one signal's values are distributed", self.__add_histogram_dialog),
+            ("Add Spectrogram...", "A live STFT spectrogram of one signal", self.__add_spectrogram_dialog),
+        )
+        for text, tooltip, open_dialog in entries:
+            action = qtg.QAction(text, self)
+            action.setToolTip(tooltip)
+            action.triggered.connect(open_dialog)
+            plots_menu.addAction(action)
 
     def __build_math_menu(self) -> None:
         math_menu = self.menuBar().addMenu("Math")
@@ -452,7 +471,21 @@ class Oscilab(qtw.QMainWindow):
         self.statusBar().addPermanentWidget(self.load_bar)
 
     def add_timeseries_plot(self, title: str) -> TimeseriesPlot:
+        """A scrolling time-series plot; `link` signals to it."""
         plot, controller = self.workspace.add_plot(title)
+        self.__show_time_plot(title, plot, controller)
+        return plot
+
+    def add_logic_plot(self, title: str, threshold: float = 0.5) -> LogicPlot:
+        """
+        Logic lanes: on/off signals in a lane each, high above `threshold`
+        (see `oscilab.logic_plot`). `link` signals to it.
+        """
+        plot, controller = self.workspace.add_logic_plot(title, threshold=threshold)
+        self.__show_time_plot(title, plot, controller)
+        return plot
+
+    def __show_time_plot(self, title: str, plot: TimeseriesPlot, controller: SignalController) -> None:
         self.plot_layout.addWidget(plot)
         self.__insert_plot_controller(controller)
 
@@ -465,6 +498,28 @@ class Oscilab(qtw.QMainWindow):
         controller.add_header_button(
             "Signals...", "Choose which signals this plot shows", lambda: self.__edit_plot_signals(title)
         )
+        self.__add_remove_button(controller, title)
+
+    def add_xy_plot(self, title: str, x: str, y: str, trail: float | None = None) -> XYPlot:
+        """`y` against `x`, the last `trail` seconds of them or (None) all they hold (see `oscilab.xy_plot`)."""
+        plot, controller = self.workspace.add_xy_plot(title, x, y, trail=trail)
+        self.plot_layout.addWidget(plot)
+        self.__insert_plot_controller(controller)
+        self.__add_remove_button(controller, title)
+        return plot
+
+    def add_histogram(
+        self, label: str, bins: int = 50, value_range: tuple[float, float] | None = None, title: str | None = None
+    ) -> HistogramPlot:
+        """
+        `label`'s value distribution in `bins` bars, over `value_range` or
+        the data's own (see `oscilab.histogram_plot`). Titled
+        "Histogram: <label>" unless given a title.
+        """
+        title = title or f"Histogram: {label}"
+        plot, controller = self.workspace.add_histogram(label, bins=bins, value_range=value_range, title=title)
+        self.plot_layout.addWidget(plot)
+        self.__insert_plot_controller(controller)
         self.__add_remove_button(controller, title)
         return plot
 
@@ -1149,21 +1204,72 @@ class Oscilab(qtw.QMainWindow):
         self.workspace.set_cursors(plot, enabled)
 
     def __add_plot_dialog(self) -> None:
-        titles = self.workspace.views
-        default = next(f"Plot {n}" for n in range(1, len(titles) + 2) if f"Plot {n}" not in titles)
-        dialog = PlotDialog(signal_labels=list(self.workspace.signals), title=default, parent=self)
+        self.__add_time_plot_dialog("Plot", "Time Series Plot", self.add_timeseries_plot)
+
+    def __add_logic_plot_dialog(self) -> None:
+        self.__add_time_plot_dialog("Logic", "Logic Plot", self.add_logic_plot)
+
+    def __add_time_plot_dialog(self, name: str, kind: str, add: Callable[[str], TimeseriesPlot]) -> None:
+        dialog = PlotDialog(
+            signal_labels=list(self.workspace.signals), title=self.__free_title(name), parent=self, kind=kind
+        )
         if dialog.exec() != qtw.QDialog.DialogCode.Accepted:
             return
         title, labels = dialog.get_values()
-        if not title:
-            self.log("A plot needs a title", level="warning")
+        if not self.__title_is_free(title):
             return
-        if title in titles:
-            self.log(f"Plot '{title}' already exists", level="warning")
-            return
-        self.add_timeseries_plot(title)
+        add(title)
         for label in labels:
             self.link(plot=title, label=label)
+
+    def __free_title(self, name: str) -> str:
+        """`name 1`, `name 2`, ...: the first no plot has."""
+        titles = self.workspace.views
+        return next(f"{name} {n}" for n in range(1, len(titles) + 2) if f"{name} {n}" not in titles)
+
+    def __title_is_free(self, title: str) -> bool:
+        """Whether a plot can take `title`; says why not, if it can't."""
+        if not title:
+            self.log("A plot needs a title", level="warning")
+            return False
+        if title in self.workspace.views:
+            self.log(f"Plot '{title}' already exists", level="warning")
+            return False
+        return True
+
+    def __add_xy_dialog(self) -> None:
+        labels = list(self.workspace.signals)
+        if len(labels) < 2:
+            self.log("An XY plot needs two signals", level="warning")
+            return
+        dialog = XYDialog(signal_labels=labels, title=self.__free_title("XY"), parent=self)
+        if dialog.exec() != qtw.QDialog.DialogCode.Accepted:
+            return
+        title, x, y, trail = dialog.get_values()
+        if not self.__title_is_free(title):
+            return
+        try:
+            self.add_xy_plot(title, x, y, trail=trail)
+        except ValueError as e:  # The same signal twice: say so (this is a Qt slot)
+            self.log(str(e), level="warning")
+
+    def __add_histogram_dialog(self) -> None:
+        if not self.workspace.signals:
+            self.log("No signals yet", level="warning")
+            return
+        dialog = HistogramDialog(signal_labels=list(self.workspace.signals), parent=self)
+        if dialog.exec() != qtw.QDialog.DialogCode.Accepted:
+            return
+        label, bins, value_range = dialog.get_values()
+        if label is None:
+            return
+        title, n = f"Histogram: {label}", 2
+        while title in self.workspace.views:  # Another of the same signal
+            title, n = f"Histogram: {label} ({n})", n + 1
+        try:
+            self.add_histogram(label, bins=bins, value_range=value_range, title=title)
+        except ValueError as e:  # A range from high to low: say so
+            self.log(str(e), level="warning")
 
     def __add_spectrogram_dialog(self) -> None:
         # A spectrogram is keyed by its signal's name, so a signal can have one

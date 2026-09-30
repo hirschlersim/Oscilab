@@ -14,9 +14,6 @@
   signal crosses a level (rising/falling edge), in single-shot or repeating
   mode, so a fast event can be looked at instead of scrolling past.
 
-- **More plot types**, now that `View` makes them cheap to add: an FFT/PSD
-  plot of a signal, and an XY plot (one signal against another).
-
 ## Code quality
 
 - **Publish the API docs.** CI builds them on every run (the `api-docs`

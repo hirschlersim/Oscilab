@@ -87,7 +87,11 @@ class TimeseriesPlot(pg.PlotWidget):
             if not model.time:
                 continue
             x, y = model.snapshot()
-            curve.setData(x - self._shift, y)
+            self._draw(label, x - self._shift, y)
+
+    def _draw(self, label: str, t: np.ndarray, y: np.ndarray) -> None:
+        """Show one signal's samples; `t` is already in screen time. Subclasses draw them their own way."""
+        self.curves[label].setData(t, y)
 
     def __newest_time(self) -> float:
         newest = [model.time[-1] for model in self.models.values() if model.time]
@@ -100,14 +104,19 @@ class TimeseriesPlot(pg.PlotWidget):
         curve.setClipToView(self.downsampling)
         self.curves[label] = curve
         self.models[label] = model
-        self.__update_y_label()
+        self._update_y_axis()
         return color
 
     def remove_signal(self, label: str) -> None:
         """Take a signal's curve (and its legend entry) off this plot."""
         self.removeItem(self.curves.pop(label))
         del self.models[label]
-        self.__update_y_label()
+        self._update_y_axis()
+
+    @property
+    def signals(self) -> list[str]:
+        """The labels of the signals shown, in legend order."""
+        return list(self.curves)
 
     @property
     def units(self) -> list[str]:
@@ -124,9 +133,10 @@ class TimeseriesPlot(pg.PlotWidget):
         """Show the signals' current units in the legend and on the Y axis."""
         for label, curve in self.curves.items():
             self.plotItem.legend.getLabel(curve).setText(self.models[label].display_name)
-        self.__update_y_label()
+        self._update_y_axis()
 
-    def __update_y_label(self) -> None:
+    def _update_y_axis(self) -> None:
+        """Label the Y axis for the signals shown (called as they come, go, or change unit)."""
         units = self.units
         if units:
             self.setLabel("left", "Value", units=", ".join(units))

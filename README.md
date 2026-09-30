@@ -18,6 +18,12 @@ architecture in Python; still under active development (see
 - **Live spectrograms** — STFT view per signal, computed incrementally
   (only new samples are transformed each tick, not the whole rolling
   buffer — see [Notable implementation details](#notable-implementation-details)).
+- **Logic lanes** — on/off signals (buttons, digital lines) in a lane each,
+  like a logic analyzer, on the same time axis as the other plots.
+- **XY plots** — one signal against another: a joystick's path, Lissajous
+  figures, I-V curves; the signals may run at different rates.
+- **Histograms** — a signal's value distribution, with its mean and
+  standard deviation: noise, clipping, quantization steps.
 - **Per-signal controls** — visibility, IIR filtering, offset/gain
   scaling, curve color, unit, and live Min/Mean/Max/Peak-to-Peak/RMS
   metrics. Rows start collapsed; click a signal's name for its details.
@@ -25,9 +31,9 @@ architecture in Python; still under active development (see
   in metrics and cursor readouts; math signals derive theirs (V × A → V·A).
 - **Signal math** — derive a new signal as `A op B` (`+ - * /`) from two
   existing signals.
-- **Build the layout in the app** — add time-series plots and spectrograms
-  from the Plots menu; each plot's panel picks the signals it shows or
-  removes it. Producers are attached in code, and started, stopped or
+- **Build the layout in the app** — add any kind of plot from the Plots
+  menu; each plot's panel picks the signals it shows or removes it.
+  Producers are attached in code, and started, stopped or
   removed from the Producers menu.
 - **Pluggable data producers** — background `QThread`-based producers
   with a synchronous or `asyncio` base class, multi-channel; the Producers
@@ -57,6 +63,9 @@ math_signal.py         └─ derived signal (A op B)
     │
 view.py               The interface every plot type implements
 timeseries_plot.py     ├─ scrolling time-series plot
+logic_plot.py          ├─ logic lanes (a kind of time-series plot)
+xy_plot.py             ├─ one signal against another
+histogram_plot.py      ├─ a signal's value distribution
 spectrogram_plot.py    └─ live STFT spectrogram
     │
 signal_controller.py  Per-signal sidebar controls (SignalRow / SignalController)

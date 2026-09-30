@@ -16,8 +16,10 @@ from PyQt6 import QtCore as qtc
 from PyQt6 import QtWidgets as qtw
 
 from oscilab import exporters
-from oscilab.dialogs import RangeDialog
+from oscilab.dialogs import HistogramDialog, RangeDialog
 from oscilab.display import TimeMode
+from oscilab.histogram_plot import HistogramPlot
+from oscilab.logic_plot import LogicPlot
 from oscilab.math_signal import MathSignal, derived_unit
 from oscilab.producers import DataProducer
 from oscilab.signal_controller import SignalController, SignalRow
@@ -26,6 +28,7 @@ from oscilab.spectrogram_plot import SpectrogramPlot
 from oscilab.storage import Storage
 from oscilab.timeseries_plot import TimeseriesPlot
 from oscilab.view import View
+from oscilab.xy_plot import XYPlot
 
 if TYPE_CHECKING:
     from loguru import Logger
@@ -122,7 +125,7 @@ class Workspace:
 
     @property
     def plots(self) -> dict[str, TimeseriesPlot]:
-        """The time-series plots (the ones signals are `link`ed to), keyed by title."""
+        """The time-based plots signals are `link`ed to — time series and logic lanes — keyed by title."""
         return {title: view for title, view in self.views.items() if isinstance(view, TimeseriesPlot)}
 
     @property
@@ -131,10 +134,33 @@ class Workspace:
         return {title: view for title, view in self.views.items() if isinstance(view, SpectrogramPlot)}
 
     def add_plot(self, title: str) -> tuple[TimeseriesPlot, SignalController]:
+        """A time-series plot; `link` signals to it."""
         self.__check_new_title(title)
-        first_plot = next(iter(self.plots.values()), None)
+        return self.__add_time_plot(title, TimeseriesPlot(title=title))
 
-        plot = TimeseriesPlot(title=title)
+    def add_logic_plot(self, title: str, threshold: float = 0.5) -> tuple[LogicPlot, SignalController]:
+        """
+        Logic lanes (`oscilab.logic_plot`): on/off signals in a lane each,
+        high above `threshold`. `link` signals to it, as to a time-series plot.
+        """
+        self.__check_new_title(title)
+        plot = LogicPlot(title=title, threshold=threshold)
+        self.__add_time_plot(title, plot)
+        controller = self.controllers[title]
+
+        def ask_threshold() -> None:
+            value, ok = qtw.QInputDialog.getDouble(
+                controller, f"Threshold | {title}", "High above:", plot.threshold, -1e12, 1e12, 6
+            )
+            if ok:
+                plot.set_threshold(value)
+                self._log(f"Logic threshold for '{title}' set to {value:g}")
+
+        controller.add_header_button("Threshold...", "The value above which a signal counts as high", ask_threshold)
+        return plot, controller
+
+    def __add_time_plot[P: TimeseriesPlot](self, title: str, plot: P) -> tuple[P, SignalController]:
+        first_plot = next(iter(self.plots.values()), None)
         controller = self.__add_view(title, plot)
         # Fires on every drag, so the readout stays in sync even while
         # paused (the timer-driven `refresh()` loop covers it while running).
@@ -191,6 +217,73 @@ class Workspace:
         row = self._link_row(label, model, derived=derived, has_curve=False)
         row.visibility_changed.connect(spectrogram.set_visible)
         return spectrogram, controller
+
+    def add_xy_plot(self, title: str, x: str, y: str, trail: float | None = None) -> tuple[XYPlot, SignalController]:
+        """
+        `y` against `x` (`oscilab.xy_plot`): the last `trail` seconds of
+        them, or (None) everything in their buffers.
+        """
+        self.__check_new_title(title)
+        for label in (x, y):
+            if label not in self.signals:
+                raise ValueError(f"Unknown signal '{label}'")
+        if x == y:
+            raise ValueError("An XY plot needs two different signals")
+        if trail is not None and trail <= 0:
+            raise ValueError(f"trail must be positive (or None for the whole buffer), got {trail}")
+
+        plot = XYPlot(title, self.signals[x], self.signals[y], trail=trail)
+        controller = self.__add_view(title, plot)
+
+        def ask_x_range() -> None:
+            chosen = _ask_range(
+                controller,
+                f"X-Axis | {title}",
+                auto=plot.x_range_auto,
+                pinned=(plot.x_range_min, plot.x_range_max),
+                live=plot.live_x_range(),
+                unit=plot.x_model.unit,
+            )
+            if chosen:
+                plot.set_x_range(*chosen)
+
+        controller.add_header_button("X-Axis", "Pin an exact X-axis range instead of always auto-fitting", ask_x_range)
+        equal = controller.add_header_button("Equal Axes", "Draw one unit as long on X as on Y", lambda: None)
+        equal.setCheckable(True)
+        equal.toggled.connect(plot.set_equal_axes)
+        for label in (x, y):
+            row = self._link_row(label, self.signals[label], derived=label in self.math_signals, has_curve=False)
+            row.visibility_changed.connect(plot.set_visible)
+        return plot, controller
+
+    def add_histogram(
+        self, label: str, bins: int = 50, value_range: tuple[float, float] | None = None, title: str | None = None
+    ) -> tuple[HistogramPlot, SignalController]:
+        """
+        `label`'s value distribution (`oscilab.histogram_plot`), in `bins`
+        bars over `value_range` — or the data's own range. Titled
+        "Histogram: <label>" unless given one.
+        """
+        title = title or f"Histogram: {label}"
+        self.__check_new_title(title)
+        if label not in self.signals:
+            raise ValueError(f"Unknown signal '{label}'")
+
+        plot = HistogramPlot(title, self.signals[label], bins=bins, value_range=value_range)
+        plot.set_bins(bins, value_range)  # Checks them
+        controller = self.__add_view(title, plot)
+
+        def ask_bins() -> None:
+            dialog = HistogramDialog(bins=plot.bins, value_range=plot.value_range, parent=controller)
+            if dialog.exec() == qtw.QDialog.DialogCode.Accepted:
+                _, chosen_bins, chosen_range = dialog.get_values()
+                plot.set_bins(chosen_bins, chosen_range)
+                self._log(f"Histogram '{title}': {chosen_bins} bins")
+
+        controller.add_header_button("Bins...", "How many bars, over which range of values", ask_bins)
+        row = self._link_row(label, self.signals[label], derived=label in self.math_signals, has_curve=False)
+        row.visibility_changed.connect(plot.set_visible)
+        return plot, controller
 
     def __check_new_title(self, title: str) -> None:
         if title in self.views:
@@ -283,9 +376,8 @@ class Workspace:
                 self.signals[math.label].unit = derived_unit(math.operator, math.model_a.unit, math.model_b.unit)
                 changed.add(math.label)
 
-        for title, view in self.views.items():
-            shown = view.curves if isinstance(view, TimeseriesPlot) else [title]
-            if changed.intersection(shown):
+        for view in self.views.values():
+            if changed.intersection(view.signals):
                 view.update_units()
         for changed_label in changed:
             if changed_label in self.signal_list.rows:
@@ -352,15 +444,15 @@ class Workspace:
 
     def remove_plot(self, title: str) -> None:
         """
-        Remove a plot — time series or spectrogram. Its signals stay; rows of
-        signals no plot shows anymore go.
+        Remove a plot, of any kind. Its signals stay; rows of signals no plot
+        shows anymore go.
         """
         if title not in self.views:
             raise ValueError(f"Unknown plot '{title}'")
         view = self.views.pop(title)
         controller = self.controllers.pop(title)
 
-        shown = list(view.curves) if isinstance(view, TimeseriesPlot) else [title]
+        shown = view.signals
         for label in shown:
             self.__disconnect_row(label, view)
         if isinstance(view, TimeseriesPlot):
@@ -395,12 +487,18 @@ class Workspace:
             raise ValueError(f"{names} used by math signal(s) {', '.join(users)}; remove those first")
 
     def __drop_signal(self, label: str) -> None:
-        """Take `label` off every plot and out of the list and the registries."""
-        for title, plot in list(self.plots.items()):
-            if label in plot.curves:
+        """
+        Take `label` off every plot and out of the list and the registries:
+        off the time-based plots showing it, and the plots made for it
+        (a spectrogram, histogram or XY plot of it) go.
+        """
+        for title, view in list(self.views.items()):
+            if label not in view.signals:
+                continue
+            if isinstance(view, TimeseriesPlot):
                 self.unlink(title, label)
-        if label in self.spectrograms:
-            self.remove_plot(label)
+            else:
+                self.remove_plot(title)
         self.math_signals.pop(label, None)
         del self.signals[label]
 
@@ -417,7 +515,7 @@ class Workspace:
             row.color_changed.disconnect(view.set_color)
 
     def __drop_row_if_unshown(self, label: str) -> None:
-        shown = label in self.spectrograms or any(label in plot.curves for plot in self.plots.values())
+        shown = any(label in view.signals for view in self.views.values())
         if not shown and label in self.signal_list.rows:
             self.signal_list.remove_signal(label)
 

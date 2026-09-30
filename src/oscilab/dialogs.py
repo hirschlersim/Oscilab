@@ -312,8 +312,9 @@ class MathDialog(qtw.QDialog):
 
 class PlotDialog(qtw.QDialog):
     """
-    A time-series plot's title and the signals it shows: for adding a plot,
-    or (with `title_editable=False`) for changing an existing one's signals.
+    A time-series (or logic) plot's title and the signals it shows: for
+    adding a plot — `kind` names it — or (with `title_editable=False`) for
+    changing an existing one's signals.
     """
 
     def __init__(
@@ -323,9 +324,10 @@ class PlotDialog(qtw.QDialog):
         title: str = "",
         title_editable: bool = True,
         parent: qtw.QWidget | None = None,
+        kind: str = "Time Series Plot",
     ) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Add Time Series Plot" if title_editable else f"Signals | {title}")
+        self.setWindowTitle(f"Add {kind}" if title_editable else f"Signals | {title}")
         self.setMinimumWidth(280)
 
         layout = qtw.QVBoxLayout(self)
@@ -551,3 +553,114 @@ class ReplayDialog(qtw.QDialog):
         items = [self.signal_list.item(i) for i in range(self.signal_list.count())]
         ticked = [item.text() for item in items if item is not None and item.checkState() == qtc.Qt.CheckState.Checked]
         return self.edit_path.text().strip(), ticked, self.check_loop.isChecked()
+
+
+class XYDialog(qtw.QDialog):
+    """A new XY plot: its title, which signal goes on X and which on Y, and how much history it draws."""
+
+    def __init__(self, signal_labels: list[str], title: str = "", parent: qtw.QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Add XY Plot")
+        self.setMinimumWidth(300)
+
+        layout = qtw.QVBoxLayout(self)
+        form = qtw.QFormLayout()
+        self.edit_title = qtw.QLineEdit(title)
+        self.edit_title.setToolTip("The plot's title — also how menus and sessions refer to it")
+        form.addRow("Title:", self.edit_title)
+        self.combo_x = qtw.QComboBox()
+        self.combo_x.addItems(signal_labels)
+        form.addRow("X:", self.combo_x)
+        self.combo_y = qtw.QComboBox()
+        self.combo_y.addItems(signal_labels)
+        self.combo_y.setCurrentIndex(min(1, len(signal_labels) - 1))
+        form.addRow("Y:", self.combo_y)
+        self.spin_trail = qtw.QDoubleSpinBox()
+        self.spin_trail.setRange(0.0, 3600.0)
+        self.spin_trail.setDecimals(1)
+        self.spin_trail.setSuffix(" s")
+        self.spin_trail.setSpecialValueText("Whole buffer")  # Shown at 0
+        self.spin_trail.setToolTip("How many seconds of history the trace shows")
+        form.addRow("Trail:", self.spin_trail)
+        layout.addLayout(form)
+
+        info_label = qtw.QLabel("Y is taken at X's timestamps, so their rates may differ")
+        info_label.setStyleSheet("font-size: 9pt; color: gray;")
+        layout.addWidget(info_label)
+
+        button_box = qtw.QDialogButtonBox(
+            qtw.QDialogButtonBox.StandardButton.Ok | qtw.QDialogButtonBox.StandardButton.Cancel
+        )
+        button_box.accepted.connect(self.accept)
+        button_box.rejected.connect(self.reject)
+        layout.addWidget(button_box)
+
+    def get_values(self) -> tuple[str, str, str, float | None]:
+        """Return (title, X signal, Y signal, trail in seconds — None for the whole buffer)."""
+        trail = self.spin_trail.value()
+        return self.edit_title.text().strip(), self.combo_x.currentText(), self.combo_y.currentText(), trail or None
+
+
+class HistogramDialog(qtw.QDialog):
+    """
+    A histogram's bins — how many, over which range of values — and, given
+    `signal_labels`, for a new one, its signal.
+    """
+
+    def __init__(
+        self,
+        signal_labels: list[str] | None = None,
+        bins: int = 50,
+        value_range: tuple[float, float] | None = None,
+        parent: qtw.QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Add Histogram" if signal_labels is not None else "Histogram Bins")
+        self.setMinimumWidth(300)
+
+        layout = qtw.QVBoxLayout(self)
+        form = qtw.QFormLayout()
+        self.combo_signal: qtw.QComboBox | None = None
+        if signal_labels is not None:
+            self.combo_signal = qtw.QComboBox()
+            self.combo_signal.addItems(signal_labels)
+            form.addRow("Signal:", self.combo_signal)
+        self.spin_bins = qtw.QSpinBox()
+        self.spin_bins.setRange(1, 10_000)
+        self.spin_bins.setValue(bins)
+        self.spin_bins.setToolTip("How many bars")
+        form.addRow("Bins:", self.spin_bins)
+
+        self.check_auto = qtw.QCheckBox("The data's own min to max")
+        self.check_auto.setChecked(value_range is None)
+        self.check_auto.setToolTip("Off: a fixed range, so the bars don't shift as the data's range changes")
+        form.addRow("Range:", self.check_auto)
+        low, high = value_range or (0.0, 1.0)
+        self.spin_min = qtw.QDoubleSpinBox()
+        self.spin_max = qtw.QDoubleSpinBox()
+        for spin, value in ((self.spin_min, low), (self.spin_max, high)):
+            spin.setRange(-1e12, 1e12)
+            spin.setDecimals(4)
+            spin.setValue(value)
+        form.addRow("Min:", self.spin_min)
+        form.addRow("Max:", self.spin_max)
+        self.check_auto.toggled.connect(self.__update_enabled)
+        self.__update_enabled(self.check_auto.isChecked())
+        layout.addLayout(form)
+
+        button_box = qtw.QDialogButtonBox(
+            qtw.QDialogButtonBox.StandardButton.Ok | qtw.QDialogButtonBox.StandardButton.Cancel
+        )
+        button_box.accepted.connect(self.accept)
+        button_box.rejected.connect(self.reject)
+        layout.addWidget(button_box)
+
+    def __update_enabled(self, auto: bool) -> None:
+        self.spin_min.setEnabled(not auto)
+        self.spin_max.setEnabled(not auto)
+
+    def get_values(self) -> tuple[str | None, int, tuple[float, float] | None]:
+        """Return (signal — None without `signal_labels` —, bins, value range — None for the data's own)."""
+        signal = self.combo_signal.currentText() if self.combo_signal is not None else None
+        value_range = None if self.check_auto.isChecked() else (self.spin_min.value(), self.spin_max.value())
+        return signal, self.spin_bins.value(), value_range

@@ -28,6 +28,11 @@ class View(Protocol):
         ...
 
     @property
+    def signals(self) -> list[str]:
+        """The labels of the signals it shows — what its rows' Visible toggles and units reach."""
+        ...
+
+    @property
     def plot_item(self) -> pg.PlotItem:
         """The `PlotItem` the image exporters render."""
         ...

@@ -100,6 +100,10 @@ class SpectrogramPlot(qtw.QWidget):
     def set_downsampling(self, _enabled: bool) -> None:
         """No-op: a spectrogram's pixels are already STFT-bin aggregates, not raw samples."""
 
+    @property
+    def signals(self) -> list[str]:
+        return [self.label]
+
     def update_units(self) -> None:
         """Show its signal's current unit in the title."""
         self.plot.setTitle(self.model.display_name, color=self._fg)
