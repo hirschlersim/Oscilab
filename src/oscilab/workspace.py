@@ -27,6 +27,7 @@ from oscilab.signal_model import SignalModel
 from oscilab.spectrogram_plot import SpectrogramPlot
 from oscilab.storage import Storage
 from oscilab.timeseries_plot import TimeseriesPlot
+from oscilab.trigger import Acquisition, TriggerSettings
 from oscilab.view import View
 from oscilab.xy_plot import XYPlot
 
@@ -106,6 +107,8 @@ class Workspace:
         self._duration = 10.0  # seconds of history kept/displayed, applied to new signals too
         self._time_mode: TimeMode = "global"  # "global" or "relative", applied to new plots too
         self._downsampling = False  # min-max curve downsampling, applied to new plots too
+        self._trigger: Acquisition | None = None  # See `set_trigger`
+        self.trigger_changed: Callable[[], None] | None = None  # Told when a level line is dragged
 
     def _log(self, message: str, level: str = "info") -> None:
         self._logger.opt(depth=1).log(level.upper(), message)
@@ -499,6 +502,9 @@ class Workspace:
                 self.unlink(title, label)
             else:
                 self.remove_plot(title)
+        if self._trigger is not None and self._trigger.settings.source == label:
+            self.set_trigger(None)  # Nothing left to trigger on
+            self._log(f"Trigger turned off: its source '{label}' was removed", level="warning")
         self.math_signals.pop(label, None)
         del self.signals[label]
 
@@ -668,11 +674,102 @@ class Workspace:
         for producer in dict.fromkeys(self.producers.values()):  # a multi-channel producer is listed once per signal
             producer.stop()
 
+    # --- triggering ------------------------------------------------------------------------------
+
+    @property
+    def trigger(self) -> Acquisition | None:
+        """The trigger's acquisition while triggering is on (see `set_trigger`), else None."""
+        return self._trigger
+
+    def set_trigger(self, settings: TriggerSettings | None) -> Acquisition | None:
+        """
+        Trigger the time-based plots (`oscilab.trigger`): each shows the
+        record around a trigger, held until the next, instead of scrolling —
+        all of them the same record, as a scope's channels. Starts running;
+        None turns triggering off, back to scrolling live. Returns the
+        acquisition, to Run, Single, Stop or Force.
+        """
+        if settings is None:
+            self._trigger = None
+            for plot in self.plots.values():
+                plot.show_live()
+                plot.set_trigger_levels([])
+            return None
+        if settings.source not in self.signals:
+            raise ValueError(f"Unknown trigger source '{settings.source}'")
+        if settings.span > self._duration:
+            raise ValueError(
+                f"A record of {settings.span:g} s doesn't fit the {self._duration:g} s of history kept: "
+                "choose less time per division, or a longer duration"
+            )
+        acquisition = Acquisition(settings)  # Checks the settings
+        acquisition.run()
+        self._trigger = acquisition
+        self.__update_trigger_levels()
+        return acquisition
+
+    def __trigger_tick(self) -> None:
+        acquisition = self._trigger
+        if acquisition is None or acquisition.settings.source not in self.signals:
+            return
+        event = acquisition.tick(*self.signals[acquisition.settings.source].snapshot())
+        if event is not None:
+            self.__show_record(acquisition.settings, event)
+        self.__update_trigger_levels()
+
+    def __show_record(self, settings: TriggerSettings, event: float) -> None:
+        """Every time-based plot shows the record around `event`: the same one, as a scope's channels."""
+        start, end = settings.window(event)
+        for plot in self.plots.values():
+            record = {}
+            for label in plot.signals:
+                t, x = self.signals[label].snapshot()
+                # One sample past each end, so the curves run right to the edges
+                first = max(int(np.searchsorted(t, start)) - 1, 0)
+                last = int(np.searchsorted(t, end, side="right")) + 1
+                record[label] = (t[first:last].copy(), x[first:last].copy())
+            plot.show_record(record, event, start, end)
+
+    def __update_trigger_levels(self) -> None:
+        """The trigger level(s) as dashed lines on the plots showing its source, where values are drawn."""
+        acquisition = self._trigger
+        for plot in self.plots.values():
+            shows_source = acquisition is not None and acquisition.settings.source in plot.signals
+            if not shows_source or isinstance(plot, LogicPlot) or acquisition is None:
+                plot.set_trigger_levels([])
+                continue
+            s = acquisition.settings
+            offset = acquisition.detector.offset  # AC coupling: the level is relative to the average
+            if s.type == "window":
+                levels = [s.low + offset, s.high + offset]
+            elif s.type in ("edge", "hysteresis"):
+                levels = [s.level + offset]
+            else:
+                levels = []
+            plot.set_trigger_levels(levels, self.__level_moved)
+
+    def __level_moved(self, index: int, value: float) -> None:
+        """A level line was dragged: the trigger takes its new level."""
+        acquisition = self._trigger
+        if acquisition is None:
+            return
+        s = acquisition.settings
+        value -= acquisition.detector.offset
+        if s.type == "window":
+            low, high = (value, s.high) if index == 0 else (s.low, value)
+            s.low, s.high = min(low, high), max(low, high)
+        else:
+            s.level = value
+        self._log(f"Trigger level set to {value:g}")
+        if self.trigger_changed is not None:
+            self.trigger_changed()
+
     def refresh(self) -> None:
         for math_signal in self.math_signals.values():
             t, x = math_signal.compute()
             self.signals[math_signal.label].set_data(t, x)
 
+        self.__trigger_tick()
         self.__refresh_views()
         self.signal_list.refresh()
 

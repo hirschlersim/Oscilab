@@ -1,3 +1,5 @@
+from collections.abc import Callable
+
 import numpy as np
 import pyqtgraph as pg
 from PyQt6 import QtCore as qtc
@@ -22,6 +24,11 @@ class TimeseriesPlot(pg.PlotWidget):
         self.y_range_max = 1.0
         self.cursor_region: pg.LinearRegionItem | None = None
         self._shift = 0.0  # Subtracted from time on screen by the last refresh(): `now` in relative mode
+        # A triggered record on show instead of the live buffers (see `show_record`)
+        self._record: dict[str, tuple[np.ndarray, np.ndarray]] | None = None
+        self._record_range: tuple[float, float] = (0.0, 0.0)  # On screen, from the trigger
+        self._trigger_mark: pg.InfiniteLine | None = None
+        self._level_lines: list[pg.InfiniteLine] = []
 
         # Curve colors, assigned round-robin as signals are added
         self.colors = ["#FF5555", "#55FF55", "#5555FF", "#FFFF55", "#FF55FF"]
@@ -66,7 +73,10 @@ class TimeseriesPlot(pg.PlotWidget):
         self.reset_view()
 
     def __update_axis_label(self) -> None:
-        label = "Time (relative to now)" if self.time_mode == "relative" else "Time"
+        if self._record is not None:
+            label = "Time (from trigger)"
+        else:
+            label = "Time (relative to now)" if self.time_mode == "relative" else "Time"
         self.setLabel("bottom", label, units="s")
 
     def refresh(self, now: float | None = None) -> None:
@@ -76,6 +86,8 @@ class TimeseriesPlot(pg.PlotWidget):
         every curve, so signals that arrive with different delays stay in step
         (see `oscilab.view.View.refresh`).
         """
+        if self._record is not None:
+            return  # Holding a triggered record until the next one (see `show_record`)
         if self.time_mode == "relative":
             self._shift = now if now is not None else self.__newest_time()
         else:
@@ -189,7 +201,75 @@ class TimeseriesPlot(pg.PlotWidget):
             self.enableAutoRange(axis="y", enable=False)
             self.setYRange(y_min, y_max, padding=0)
 
+    @property
+    def showing_record(self) -> bool:
+        return self._record is not None
+
+    def show_record(
+        self, record: dict[str, tuple[np.ndarray, np.ndarray]], event: float, start: float, end: float
+    ) -> None:
+        """
+        Show a triggered record — each signal's (time, value) from `start` to
+        `end` — instead of the live buffers, held until the next one. Time on
+        screen counts from the trigger `event`, marked "T".
+        """
+        self._record = record
+        self._shift = event
+        self._record_range = (start - event, end - event)
+        for label in self.curves:
+            if label in record:
+                t, y = record[label]
+                self._draw(label, t - event, y)
+        if self._trigger_mark is None:
+            self._trigger_mark = pg.InfiniteLine(
+                pos=0.0, angle=90, pen=pg.mkPen("#f0b429", width=1, style=qtc.Qt.PenStyle.DashLine), label="T"
+            )
+            self.addItem(self._trigger_mark, ignoreBounds=True)
+        self.__update_axis_label()
+        self.__fit_record()
+
+    def show_live(self) -> None:
+        """Back to the live, scrolling buffers."""
+        if self._record is None:
+            return
+        self._record = None
+        if self._trigger_mark is not None:
+            self.removeItem(self._trigger_mark)
+            self._trigger_mark = None
+        self.__update_axis_label()
+        self.refresh()
+        self.reset_view()
+
+    def __fit_record(self) -> None:
+        self.enableAutoRange(axis="x", enable=False)
+        self.setXRange(*self._record_range, padding=0)
+
+    def set_trigger_levels(self, levels: list[float], moved: Callable[[int, float], None] | None = None) -> None:
+        """
+        Dashed lines at the trigger's `levels` (one for an edge, two for a
+        window; none: no lines). Dragging one calls `moved(index, level)`.
+        """
+        while len(self._level_lines) > len(levels):
+            self.removeItem(self._level_lines.pop())
+        while len(self._level_lines) < len(levels):
+            index = len(self._level_lines)
+            line = pg.InfiniteLine(
+                angle=0, movable=True, pen=pg.mkPen("#f0b429", width=1, style=qtc.Qt.PenStyle.DashLine)
+            )
+            line.setHoverPen(pg.mkPen("#f0b429", width=3))
+            if moved is not None:
+                line.sigPositionChangeFinished.connect(lambda item, i=index: moved(i, float(item.value())))
+            self.addItem(line, ignoreBounds=True)
+            self._level_lines.append(line)
+        for line, level in zip(self._level_lines, levels, strict=True):
+            if not line.moving:  # Not while it's being dragged
+                line.setValue(level)
+
     def reset_view(self) -> None:
+        if self._record is not None:
+            self.enableAutoRange(axis="y", enable=self.y_range_auto)
+            self.__fit_record()
+            return
         self.autoRange()
         # autoRange() only does a ONE-TIME fit — it actually leaves the
         # ViewBox's continuous auto-range OFF afterward (for both axes,
@@ -252,10 +332,14 @@ class TimeseriesPlot(pg.PlotWidget):
             if not curve.isVisible():
                 continue
             model = self.models[label]
-            if not model.time:
+            if self._record is not None and label in self._record:
+                time_arr, data_arr = self._record[label]  # What's on show, not the live buffer
+            elif model.time:
+                time_arr, data_arr = model.snapshot()
+            else:
                 continue
-
-            time_arr, data_arr = model.snapshot()
+            if time_arr.size == 0:
+                continue
             # Displayed coordinates are shifted by the last refresh's `now` in
             # relative time mode (see `refresh()`); map back to real time to
             # look up samples. The shift cancels in `t_b - t_a`, so ΔT above
