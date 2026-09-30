@@ -37,8 +37,5 @@
 
 ## Code quality
 
-- **Tests still missing:** producer pacing accuracy (does a producer keep up
-  with real time?), the cursor readout, and `SerialProducer` (against a fake
-  serial port, since pyserial isn't installed in CI).
 - **API docs.** The README covers usage; reference docs could be generated
   from the docstrings (e.g. with pdoc) and published.

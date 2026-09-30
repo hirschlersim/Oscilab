@@ -273,11 +273,12 @@ uv run mypy
 
 The code is fully type-annotated; mypy checks it strictly, and checks the
 tests' use of it. Tests run headless (Qt's offscreen platform), so they work
-without a display, and CI runs them plus ruff and mypy on every pull request. They cover the
-ring buffer, signal model (filter/scaling/resize), math signals, the
-spectrogram's incremental STFT cache, the producer base classes (threads,
-errors, actions, multi-channel data), workspace rules, and the File-menu
-exports — see [TODO.md](TODO.md) for what isn't covered yet.
+without a display, and CI runs them plus ruff and mypy on every pull request.
+They cover the ring buffer, signal model (filter/scaling/resize), math
+signals, the spectrogram's incremental STFT cache, the producer base classes
+(threads, errors, actions, multi-channel data, keeping up with real time),
+`SerialProducer` (against a fake port), the cursor readout, the menus and
+toolbar, sessions, workspace rules, and the File-menu exports.
 
 ## Status
 
