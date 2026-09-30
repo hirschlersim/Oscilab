@@ -15,7 +15,7 @@ Custom toolbar buttons and toggles, defined as methods of your own class.
         def heater(self, on: bool):
             self.device.set_heater(on)
 
-    oszi.add_toolbar(LabTools(device))
+    scope.add_toolbar(LabTools(device))
 
 They appear in the toolbar after the built-in controls (next to Downsample),
 in the order they're defined, base classes first. A button's method is

@@ -87,21 +87,21 @@ API:
 ```python
 from oscilab import AsyncSyntheticProducer, Oscilab, SyntheticProducer
 
-oszi = Oscilab()
+scope = Oscilab()
 
 # Each producer registers its own signals, one per channel, at its own fs
-oszi.attach_producer(SyntheticProducer(fs=100, freq=5.0), "channel-1", storage=oszi.storage.deque)
-oszi.attach_producer(SyntheticProducer(fs=1_000, freq=(1.0, 10.0)), ["channel-2", "channel-3"])
-oszi.attach_producer(AsyncSyntheticProducer(fs=200, freq=2.0), "async")  # "Reset Phase" in the toolbar
+scope.attach_producer(SyntheticProducer(fs=100, freq=5.0), "channel-1", storage=scope.storage.deque)
+scope.attach_producer(SyntheticProducer(fs=1_000, freq=(1.0, 10.0)), ["channel-2", "channel-3"])
+scope.attach_producer(AsyncSyntheticProducer(fs=200, freq=2.0), "async")  # "Reset Phase" in the toolbar
 
-oszi.add_timeseries_plot("Sensors")
-oszi.link(plot="Sensors", label="channel-1")
-oszi.link(plot="Sensors", label="channel-2")
-oszi.link(plot="Sensors", label="async")
+scope.add_timeseries_plot("Sensors")
+scope.link(plot="Sensors", label="channel-1")
+scope.link(plot="Sensors", label="channel-2")
+scope.link(plot="Sensors", label="async")
 
-oszi.add_spectrogram_plot(label="channel-3")
+scope.add_spectrogram_plot(label="channel-3")
 
-oszi.run()  # shows the window; blocks until it's closed
+scope.run()  # shows the window; blocks until it's closed
 ```
 
 ### Writing a producer
@@ -136,7 +136,7 @@ class ImuProducer(SyncDataProducer):
         self.device.zero()
 
 
-oszi.attach_producer(ImuProducer("COM3"), ["acc-x", "acc-y", "acc-z"])
+scope.attach_producer(ImuProducer("COM3"), ["acc-x", "acc-y", "acc-z"])
 ```
 
 `x` is shaped `(channels, n)`; a single-channel producer can return a 1-D
@@ -167,13 +167,13 @@ class LabTools:
         self.device.set_heater(on)
 
 
-oszi.add_toolbar(LabTools(device))
+scope.add_toolbar(LabTools(device))
 ```
 
 `@classmethod`s work too; pass the class itself then. A method that raises
 doesn't take the app down: the error shows in the status bar, the traceback
 goes to the log file, and a toggle flips back. For a one-off,
-`oszi.add_toolbar_button("Zero", device.zero)` and `add_toolbar_toggle` take
+`scope.add_toolbar_button("Zero", device.zero)` and `add_toolbar_toggle` take
 any callable.
 
 Producers use the same decorators (see the `ImuProducer` above), but their
@@ -198,7 +198,7 @@ uv run oscilab my-setup.json   # open a saved session
 uv run oscilab --schema        # print the session file format (JSON Schema)
 ```
 
-**File → Open Session…** or `oszi.load_session(path)` rebuilds one — in a
+**File → Open Session…** or `scope.load_session(path)` rebuilds one — in a
 new window if the current one is already in use. The file is checked
 before anything is built: unknown keys (typos), bad values and references
 to signals that nothing provides are reported instead of half-loading.
@@ -225,8 +225,8 @@ three places:
   Debug messages go to the file only.
 
 From your own code, log through the window so messages reach its status bar
-too: `oszi.log("Calibrated", level="success")`, or
-`oszi.logger.warning(...)` with loguru's full API.
+too: `scope.log("Calibrated", level="success")`, or
+`scope.logger.warning(...)` with loguru's full API.
 
 ## Notable implementation details
 

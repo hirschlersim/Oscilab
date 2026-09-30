@@ -8,9 +8,9 @@ from oscilab.oscilab import Oscilab, _signals_caption
 
 @pytest.fixture
 def window(qapp):
-    oszi = Oscilab(app=qapp)
-    yield oszi
-    oszi.close()
+    scope = Oscilab(app=qapp)
+    yield scope
+    scope.close()
 
 
 class Lab:

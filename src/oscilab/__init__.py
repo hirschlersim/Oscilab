@@ -5,11 +5,11 @@ The public API is importable from the package itself::
 
     from oscilab import Oscilab, SyntheticProducer
 
-    oszi = Oscilab()
-    oszi.attach_producer(SyntheticProducer(fs=100), "sine")
-    oszi.add_timeseries_plot("Plot")
-    oszi.link(plot="Plot", label="sine")
-    oszi.run()
+    scope = Oscilab()
+    scope.attach_producer(SyntheticProducer(fs=100), "sine")
+    scope.add_timeseries_plot("Plot")
+    scope.link(plot="Plot", label="sine")
+    scope.run()
 """
 
 from importlib import metadata

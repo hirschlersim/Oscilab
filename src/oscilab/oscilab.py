@@ -94,8 +94,8 @@ class Oscilab(qtw.QMainWindow):
     (`oscilab.workspace.Workspace`).
     """
 
-    # Exposed as `Oscilab.storage` / `oszi.storage` so callers write e.g.
-    # `oszi.attach_producer(..., storage=oszi.storage.deque)` instead of a bare string.
+    # Exposed as `Oscilab.storage` / `scope.storage` so callers write e.g.
+    # `scope.attach_producer(..., storage=scope.storage.deque)` instead of a bare string.
     storage = Storage
 
     _extra_windows: ClassVar[set["Oscilab"]] = set()  # Opened by open_session(); see there

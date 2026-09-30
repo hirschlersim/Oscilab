@@ -14,11 +14,11 @@ from oscilab.oscilab import Oscilab
 
 @pytest.fixture
 def window(qapp):
-    oszi = Oscilab(app=qapp)
+    scope = Oscilab(app=qapp)
     for label in ("a", "b", "c"):
-        oszi.register_signal(label, fs=1_000).add_data(np.arange(10) / 1_000, np.zeros(10))
-    yield oszi
-    oszi.close()
+        scope.register_signal(label, fs=1_000).add_data(np.arange(10) / 1_000, np.zeros(10))
+    yield scope
+    scope.close()
 
 
 def answer(monkeypatch, dialog_cls, fill=lambda _dialog: None, accept: bool = True):

@@ -13,9 +13,9 @@ from oscilab.oscilab import Oscilab
 
 @pytest.fixture
 def window(qapp):
-    oszi = Oscilab(app=qapp)
-    yield oszi
-    oszi.close()
+    scope = Oscilab(app=qapp)
+    yield scope
+    scope.close()
 
 
 def test_public_api_is_importable_from_the_package():

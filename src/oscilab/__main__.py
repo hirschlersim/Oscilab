@@ -21,10 +21,10 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(Session.model_json_schema(), indent=2))  # noqa: T201 — it's the command's output
         return 0
 
-    oszi = Oscilab()
+    scope = Oscilab()
     if args.session:
-        oszi.load_session(args.session)
-    return oszi.run()
+        scope.load_session(args.session)
+    return scope.run()
 
 
 if __name__ == "__main__":

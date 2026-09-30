@@ -19,9 +19,9 @@ MAIN_THREAD = threading.get_ident()
 
 @pytest.fixture
 def window(qapp):
-    oszi = Oscilab(app=qapp)
-    yield oszi
-    oszi.close()
+    scope = Oscilab(app=qapp)
+    yield scope
+    scope.close()
 
 
 def wait_until(qapp, condition, timeout: float = 5.0):

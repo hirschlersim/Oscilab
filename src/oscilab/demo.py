@@ -11,8 +11,8 @@ class DemoTools:
     @toggle, show up in the toolbar next to Downsample.
     """
 
-    def __init__(self, oszi: Oscilab, noisy: SyntheticProducer):
-        self.oszi = oszi
+    def __init__(self, scope: Oscilab, noisy: SyntheticProducer):
+        self.scope = scope
         self.noisy = noisy
 
     @toggle("Noise", tooltip="Add noise to channel-1", checked=True)
@@ -21,11 +21,11 @@ class DemoTools:
 
     @button("Mark", tooltip="Log a timestamped marker to the status bar and the log file")
     def mark(self):
-        self.oszi.log(f"Marker at {time.strftime('%H:%M:%S')}", level="success")
+        self.scope.log(f"Marker at {time.strftime('%H:%M:%S')}", level="success")
 
 
 def run() -> int:
-    oszi = Oscilab()
+    scope = Oscilab()
 
     # Producers. Each registers its own signals — one per channel, at its own
     # sampling rate — and starts feeding them right away.
@@ -34,35 +34,35 @@ def run() -> int:
     # default ring buffer, to show both backends behave the same ("ring" is far
     # cheaper per refresh tick at scale; see scripts/benchmark_buffers.py).
     channel_1 = SyntheticProducer(fs=100, freq=5.0)
-    oszi.attach_producer(channel_1, "channel-1", storage=oszi.storage.deque)
+    scope.attach_producer(channel_1, "channel-1", storage=scope.storage.deque)
     # "channel-2"/"channel-3": ONE two-channel producer — a 1 Hz and a 10 Hz
     # sine sampled together, like a multi-channel DAQ.
-    oszi.attach_producer(SyntheticProducer(fs=1_000, freq=(1.0, 10.0)), ["channel-2", "channel-3"])
+    scope.attach_producer(SyntheticProducer(fs=1_000, freq=(1.0, 10.0)), ["channel-2", "channel-3"])
     # "async": an asyncio-based producer, the template for async hardware
     # clients. Its "Reset Phase" function — an @button(..., toolbar=True)
     # method — is in the toolbar, and in the Producers menu next to its Start
     # and Stop.
-    oszi.attach_producer(AsyncSyntheticProducer(fs=200, freq=2.0), "async")
+    scope.attach_producer(AsyncSyntheticProducer(fs=200, freq=2.0), "async")
 
     # A time series plot with three of them...
-    oszi.add_timeseries_plot("Sensors")
-    oszi.link(plot="Sensors", label="channel-1")
-    oszi.link(plot="Sensors", label="channel-2")
-    oszi.link(plot="Sensors", label="async")
+    scope.add_timeseries_plot("Sensors")
+    scope.link(plot="Sensors", label="channel-1")
+    scope.link(plot="Sensors", label="channel-2")
+    scope.link(plot="Sensors", label="async")
 
     # ...and a live spectrogram (STFT) of the 10 Hz one.
-    oszi.add_spectrogram_plot(label="channel-3")
+    scope.add_spectrogram_plot(label="channel-3")
 
     # "Noise" and "Mark" in the toolbar (after "Reset Phase"), from the
     # DemoTools class above
-    oszi.add_toolbar(DemoTools(oszi, channel_1))
+    scope.add_toolbar(DemoTools(scope, channel_1))
 
     # Blocks until the window is closed; also try the Plots, Math, Producers,
     # Cursors and View > Time menus, each plot's panel (Signals..., Remove),
     # and each row's details (click its name): live metrics and the
     # Filter/Scaling buttons. File > Save Session keeps the whole setup;
     # `uv run oscilab <file>.json` reopens it without this script.
-    return oszi.run()
+    return scope.run()
 
 
 if __name__ == "__main__":
