@@ -40,8 +40,9 @@ architecture in Python; still under active development (see
   menu starts, stops and removes them and runs their own functions (which
   can go in the toolbar too). An error stops
   only the producer that hit it. Ships with a synthetic signal generator, a CSV file-replay
-  producer, an Xbox controller producer (Bluetooth or USB, on Windows), and
-  templates for serial and `asyncio` sources.
+  producer, an Xbox controller producer (Bluetooth or USB, on Windows), a
+  phone's sensors via the Sensor Logger app, and templates for serial and
+  `asyncio` sources.
 - **Two storage backends** — a plain `collections.deque` or a
   thread-safe, pre-allocated numpy ring buffer, selectable per signal
   (see `scripts/benchmark_buffers.py` for the throughput difference).
@@ -56,7 +57,8 @@ architecture in Python; still under active development (see
 
 ```
 producers.py          Background QThread data sources (Sync/Async base classes)
-xbox.py                └─ an Xbox controller, through XInput
+xbox.py                ├─ an Xbox controller, through XInput
+sensor_logger.py       └─ a phone's sensors, from the Sensor Logger app
     │
 signal_model.py       Rolling buffer, filtering, scaling, metrics per signal
 math_signal.py         └─ derived signal (A op B)
@@ -192,6 +194,47 @@ held. With no controller connected, or once it goes to sleep, the producer
 stops with an error on its rows; connect it and press **Restart**. Its
 Producers-menu entry has **Rumble**, a short buzz to tell which controller
 it's reading.
+
+### Your phone's sensors (Sensor Logger)
+
+The [Sensor Logger](https://www.tszheichoi.com/sensorlogger) app (Android
+and iOS) can push its sensors' readings to a URL while it records — and
+Oscilab can be that URL:
+
+```bash
+uv run scripts/sensor_logger.py              # the app sampling at 100 Hz
+uv run scripts/sensor_logger.py --rate 400   # or whatever you've set it to
+```
+
+1. Phone and PC on the same Wi-Fi. The window's title shows the URL to push
+   to, e.g. `http://192.168.1.23:8000/data`. The first time, Windows asks
+   whether to let Python through its firewall: allow it on private networks.
+2. In the app: Settings → Data Streaming → **HTTP Push**, enter that URL.
+   Opening it in the phone's browser tells you whether the phone gets
+   through.
+3. Enable the accelerometer, gyroscope and orientation, and start recording.
+
+The script plots acceleration and rotation rate over time, the phone's tilt
+(roll against pitch), and how the acceleration is spread. The plots trail
+the phone by the push period — a second, by default. The status bar says
+the rate each sensor really arrives at: to go faster, set the app's
+sampling rate higher and run the script with `--rate` at what it measured.
+
+From your own code, one `SensorLoggerProducer` per sensor — the sensors run
+at different rates — sharing one listener on the port:
+
+```python
+from oscilab.sensor_logger import attach_sensor_logger, push_url
+
+attach_sensor_logger(scope, ["accelerometer", "gyroscope", "magnetometer"], fs=100)
+print(push_url())  # the URL to enter in the app
+```
+
+Readings keep the phone's own timestamps, so its sensors stay in step. The
+common sensors' channels and units are built in (accelerometer, gravity,
+gyroscope, magnetometer, orientation, barometer, microphone, location,
+battery); for other values pass `channels=`, e.g.
+`SensorLoggerProducer("orientation", channels=["qx", "qy", "qz", "qw"])`.
 
 ### Custom toolbar buttons and toggles
 

@@ -18,6 +18,7 @@ MODULES = [
     "oscilab",
     "oscilab.producers",
     "oscilab.xbox",
+    "oscilab.sensor_logger",
     "oscilab.toolbar",
     "oscilab.session",
     "oscilab.view",

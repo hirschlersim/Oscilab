@@ -25,6 +25,7 @@ from oscilab.producers import (
     SyntheticProducer,
 )
 from oscilab.replay import RecordingReplayProducer
+from oscilab.sensor_logger import SensorLoggerProducer
 from oscilab.signal_model import SignalModel
 from oscilab.storage import Storage
 from oscilab.toolbar import button, toggle
@@ -42,6 +43,7 @@ __all__ = [
     "FileReplayProducer",
     "Oscilab",
     "RecordingReplayProducer",
+    "SensorLoggerProducer",
     "SerialProducer",
     "SignalModel",
     "Storage",
