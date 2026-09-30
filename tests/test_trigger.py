@@ -138,14 +138,18 @@ def settings(**changes) -> TriggerSettings:
     return TriggerSettings(**(base | changes))
 
 
+def state(acquisition: Acquisition) -> str:
+    return acquisition.state  # Read afresh: tick() changes it
+
+
 def test_run_shows_each_record_once_it_is_complete():
     acquisition = Acquisition(settings())
     acquisition.run()
     source = Source()
     assert acquisition.tick(*source.grow(0.5)) is None  # Armed at 0.5 s: the rising crossing at 1 s is to come
-    assert acquisition.state == "armed"
+    assert state(acquisition) == "armed"
     assert acquisition.tick(*source.grow(0.52)) is None  # Triggered at 1.0 s, but the record runs to 1.05 s
-    assert acquisition.state == "waiting"
+    assert state(acquisition) == "waiting"
     assert acquisition.tick(*source.grow(0.1)) == pytest.approx(1.0, abs=1e-3)
     assert (acquisition.state, acquisition.last) == ("armed", "trigger")
 
