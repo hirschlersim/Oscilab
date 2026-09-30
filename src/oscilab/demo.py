@@ -33,16 +33,17 @@ def run() -> int:
     # "channel-1": a single-channel producer, stored in a deque instead of the
     # default ring buffer, to show both backends behave the same ("ring" is far
     # cheaper per refresh tick at scale; see scripts/benchmark_buffers.py).
+    # Its unit, "V", shows in the legend, on the Y axis and in its row.
     channel_1 = SyntheticProducer(fs=100, freq=5.0)
-    scope.attach_producer(channel_1, "channel-1", storage=scope.storage.deque)
+    scope.attach_producer(channel_1, "channel-1", storage=scope.storage.deque, units="V")
     # "channel-2"/"channel-3": ONE two-channel producer — a 1 Hz and a 10 Hz
-    # sine sampled together, like a multi-channel DAQ.
-    scope.attach_producer(SyntheticProducer(fs=1_000, freq=(1.0, 10.0)), ["channel-2", "channel-3"])
+    # sine sampled together, like a multi-channel DAQ. One unit for both.
+    scope.attach_producer(SyntheticProducer(fs=1_000, freq=(1.0, 10.0)), ["channel-2", "channel-3"], units="V")
     # "async": an asyncio-based producer, the template for async hardware
     # clients. Its "Reset Phase" function — an @button(..., toolbar=True)
     # method — is in the toolbar, and in the Producers menu next to its Start
     # and Stop.
-    scope.attach_producer(AsyncSyntheticProducer(fs=200, freq=2.0), "async")
+    scope.attach_producer(AsyncSyntheticProducer(fs=200, freq=2.0), "async", units="mA")
 
     # A time series plot with three of them...
     scope.add_timeseries_plot("Sensors")
@@ -60,7 +61,8 @@ def run() -> int:
     # Blocks until the window is closed; also try the Plots, Math, Producers,
     # Cursors and View > Time menus, each plot's panel (Signals..., Remove),
     # and each row's details (click its name): live metrics and the
-    # Filter/Scaling buttons. File > Save Session keeps the whole setup;
+    # Filter/Scaling/Unit buttons. File > Save Session keeps the whole setup,
+    # the window's size and position and the toggles' states included;
     # `uv run oscilab <file>.json` reopens it without this script.
     return scope.run()
 

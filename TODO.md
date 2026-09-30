@@ -29,12 +29,6 @@
 - **More plot types**, now that `View` makes them cheap to add: an FFT/PSD
   plot of a signal, and an XY plot (one signal against another).
 
-- **Signal units.** A unit per signal (V, A, °C, ...), shown in the Y axis
-  label, the legend and the row's metrics; saved in sessions.
-
-- **Remember the window.** Save window size/position and toolbar toggle
-  states in sessions too.
-
 ## Code quality
 
 - **Publish the API docs.** CI builds them on every run (the `api-docs`

@@ -186,7 +186,7 @@ def export_mat(signals: dict[str, SignalModel], path: str | Path) -> Path:
 
 
 def export_h5(signals: dict[str, SignalModel], path: str | Path) -> Path:
-    """Every signal into one HDF5 file: a group per signal with `time`/`data` datasets and `fs`/`label` attributes."""
+    """Every signal into one HDF5 file: a group per signal with `time`/`data` datasets and `fs`/`label`/`unit` attributes."""
     path = Path(path).with_suffix(".h5")
     with h5py.File(path, "w") as f:
         for label, model in signals.items():
@@ -196,4 +196,5 @@ def export_h5(signals: dict[str, SignalModel], path: str | Path) -> Path:
             group.create_dataset("data", data=data_arr)
             group.attrs["fs"] = model.fs
             group.attrs["label"] = label
+            group.attrs["unit"] = model.unit
     return path

@@ -144,6 +144,9 @@ class DataProducer(qtc.QThread, metaclass=_ProducerMeta):
     # attribute, or set `self.channels` in `__init__` when the count depends
     # on constructor arguments.
     channels: tuple[str, ...] = ("value",)
+    # Optionally, the unit of each channel, in the same order (e.g. ("V", "A"));
+    # empty for none. `attach_producer(..., units=...)` can override it.
+    units: tuple[str, ...] = ()
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)

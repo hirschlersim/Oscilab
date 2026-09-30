@@ -17,18 +17,41 @@ from oscilab.__main__ import main
 from oscilab.oscilab import Oscilab
 from oscilab.producers import AsyncSyntheticProducer, SyncDataProducer, SyntheticProducer
 from oscilab.session import Session
+from oscilab.toolbar import toggle
 
 
 class Constant(SyncDataProducer):
     """A producer defined outside oscilab — saved by its import path, like an add-on's."""
 
+    units = ("V",)
+
     def __init__(self, value: float, fs: float = 50.0):
         super().__init__(fs=fs)
         self.value = value
+        self.held = False
 
     def _generate(self, elapsed):
         n = int(elapsed * self.fs)
         return np.arange(n) / self.fs, np.full(n, self.value)
+
+    @toggle("Hold")
+    def hold(self, on: bool):
+        self.held = on
+
+
+class Bench:
+    """Your own toolbar controls."""
+
+    def __init__(self):
+        self.calls: list[tuple[str, bool]] = []
+
+    @toggle("Lamp")
+    def lamp(self, on: bool):
+        self.calls.append(("lamp", on))
+
+    @toggle("Fan", checked=True)
+    def fan(self, on: bool):
+        self.calls.append(("fan", on))
 
 
 @pytest.fixture
@@ -60,13 +83,19 @@ def build_everything(window: Oscilab):
     window.set_duration(5)
     window.set_time_mode("relative")
     window.set_downsampling(True)
+    window.set_window_geometry(30, 40, 700, 500)
 
     window.attach_producer(SyntheticProducer(fs=100, freq=5.0), "slow", storage=window.storage.deque)
-    window.attach_producer(SyntheticProducer(fs=1_000, freq=(1.0, 10.0), noise=0), ["a", "b"])
+    window.attach_producer(SyntheticProducer(fs=1_000, freq=(1.0, 10.0), noise=0), ["a", "b"], units="V")
     window.attach_producer(AsyncSyntheticProducer(fs=200), "async")
-    window.attach_producer(Constant(3.0), "constant")
-    window.register_signal("manual", fs=50)
+    constant = Constant(3.0)
+    window.attach_producer(constant, "constant")
+    window.set_producer_toggle_states(constant, {"hold": True})
+    window.register_signal("manual", fs=50, unit="mA")
     window.workspace.add_math_signal("sum", "+", "a", "b")
+    window.set_unit("slow", "°C")
+    window.add_toolbar(Bench())
+    window.set_toggle_states({"Bench.lamp": True, "Bench.fan": False})
 
     plot = window.add_timeseries_plot("Main")
     for label in ("slow", "a", "sum", "manual", "constant"):
@@ -117,8 +146,16 @@ def test_the_file_is_plain_readable_json(make_window, tmp_path):
         "args": {"fs": 1000, "freq": [1.0, 10.0], "noise": 0},
         "signals": ["a", "b"],
         "storage": "ring",
+        "units": ["V", "V"],
+        "toggles": {},
     }
-    assert data["producers"][3]["type"] == "test_session:Constant"
+    constant = data["producers"][3]
+    assert constant["type"] == "test_session:Constant"
+    assert constant["units"] is None  # The producer's own: not repeated
+    assert constant["toggles"] == {"hold": True}
+    assert data["manual_signals"][0]["unit"] == "mA"
+    assert data["window"] == {"x": 30, "y": 40, "width": 700, "height": 500, "maximized": False}
+    assert data["toggles"] == {"Bench.lamp": True, "Bench.fan": False}
     assert data["signal_settings"]["a"]["filter"] == {"cutoff": 20.0, "order": 2}
     assert data["plots"][1] == {
         "kind": "spectrogram",

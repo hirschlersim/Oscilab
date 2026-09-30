@@ -18,7 +18,7 @@ from PyQt6 import QtWidgets as qtw
 from oscilab import exporters
 from oscilab.dialogs import RangeDialog
 from oscilab.display import TimeMode
-from oscilab.math_signal import MathSignal
+from oscilab.math_signal import MathSignal, derived_unit
 from oscilab.producers import DataProducer
 from oscilab.signal_controller import SignalController, SignalRow
 from oscilab.signal_model import SignalModel
@@ -227,15 +227,16 @@ class Workspace:
             unit = f" {view.y_unit}" if view.y_unit else ""
             self._log(f"Y-axis for '{title}' set to {'Auto' if auto else f'[{lo:g}, {hi:g}]{unit}'}")
 
-    def register_signal(self, label: str, fs: float, storage: Storage = Storage.ring) -> SignalModel:
+    def register_signal(self, label: str, fs: float, storage: Storage = Storage.ring, unit: str = "") -> SignalModel:
         """
         Register a signal you feed yourself, via its `SignalModel.add_data`.
         Producer-fed signals are registered by `attach_producer` instead.
+        `unit`: e.g. "V" (see `set_unit`).
         """
         if label in self.signals:
             raise ValueError(f"Signal '{label}' already registered")
 
-        model = SignalModel(label=label, fs=fs, duration=self._duration, storage=storage)
+        model = SignalModel(label=label, fs=fs, duration=self._duration, storage=storage, unit=unit)
         self.signals[label] = model
         return model
 
@@ -248,15 +249,49 @@ class Workspace:
         if signal_b not in self.signals:
             raise ValueError(f"Unknown signal '{signal_b}'")
 
-        model_a = self.signals[signal_a]
-        derived_model = SignalModel(label=label, fs=model_a.fs, duration=self._duration)
+        model_a, model_b = self.signals[signal_a], self.signals[signal_b]
+        unit = derived_unit(operator, model_a.unit, model_b.unit)
+        derived_model = SignalModel(label=label, fs=model_a.fs, duration=self._duration, unit=unit)
 
         self.signals[label] = derived_model
-        self.math_signals[label] = MathSignal(
-            label=label, model_a=model_a, model_b=self.signals[signal_b], operator=operator
-        )
+        self.math_signals[label] = MathSignal(label=label, model_a=model_a, model_b=model_b, operator=operator)
         self._log(f"Created math signal '{label}' = {signal_a} {operator} {signal_b}")
         return derived_model
+
+    def set_unit(self, label: str, unit: str) -> None:
+        """
+        Change a signal's unit — e.g. "V", "°C"; "" for none. Legends, Y axes,
+        its row and the cursor readouts follow, and so do the math signals
+        computed from it: a math signal's unit always derives from its
+        operands' (see `oscilab.math_signal.derived_unit`).
+        """
+        if label not in self.signals:
+            raise ValueError(f"Unknown signal '{label}'")
+        if label in self.math_signals:
+            raise ValueError(f"'{label}' is a math signal: its unit follows from its operands'")
+
+        unit = unit.strip()
+        self.signals[label].unit = unit
+        changed = {label}
+        for math in self.math_signals.values():  # In definition order: operands come first
+            if {math.model_a.label, math.model_b.label} & changed:
+                self.signals[math.label].unit = derived_unit(math.operator, math.model_a.unit, math.model_b.unit)
+                changed.add(math.label)
+
+        for title, view in self.views.items():
+            shown = view.curves if isinstance(view, TimeseriesPlot) else [title]
+            if changed.intersection(shown):
+                view.update_units()
+        for changed_label in changed:
+            if changed_label in self.signal_list.rows:
+                self.signal_list.rows[changed_label].update_unit()
+        self._log(f"Unit of '{label}' set to {unit}" if unit else f"Unit of '{label}' removed")
+
+    def __set_unit_from_row(self, label: str, unit: str) -> None:
+        try:
+            self.set_unit(label, unit)
+        except ValueError as e:  # A Qt slot: report it, don't raise
+            self._log(str(e), level="warning")
 
     def link(self, plot: str, label: str) -> None:
         if plot not in self.views:
@@ -294,6 +329,7 @@ class Workspace:
         row = self.signal_list.add_signal(label=label, model=model, derived=derived, has_curve=has_curve)
         row.restart_requested.connect(self.restart_producer)
         row.remove_requested.connect(self.__remove_signal_from_row)
+        row.unit_requested.connect(self.__set_unit_from_row)
         if label in self._producer_errors:
             row.set_error(self._producer_errors[label])
         return row
@@ -381,14 +417,20 @@ class Workspace:
             plot.setXLink(plots[0])
 
     def attach_producer(
-        self, producer: DataProducer, signals: str | Sequence[str], storage: Storage = Storage.ring
+        self,
+        producer: DataProducer,
+        signals: str | Sequence[str],
+        storage: Storage = Storage.ring,
+        units: str | Sequence[str] | None = None,
     ) -> list[SignalModel]:
         """
         Register one signal per producer channel, at the producer's `fs`, and
         start the producer feeding them.
 
         `signals` names them in `producer.channels` order: a single label for
-        a single-channel producer, otherwise one label per channel.
+        a single-channel producer, otherwise one label per channel. `units`
+        the same way — or one unit for every channel; by default, the
+        producer's own `units`.
         """
         labels = [signals] if isinstance(signals, str) else list(signals)
         if len(labels) != len(producer.channels):
@@ -396,6 +438,7 @@ class Workspace:
                 f"{type(producer).__name__} has {len(producer.channels)} channel(s) {producer.channels}, "
                 f"but {len(labels)} signal name(s) were given"
             )
+        channel_units = self.__channel_units(producer, units)
         # Check every name up front, so a bad call leaves nothing half-registered.
         if len(set(labels)) != len(labels):
             raise ValueError(f"Duplicate signal names in {labels}")
@@ -403,7 +446,10 @@ class Workspace:
             if label in self.signals:
                 raise ValueError(f"Signal '{label}' already registered")
 
-        models = [self.register_signal(label, fs=producer.fs, storage=storage) for label in labels]
+        models = [
+            self.register_signal(label, fs=producer.fs, storage=storage, unit=unit)
+            for label, unit in zip(labels, channel_units, strict=True)
+        ]
 
         _ProducerLink(producer, models, on_error=lambda message: self.__on_producer_error(labels, message))
         for label in labels:
@@ -412,6 +458,20 @@ class Workspace:
         producer.start()
         self._log(f"Started {type(producer).__name__} for {', '.join(repr(label) for label in labels)}")
         return models
+
+    @staticmethod
+    def __channel_units(producer: DataProducer, units: str | Sequence[str] | None) -> list[str]:
+        count = len(producer.channels)
+        if units is None:
+            units = producer.units or [""] * count
+        if isinstance(units, str):
+            return [units] * count
+        if len(units) != count:
+            raise ValueError(
+                f"{type(producer).__name__} has {count} channel(s) {producer.channels}, "
+                f"but {len(units)} unit(s) {tuple(units)} were given"
+            )
+        return list(units)
 
     def __on_producer_error(self, labels: list[str], message: str) -> None:
         names = ", ".join(repr(label) for label in labels)
@@ -526,12 +586,12 @@ class Workspace:
         if readout is not None:
             self.controllers[title].set_cursor_readout(self.__format_cursor_readout(readout))
 
-    @staticmethod
-    def __format_cursor_readout(readout: dict) -> str:
+    def __format_cursor_readout(self, readout: dict) -> str:
         freq_text = f"{readout['freq']:.3f} Hz" if readout["freq"] is not None else "—"
         lines = [f"Cursors  ΔT: {readout['dt']:+.4f} s   1/ΔT: {freq_text}"]
         for label, v in readout["signals"].items():
-            lines.append(f"  {label}: A={v['value_a']:+.3f}  B={v['value_b']:+.3f}  Δ={v['delta']:+.3f}")
+            name = self.signals[label].display_name
+            lines.append(f"  {name}: A={v['value_a']:+.3f}  B={v['value_b']:+.3f}  Δ={v['delta']:+.3f}")
         return "\n".join(lines)
 
     def set_theme(self, bg: str, fg: str) -> None:

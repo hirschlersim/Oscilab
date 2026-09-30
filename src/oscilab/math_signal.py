@@ -15,6 +15,24 @@ _FUNCS: dict[str, Callable[[np.ndarray, np.ndarray], np.ndarray]] = {
 OPERATORS = tuple(_FUNCS)  # A new operation only needs an entry in _FUNCS; the Math menu follows
 
 
+def derived_unit(operator: str, unit_a: str, unit_b: str) -> str:
+    """
+    The unit of `A <operator> B`: sums and differences keep a shared unit
+    (none if A's and B's differ), products and quotients combine them —
+    V * A is "V·A", V / A is "V/A", V / V has none. A missing unit counts as
+    a plain number.
+    """
+    if operator in ("+", "-"):
+        return unit_a if unit_a == unit_b else ""
+    if operator == "*":
+        return "·".join(unit for unit in (unit_a, unit_b) if unit)
+    if unit_a == unit_b:
+        return ""
+    if not unit_b:
+        return unit_a
+    return f"{unit_a or '1'}/{unit_b}"
+
+
 class MathSignal:
     """
     `label = model_a <operator> model_b`, recomputed from scratch each tick.

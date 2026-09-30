@@ -2,7 +2,7 @@ import ctypes
 import functools
 import itertools
 import sys
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from importlib import metadata, resources
 from pathlib import Path
 from typing import ClassVar, Literal, NamedTuple
@@ -174,6 +174,11 @@ class Oscilab(qtw.QMainWindow):
         # Domain layer
         self.workspace = Workspace(logger=self.logger)
         self._fps: Fps = 30
+
+        # Custom toggles, for sessions (see `toggle_states`)
+        self._toggles: dict[str, qtg.QAction] = {}
+        self._pending_toggles: dict[str, bool] = {}  # Set before their toolbar was added
+        self._producer_toggles: dict[DataProducer, dict[str, qtg.QAction]] = {}
 
         # Layout
         self.controller_layout = qtw.QVBoxLayout()
@@ -431,30 +436,45 @@ class Oscilab(qtw.QMainWindow):
         """
         self.controller_layout.insertWidget(self.controller_layout.count() - 1, controller)
 
-    def register_signal(self, label: str, fs: float, storage: Storage = Storage.ring) -> SignalModel:
+    def register_signal(self, label: str, fs: float, storage: Storage = Storage.ring, unit: str = "") -> SignalModel:
         """
         Register a signal you feed yourself (producer-fed signals are
         registered by `attach_producer`). `storage`: `self.storage.ring`
         (default) or `self.storage.deque` — see `oscilab.ring_buffer.RingBuffer`.
+        `unit`: e.g. "V" (see `set_unit`).
         """
-        return self.workspace.register_signal(label, fs, storage=storage)
+        return self.workspace.register_signal(label, fs, storage=storage, unit=unit)
+
+    def set_unit(self, label: str, unit: str) -> None:
+        """
+        Change a signal's unit — e.g. "V", "°C"; "" for none — as its row's
+        Unit button does. Shown in legends, on Y axes, in its row's metrics
+        and in cursor readouts; math signals derive theirs from their operands.
+        """
+        self.workspace.set_unit(label, unit)
 
     def link(self, plot: str, label: str) -> None:
         self.workspace.link(plot, label)
         self.log(f"Linked signal '{label}' to plot '{plot}'")
 
     def attach_producer(
-        self, producer: DataProducer, signals: str | Sequence[str], storage: Storage = Storage.ring
+        self,
+        producer: DataProducer,
+        signals: str | Sequence[str],
+        storage: Storage = Storage.ring,
+        units: str | Sequence[str] | None = None,
     ) -> list[SignalModel]:
         """
         Register one signal per producer channel, named by `signals` (a single
         label for a single-channel producer), and start the producer feeding
-        them. The signals use the producer's `fs`. It gets an entry in the
-        Producers menu — Start, Stop, and its `@button` / `@toggle` methods,
-        which run on its own thread; those marked `toolbar=True` go in the
-        toolbar too (see `oscilab.toolbar`).
+        them. The signals use the producer's `fs`, and its `units` unless you
+        give them here: one per channel, or one for all (see `set_unit`).
+
+        It gets an entry in the Producers menu — Start, Stop, and its
+        `@button` / `@toggle` methods, which run on its own thread; those
+        marked `toolbar=True` go in the toolbar too (see `oscilab.toolbar`).
         """
-        models = self.workspace.attach_producer(producer, signals, storage=storage)
+        models = self.workspace.attach_producer(producer, signals, storage=storage, units=units)
         self.__add_producer_menu(producer)
         return models
 
@@ -481,10 +501,13 @@ class Oscilab(qtw.QMainWindow):
         if items:
             menu.addSeparator()
         in_toolbar = []
+        toggles = self._producer_toggles.setdefault(producer, {})
         for item, method in items:
             run = functools.partial(self.__run_on_producer, producer, method)
             action = self.__control_action(item, run)
             menu.addAction(action)
+            if item.kind == "toggle":
+                toggles[item.name] = action
             if item.toolbar:  # The same action: a toggle shows the same state in both places
                 action.setToolTip(f"{action.toolTip()} ({caption})")  # Which producer's, in the toolbar
                 in_toolbar.append(action)
@@ -520,7 +543,13 @@ class Oscilab(qtw.QMainWindow):
                 f"{type(tools).__name__} is a producer: mark its methods toolbar=True instead,"
                 " and they run on its own thread"
             )
-        actions = [self.__control_action(item, method) for item, method in toolbar_items(tools)]
+        cls = tools if isinstance(tools, type) else type(tools)
+        actions = []
+        for item, method in toolbar_items(tools):
+            action = self.__control_action(item, method)
+            if item.kind == "toggle":
+                self.__register_toggle(f"{cls.__name__}.{item.name}", action)
+            actions.append(action)
         self.toolbar.addActions(actions)
         self.toolbar.addSeparator()  # Keeps each class's controls together
         return actions
@@ -539,8 +568,82 @@ class Oscilab(qtw.QMainWindow):
         changes. `checked`: the initial state, which isn't reported to `callback`.
         """
         action = self.__control_action(ToolbarItem("toggle", text, tooltip, checked), callback)
+        self.__register_toggle(text, action)
         self.toolbar.addAction(action)
         return action
+
+    def __register_toggle(self, key: str, action: qtg.QAction) -> None:
+        # A second instance of the same class gets "Class.method#2", ...
+        unique, n = key, 1
+        while unique in self._toggles:
+            n += 1
+            unique = f"{key}#{n}"
+        self._toggles[unique] = action
+        if unique in self._pending_toggles:
+            action.setChecked(self._pending_toggles.pop(unique))  # Runs its method, as a click would
+
+    def toggle_states(self) -> dict[str, bool]:
+        """
+        Whether each of your toolbar toggles is on — from `add_toolbar`, keyed
+        `"ClassName.method"`, or `add_toolbar_toggle`, keyed by its text.
+        Sessions save these (a producer's toggles are saved with it).
+        """
+        return {**self._pending_toggles, **{key: action.isChecked() for key, action in self._toggles.items()}}
+
+    def set_toggle_states(self, states: Mapping[str, bool]) -> None:
+        """
+        Switch your toolbar toggles on or off (keyed as `toggle_states` has
+        them), calling their methods as a click would. A toggle that isn't in
+        the toolbar yet switches as soon as `add_toolbar` adds it — so a
+        session can be loaded before your tools are.
+        """
+        for key, on in states.items():
+            if key in self._toggles:
+                self._toggles[key].setChecked(on)
+            else:
+                self._pending_toggles[key] = on
+
+    def producer_toggle_states(self, producer: DataProducer) -> dict[str, bool]:
+        """Whether each of `producer`'s `@toggle` functions is on, keyed by method name."""
+        return {name: action.isChecked() for name, action in self._producer_toggles.get(producer, {}).items()}
+
+    def set_producer_toggle_states(self, producer: DataProducer, states: Mapping[str, bool]) -> None:
+        """
+        Switch `producer`'s `@toggle` functions (keyed by method name) on or
+        off, running them on its thread as a click would. Names it doesn't
+        have are skipped with a warning.
+        """
+        toggles = self._producer_toggles.get(producer, {})
+        for name, on in states.items():
+            if name in toggles:
+                toggles[name].setChecked(on)
+            else:
+                self.log(f"{type(producer).__name__} has no toggle '{name}'", level="warning")
+
+    def set_window_geometry(self, x: int, y: int, width: int, height: int, maximized: bool = False) -> None:
+        """
+        Place the window: its inside (without the frame) at `x`, `y` on the
+        desktop, `width` x `height` — and `maximized`, with that as where it
+        goes when restored down. Kept on a screen: a position on a screen
+        that's no longer connected moves to the current one.
+        """
+        rect = qtc.QRect(x, y, width, height)
+        if qtg.QGuiApplication.screenAt(rect.center()) is None:
+            screen = self.screen() or qtg.QGuiApplication.primaryScreen()
+            if screen is not None:
+                available = screen.availableGeometry()
+                rect.setSize(rect.size().boundedTo(available.size()))
+                rect.moveTopLeft(available.topLeft() + qtc.QPoint(50, 50))
+        self.setGeometry(rect)
+        maximize = qtc.Qt.WindowState.WindowMaximized
+        state = self.windowState()
+        self.setWindowState(state | maximize if maximized else state & ~maximize)
+
+    def window_geometry(self) -> tuple[int, int, int, int, bool]:
+        """`(x, y, width, height, maximized)`, as `set_window_geometry` takes them."""
+        maximized = self.isMaximized()
+        rect = self.normalGeometry() if maximized else self.geometry()
+        return rect.x(), rect.y(), rect.width(), rect.height(), maximized
 
     def __control_action(self, item: ToolbarItem, callback: Callable) -> qtg.QAction:
         """

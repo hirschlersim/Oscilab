@@ -34,9 +34,14 @@ class SignalModel:
     call `snapshot()` instead and they share one. Invalidated on any write.
     """
 
-    def __init__(self, label: str, fs: float, duration: float = 10.0, storage: Storage = Storage.ring) -> None:
+    def __init__(
+        self, label: str, fs: float, duration: float = 10.0, storage: Storage = Storage.ring, unit: str = ""
+    ) -> None:
         self.label = label
         self.fs = fs
+        self.unit = (
+            unit  # E.g. "V", "°C"; "" for none. Change it through `Workspace.set_unit`, which updates the plots.
+        )
         self.duration = duration  # How many seconds of history the buffer holds
         self.storage = Storage(storage)  # Accepts a Storage member or its string value
         maxlen = self.__maxlen_for(duration)
@@ -47,6 +52,11 @@ class SignalModel:
         self.gain: float | None = None  # Scaling
         self.offset: float | None = None
         self._cache: tuple[np.ndarray, np.ndarray] | None = None  # (time_array, data_array), see `snapshot()`
+
+    @property
+    def display_name(self) -> str:
+        """The label with its unit, as legends and readouts show it: `"channel-1 (V)"`."""
+        return f"{self.label} ({self.unit})" if self.unit else self.label
 
     def __maxlen_for(self, duration: float) -> int:
         return max(1, round(duration * self.fs))

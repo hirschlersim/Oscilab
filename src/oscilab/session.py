@@ -1,12 +1,13 @@
 """
 Save and restore a whole Oscilab setup as JSON.
 
-A session holds what it takes to rebuild a window: the display settings
-(theme, FPS, duration, time mode, downsampling), the producers (class,
-constructor arguments, and the signals they feed), hand-fed and math
-signals, every plot with its links, pinned ranges and cursors, and each
-signal row's color, visibility, filter, scaling and expanded state. Buffered
-data isn't saved: producers start afresh.
+A session holds what it takes to rebuild a window: its size and position,
+the display settings (theme, FPS, duration, time mode, downsampling), the
+producers (class, constructor arguments, the signals they feed and their
+toggles' states), hand-fed and math signals with their units, every plot
+with its links, pinned ranges and cursors, each signal row's color,
+visibility, filter, scaling and expanded state, and your own toolbar
+toggles' states. Buffered data isn't saved: producers start afresh.
 
 The pydantic models below *are* the file format — their fields and
 descriptions document it, and `Session.model_json_schema()` (or
@@ -74,6 +75,18 @@ class ProducerSpec(_Model):
     args: dict[str, Any] = Field(default_factory=dict, description="Its constructor's keyword arguments")
     signals: list[str] = Field(min_length=1, description="One signal name per channel, in channel order")
     storage: Storage = Field(Storage.ring, description="Buffer backend for its signals")
+    units: list[str] | None = Field(
+        None, description='One unit per signal, in the same order ("" for none); null = the producer\'s own'
+    )
+    toggles: dict[str, bool] = Field(
+        default_factory=dict, description="Its @toggle functions' states, keyed by method name"
+    )
+
+    @model_validator(mode="after")
+    def _check_units(self) -> ProducerSpec:
+        if self.units is not None and len(self.units) != len(self.signals):
+            raise ValueError(f"{len(self.signals)} signal(s) {self.signals}, but {len(self.units)} unit(s)")
+        return self
 
 
 class ManualSignal(_Model):
@@ -82,9 +95,22 @@ class ManualSignal(_Model):
     label: str
     fs: float = Field(gt=0, description="Sampling rate in Hz")
     storage: Storage = Storage.ring
+    unit: str = Field("", description='E.g. "V"; "" for none')
+
+
+class WindowSpec(_Model):
+    """The main window's inside (without the frame), in desktop pixels."""
+
+    x: int
+    y: int
+    width: int = Field(gt=0)
+    height: int = Field(gt=0)
+    maximized: bool = Field(False, description="x/y/width/height are then where it goes when restored down")
 
 
 class MathSignalSpec(_Model):
+    """A math signal. Its unit follows from its operands'."""
+
     label: str
     operator: Literal[OPERATORS]  # type: ignore[valid-type]  # the operators the Math menu offers
     a: str = Field(description="First operand: a signal defined earlier in the session")
@@ -122,6 +148,7 @@ class Session(_Model):
     """An Oscilab setup: display settings, data sources, plots and per-signal settings."""
 
     version: Literal[1] = 1
+    window: WindowSpec | None = Field(None, description="null = the default size and position")
     theme: Theme = "dark"
     fps: Fps = 30
     duration: float = Field(10.0, gt=0, description="Seconds of history kept and shown per signal")
@@ -134,6 +161,11 @@ class Session(_Model):
         default_factory=list, description="Top to bottom"
     )
     signal_settings: dict[str, SignalSettings] = Field(default_factory=dict, description="Keyed by signal name")
+    toggles: dict[str, bool] = Field(
+        default_factory=dict,
+        description='Your toolbar toggles\' states: add_toolbar ones keyed "ClassName.method", '
+        "add_toolbar_toggle ones by their text",
+    )
 
     @model_validator(mode="after")
     def _check_references(self) -> Session:
@@ -184,16 +216,22 @@ def capture(window: Oscilab) -> Session:
     producers = []
     for producer in dict.fromkeys(ws.producers.values()):  # Listed once per signal it feeds
         labels = [label for label, p in ws.producers.items() if p is producer]
+        units = [ws.signals[label].unit for label in labels]
+        own_units = list(producer.units) or [""] * len(labels)
         producers.append(
             ProducerSpec(
                 type=producer.type_path(),
                 args=_jsonable_args(producer),
                 signals=labels,
                 storage=ws.signals[labels[0]].storage,
+                units=None if units == own_units else units,
+                toggles=window.producer_toggle_states(producer),
             )
         )
 
+    x, y, width, height, maximized = window.window_geometry()
     return Session(
+        window=WindowSpec(x=x, y=y, width=width, height=height, maximized=maximized),
         theme=window.theme,
         fps=window.fps,
         duration=ws.duration,
@@ -201,7 +239,7 @@ def capture(window: Oscilab) -> Session:
         downsampling=ws.downsampling,
         producers=producers,
         manual_signals=[
-            ManualSignal(label=label, fs=model.fs, storage=model.storage)
+            ManualSignal(label=label, fs=model.fs, storage=model.storage, unit=model.unit)
             for label, model in ws.signals.items()
             if label not in ws.producers and label not in ws.math_signals
         ],
@@ -211,6 +249,7 @@ def capture(window: Oscilab) -> Session:
         ],
         plots=[_capture_view(title, view) for title, view in ws.views.items()],
         signal_settings={label: _capture_row(row) for label, row in ws.signal_list.rows.items()},
+        toggles=window.toggle_states(),
     )
 
 
@@ -286,6 +325,9 @@ def restore(window: Oscilab, session: Session) -> None:
     producers = [_build_producer(spec) for spec in session.producers]
 
     # Settings first, so the signals and plots created below start with them
+    if session.window is not None:
+        geometry = session.window
+        window.set_window_geometry(geometry.x, geometry.y, geometry.width, geometry.height, geometry.maximized)
     window.set_theme(session.theme)
     window.set_fps(session.fps)
     window.set_duration(session.duration)
@@ -293,9 +335,10 @@ def restore(window: Oscilab, session: Session) -> None:
     window.set_downsampling(session.downsampling)
 
     for producer, spec in zip(producers, session.producers, strict=True):
-        window.attach_producer(producer, spec.signals, storage=spec.storage)
+        window.attach_producer(producer, spec.signals, storage=spec.storage, units=spec.units)
+        window.set_producer_toggle_states(producer, spec.toggles)
     for manual in session.manual_signals:
-        window.register_signal(manual.label, manual.fs, storage=manual.storage)
+        window.register_signal(manual.label, manual.fs, storage=manual.storage, unit=manual.unit)
     for math in session.math_signals:
         ws.add_math_signal(math.label, math.operator, math.a, math.b)
 
@@ -306,6 +349,8 @@ def restore(window: Oscilab, session: Session) -> None:
         row = ws.signal_list.rows.get(label)
         if row is not None:  # Signals not shown in any plot have no row
             _restore_row(row, settings)
+
+    window.set_toggle_states(session.toggles)  # Ones your code adds later switch when it does
 
 
 def _build_producer(spec: ProducerSpec) -> DataProducer:

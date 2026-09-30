@@ -19,8 +19,10 @@ architecture in Python; still under active development (see
   (only new samples are transformed each tick, not the whole rolling
   buffer — see [Notable implementation details](#notable-implementation-details)).
 - **Per-signal controls** — visibility, IIR filtering, offset/gain
-  scaling, curve color, and live Min/Mean/Max/Peak-to-Peak/RMS metrics.
-  Rows start collapsed; click a signal's name for its details.
+  scaling, curve color, unit, and live Min/Mean/Max/Peak-to-Peak/RMS
+  metrics. Rows start collapsed; click a signal's name for its details.
+- **Signal units** — V, A, °C, ... per signal, shown in legends, on Y axes,
+  in metrics and cursor readouts; math signals derive theirs (V × A → V·A).
 - **Signal math** — derive a new signal as `A op B` (`+ - * /`) from two
   existing signals.
 - **Build the layout in the app** — add time-series plots and spectrograms
@@ -90,7 +92,7 @@ from oscilab import AsyncSyntheticProducer, Oscilab, SyntheticProducer
 scope = Oscilab()
 
 # Each producer registers its own signals, one per channel, at its own fs
-scope.attach_producer(SyntheticProducer(fs=100, freq=5.0), "channel-1", storage=scope.storage.deque)
+scope.attach_producer(SyntheticProducer(fs=100, freq=5.0), "channel-1", storage=scope.storage.deque, units="V")
 scope.attach_producer(SyntheticProducer(fs=1_000, freq=(1.0, 10.0)), ["channel-2", "channel-3"])
 scope.attach_producer(AsyncSyntheticProducer(fs=200, freq=2.0), "async")  # "Reset Phase" in the toolbar
 
@@ -116,6 +118,7 @@ from oscilab import SyncDataProducer, button
 
 class ImuProducer(SyncDataProducer):
     channels = ("ax", "ay", "az")
+    units = ("m/s²", "m/s²", "m/s²")  # Optional, one per channel
 
     def __init__(self, port):
         super().__init__(fs=500)
@@ -184,14 +187,32 @@ one in the toolbar as well — `@button("Zero", toolbar=True)`. It's the same
 control in both places, so a toggle shows the same state in each; its
 toolbar tooltip names the producer.
 
+### Signal units
+
+Give a signal a unit and it shows in the legend (`channel-1 (V)`), on the
+Y axis (`Value (V)`, or `Value (V, A)` for a plot of mixed units), after its
+row's metrics and in the cursor readout. A producer can declare its
+channels' units (`units`, next to `channels`, as the `ImuProducer` above
+does); otherwise pass them when you attach it or register a signal:
+
+```python
+scope.attach_producer(daq, ["u", "i"], units=["V", "A"])  # or one unit for every channel: units="V"
+scope.register_signal("temp", fs=10, unit="°C")
+scope.set_unit("u", "mV")  # later — or with the Unit button in the signal's row
+```
+
+A math signal's unit follows from its operands', and keeps following them:
+`u * i` is in V·A, `u / u` has none.
+
 ### Sessions
 
 Set a layout up once, then reopen it without writing Python.
 **File → Save Session…** writes the whole setup to a JSON file: the
-producers (class and constructor arguments), every plot with its links,
-pinned ranges and cursors, each signal's color, visibility, filter and
-scaling, and the display settings. Buffered data isn't saved; producers
-start afresh.
+window's size and position, the producers (class, constructor arguments
+and their toggles' states), every plot with its links, pinned ranges and
+cursors, each signal's unit, color, visibility, filter and scaling, the
+display settings, and the states of your own toolbar toggles. Buffered data
+isn't saved; producers start afresh.
 
 ```bash
 uv run oscilab my-setup.json   # open a saved session
@@ -202,6 +223,10 @@ uv run oscilab --schema        # print the session file format (JSON Schema)
 new window if the current one is already in use. The file is checked
 before anything is built: unknown keys (typos), bad values and references
 to signals that nothing provides are reported instead of half-loading.
+
+Your toolbar toggles are saved as `"ClassName.method"`. Loading a session
+before `add_toolbar` adds them is fine: each one switches (calling its
+method) as soon as it's added.
 
 Producers are stored by import path (`"module:ClassName"`), so your own
 producer classes can be saved too, as long as they're defined in an

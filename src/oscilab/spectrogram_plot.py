@@ -62,7 +62,8 @@ class SpectrogramPlot(qtw.QWidget):
 
     def set_theme(self, bg: str, fg: str) -> None:
         self.plot.setBackground(bg)
-        self.plot.setTitle(self.label, color=fg)  # Which signal this spectrogram belongs to
+        self._fg = fg
+        self.plot.setTitle(self.model.display_name, color=fg)  # Which signal this spectrogram belongs to
         self.plot.getAxis("left").setTextPen(fg)
         self.plot.getAxis("bottom").setTextPen(fg)
         self.plot.getAxis("left").setPen(fg)
@@ -98,6 +99,10 @@ class SpectrogramPlot(qtw.QWidget):
 
     def set_downsampling(self, _enabled: bool) -> None:
         """No-op: a spectrogram's pixels are already STFT-bin aggregates, not raw samples."""
+
+    def update_units(self) -> None:
+        """Show its signal's current unit in the title."""
+        self.plot.setTitle(self.model.display_name, color=self._fg)
 
     def set_visible(self, _label: str, visible: bool) -> None:
         """Show/hide the whole spectrogram — its signal row's Visible toggle."""

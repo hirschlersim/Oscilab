@@ -21,7 +21,11 @@ class View(Protocol):
     y_range_auto: bool  # True: Y keeps auto-fitting; False: pinned to (y_range_min, y_range_max)
     y_range_min: float
     y_range_max: float
-    y_unit: str  # Shown in the Y-Axis dialog, e.g. "Hz"; "" for none
+
+    @property
+    def y_unit(self) -> str:
+        """The Y axis's unit, shown in the Y-Axis dialog, e.g. "Hz"; "" for none."""
+        ...
 
     @property
     def plot_item(self) -> pg.PlotItem:
@@ -49,6 +53,10 @@ class View(Protocol):
 
     def set_visible(self, label: str, visible: bool) -> None:
         """Show or hide signal `label` — its row's Visible toggle."""
+        ...
+
+    def update_units(self) -> None:
+        """Show the current units (`SignalModel.unit`) of the signals it shows — one has changed."""
         ...
 
     def set_y_range(self, auto: bool, y_min: float = 0.0, y_max: float = 1.0) -> None: ...

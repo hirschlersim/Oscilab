@@ -42,7 +42,7 @@ refuses them.
 """
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Literal, TypeVar
 
 _MARK = "_oscilab_toolbar_item"
@@ -57,6 +57,7 @@ class ToolbarItem:
     tooltip: str = ""
     checked: bool = False  # A toggle's initial state (not reported to its method)
     toolbar: bool = False  # A producer's: in the toolbar too, not only in its Producers-menu entry
+    name: str = ""  # The method's name, filled in by `toolbar_items` — what a session saves a toggle under
 
 
 def _mark(item: ToolbarItem) -> Callable[[_Method], _Method]:
@@ -96,8 +97,9 @@ def toolbar_items(tools: object, required: bool = True) -> list[tuple[ToolbarIte
     """
     The `@button` / `@toggle` methods of `tools` — an instance, or a class whose
     marked methods are all classmethods — as (item, bound method) pairs, in
-    definition order, base classes first. With `required`, having none is an
-    error; producers pass False, since most have no controls.
+    definition order, base classes first; each item's `name` is its method's.
+    With `required`, having none is an error; producers pass False, since
+    most have no controls.
     """
     cls = tools if isinstance(tools, type) else type(tools)
     found: dict[str, tuple[ToolbarItem, object]] = {}
@@ -113,5 +115,5 @@ def toolbar_items(tools: object, required: bool = True) -> list[tuple[ToolbarIte
     for name, (item, attr) in found.items():
         if tools is cls and not isinstance(attr, classmethod | staticmethod):
             raise TypeError(f"{cls.__name__}.{name} is a regular method: pass an instance, {cls.__name__}(...)")
-        items.append((item, getattr(tools, name)))
+        items.append((replace(item, name=name), getattr(tools, name)))
     return items

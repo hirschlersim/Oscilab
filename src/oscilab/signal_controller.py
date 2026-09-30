@@ -112,6 +112,7 @@ class SignalRow(qtw.QWidget):
     visibility_changed = qtc.pyqtSignal(str, bool)  # (label, visible)
     restart_requested = qtc.pyqtSignal(str)  # (label) — its producer's Restart button
     remove_requested = qtc.pyqtSignal(str)  # (label) — a math signal's Remove button
+    unit_requested = qtc.pyqtSignal(str, str)  # (label, unit) — entered via its Unit button
     color_changed = qtc.pyqtSignal(str, str)  # (label, color hex)
 
     _METRICS = (("Min", "min"), ("Mean", "mean"), ("Max", "max"), ("P-P", "ptp"), ("RMS", "rms"))
@@ -151,6 +152,7 @@ class SignalRow(qtw.QWidget):
         self._details: qtw.QWidget | None = None
         self.filter_button: qtw.QPushButton | None = None
         self.scaling_button: qtw.QPushButton | None = None
+        self.unit_button: qtw.QPushButton | None = None
         self.metric_labels: dict[str, qtw.QLabel] = {}
 
         self._outer = qtw.QVBoxLayout(self)
@@ -238,6 +240,15 @@ class SignalRow(qtw.QWidget):
         self.__set_active_style(self.scaling_button, self.scaling_settings["enabled"])
         buttons_layout.addWidget(self.filter_button)
         buttons_layout.addWidget(self.scaling_button)
+
+        self.unit_button = qtw.QPushButton(self.__unit_button_text())
+        if self.derived:
+            self.unit_button.setEnabled(False)
+            self.unit_button.setToolTip("A math signal's unit follows from its operands'")
+        else:
+            self.unit_button.setToolTip("This signal's unit (V, A, °C, ...), shown in legends, on Y axes and here")
+        self.unit_button.clicked.connect(self.__ask_unit)
+        buttons_layout.addWidget(self.unit_button)
         if self.derived:
             # Math signals exist only in the GUI, so they can be removed from it
             # (producer-fed signals go with their producer).
@@ -275,12 +286,31 @@ class SignalRow(qtw.QWidget):
         for title, field in self._METRICS:
             self.metric_labels[title].setText(self.__format_metric(title, metrics[field]))
 
-    @staticmethod
-    def __format_metric(title: str, value: float | None) -> str:
+    def __format_metric(self, title: str, value: float | None) -> str:
         # Fixed width/decimals (and a monospace font on the label) so the
         # readout doesn't reflow as values cross order-of-magnitude boundaries.
         formatted = f"{value:+9.3f}" if value is not None else f"{'—':>9}"
+        unit = self.model.unit
+        if unit:
+            formatted += f" {unit}" if value is not None else " " * (len(unit) + 1)
         return f"{title}: {formatted}"
+
+    def __unit_button_text(self) -> str:
+        return f"Unit: {self.model.unit}" if self.model.unit else "Unit"
+
+    def __ask_unit(self) -> None:
+        unit, ok = qtw.QInputDialog.getText(
+            self, f"Unit | {self.label}", "Unit, e.g. V, A or °C (empty for none):", text=self.model.unit
+        )
+        if ok:
+            self.unit_requested.emit(self.label, unit)
+
+    def update_unit(self) -> None:
+        """Show the signal's current unit (see `Workspace.set_unit`)."""
+        if self.unit_button is not None:
+            self.unit_button.setText(self.__unit_button_text())
+        if self.expanded:
+            self.update_metrics()
 
     def set_color(self, color: str) -> None:
         """Apply a curve color from either the color picker or an initial assignment."""

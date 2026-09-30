@@ -9,7 +9,6 @@ from oscilab.signal_model import SignalModel
 class TimeseriesPlot(pg.PlotWidget):
     """Scrolling multi-signal time-series plot. Implements `oscilab.view.View`."""
 
-    y_unit = ""
     cursor_changed = qtc.pyqtSignal()  # Cursor region dragged — fires even while paused
 
     def __init__(self, title: str | None = None) -> None:
@@ -32,6 +31,9 @@ class TimeseriesPlot(pg.PlotWidget):
         # Style and Color
         self.showGrid(x=True, y=True, alpha=0.3)
         self.addLegend()
+        # Y ticks show the values as they are, like the metrics and cursor
+        # readouts, instead of rescaling them to mV, k°C, ...
+        self.getAxis("left").enableAutoSIPrefix(False)
         self.set_theme(bg="#202f46", fg="#ffffff")
         self.__update_axis_label()
 
@@ -93,17 +95,43 @@ class TimeseriesPlot(pg.PlotWidget):
 
     def add_signal(self, label: str, model: SignalModel) -> str:
         color = self.colors[len(self.curves) % len(self.colors)]
-        curve = self.plot(pen=pg.mkPen(color, width=1.5), name=label, antialias=False)
+        curve = self.plot(pen=pg.mkPen(color, width=1.5), name=model.display_name, antialias=False)
         curve.setDownsampling(auto=self.downsampling, method="peak")
         curve.setClipToView(self.downsampling)
         self.curves[label] = curve
         self.models[label] = model
+        self.__update_y_label()
         return color
 
     def remove_signal(self, label: str) -> None:
         """Take a signal's curve (and its legend entry) off this plot."""
         self.removeItem(self.curves.pop(label))
         del self.models[label]
+        self.__update_y_label()
+
+    @property
+    def units(self) -> list[str]:
+        """The units of the signals shown, each once, in legend order ("" left out)."""
+        return list(dict.fromkeys(model.unit for model in self.models.values() if model.unit))
+
+    @property
+    def y_unit(self) -> str:
+        """The Y axis's unit, when every signal shown that has one shares it."""
+        units = self.units
+        return units[0] if len(units) == 1 else ""
+
+    def update_units(self) -> None:
+        """Show the signals' current units in the legend and on the Y axis."""
+        for label, curve in self.curves.items():
+            self.plotItem.legend.getLabel(curve).setText(self.models[label].display_name)
+        self.__update_y_label()
+
+    def __update_y_label(self) -> None:
+        units = self.units
+        if units:
+            self.setLabel("left", "Value", units=", ".join(units))
+        else:
+            self.setLabel("left")  # No units: no label, as without any signals
 
     def set_downsampling(self, enabled: bool) -> None:
         """
