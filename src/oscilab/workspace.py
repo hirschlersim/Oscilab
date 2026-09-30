@@ -372,16 +372,25 @@ class Workspace:
         """
         Remove a math signal, or one you registered yourself, from every plot
         and the list. A producer-fed signal can't go on its own — its producer
-        keeps feeding it; stop the producer instead.
+        keeps feeding it; detach the producer instead (`detach_producer`).
         """
         if label not in self.signals:
             raise ValueError(f"Unknown signal '{label}'")
         if label in self.producers:
-            raise ValueError(f"'{label}' is fed by {type(self.producers[label]).__name__}; stop the producer instead")
-        users = [m.label for m in self.math_signals.values() if label in (m.model_a.label, m.model_b.label)]
-        if users:
-            raise ValueError(f"'{label}' is used by math signal(s) {', '.join(users)}; remove those first")
+            raise ValueError(f"'{label}' is fed by {type(self.producers[label]).__name__}; detach the producer instead")
+        self.__refuse_if_used_by_math([label])
 
+        self.__drop_signal(label)
+        self._log(f"Removed signal '{label}'")
+
+    def __refuse_if_used_by_math(self, labels: list[str]) -> None:
+        users = [m.label for m in self.math_signals.values() if {m.model_a.label, m.model_b.label} & set(labels)]
+        if users:
+            names = ", ".join(repr(label) for label in labels)
+            raise ValueError(f"{names} used by math signal(s) {', '.join(users)}; remove those first")
+
+    def __drop_signal(self, label: str) -> None:
+        """Take `label` off every plot and out of the list and the registries."""
         for title, plot in list(self.plots.items()):
             if label in plot.curves:
                 self.unlink(title, label)
@@ -389,7 +398,6 @@ class Workspace:
             self.remove_plot(label)
         self.math_signals.pop(label, None)
         del self.signals[label]
-        self._log(f"Removed signal '{label}'")
 
     def __remove_signal_from_row(self, label: str) -> None:
         try:
@@ -530,6 +538,27 @@ class Workspace:
 
     def __describe(self, producer: DataProducer) -> str:
         return f"{type(producer).__name__} for {', '.join(repr(name) for name in self.signals_fed_by(producer))}"
+
+    def detach_producer(self, label: str) -> list[str]:
+        """
+        Stop the producer feeding `label` and remove it, along with every
+        signal it feeds, from the plots, the list and this workspace. Refused
+        while a math signal uses one of those signals. Returns their labels.
+        """
+        producer = self.__producer_feeding(label)
+        labels = self.signals_fed_by(producer)
+        self.__refuse_if_used_by_math(labels)
+
+        producer.stop()
+        link = producer.findChild(_ProducerLink)
+        if link is not None:
+            link.deleteLater()  # No more deliveries: the models are going
+        for fed in labels:
+            self.__drop_signal(fed)
+            del self.producers[fed]
+            self._producer_errors.pop(fed, None)
+        self._log(f"Removed {self.__describe(producer)}")
+        return labels
 
     def stop_producers(self) -> None:
         for producer in dict.fromkeys(self.producers.values()):  # a multi-channel producer is listed once per signal

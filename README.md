@@ -27,12 +27,12 @@ architecture in Python; still under active development (see
   existing signals.
 - **Build the layout in the app** — add time-series plots and spectrograms
   from the Plots menu; each plot's panel picks the signals it shows or
-  removes it. Producers are attached in code, and started/stopped from the
-  Producers menu.
+  removes it. Producers are attached in code, and started, stopped or
+  removed from the Producers menu.
 - **Pluggable data producers** — background `QThread`-based producers
   with a synchronous or `asyncio` base class, multi-channel; the Producers
-  menu starts and stops them and runs their own functions (which can go in
-  the toolbar too). An error stops
+  menu starts, stops and removes them and runs their own functions (which
+  can go in the toolbar too). An error stops
   only the producer that hit it. Ships with a synthetic signal generator, a CSV file-replay
   producer, and templates for serial and `asyncio` sources.
 - **Two storage backends** — a plain `collections.deque` or a
@@ -181,7 +181,7 @@ any callable.
 
 Producers use the same decorators (see the `ImuProducer` above), but their
 functions go in the **Producers** menu: every attached producer has an entry
-there with **Start**, **Stop** and its `@button` / `@toggle` methods, which
+there with **Start**, **Stop**, **Remove** and its `@button` / `@toggle` methods, which
 run on the producer's own thread between reads. Add `toolbar=True` to put
 one in the toolbar as well — `@button("Zero", toolbar=True)`. It's the same
 control in both places, so a toggle shows the same state in each; its
@@ -219,10 +219,19 @@ uv run oscilab my-setup.json   # open a saved session
 uv run oscilab --schema        # print the session file format (JSON Schema)
 ```
 
-**File → Open Session…** or `scope.load_session(path)` rebuilds one — in a
-new window if the current one is already in use. The file is checked
-before anything is built: unknown keys (typos), bad values and references
-to signals that nothing provides are reported instead of half-loading.
+**File → Open Session…** rebuilds one. In a window that's already in use it
+asks first: **Replace** its setup (producers stopped and removed, along
+with every signal and plot), or open the session in a **New Window**. From
+code, `scope.load_session(path)` loads into an empty window and
+`scope.load_session(path, replace=True)` replaces; `scope.clear()` empties
+a window and `scope.detach_producer(label)` removes one producer.
+
+The file is checked before anything is built: unknown keys (typos), bad
+values and references to signals that nothing provides are reported
+instead of half-loading. Replacing only clears the window once all the
+session's producers have been built; if one can't be, the current setup
+stays and carries on. Its producers do pause while that's tried, so a
+device one of them holds (a serial port, say) is free for the session's.
 
 Your toolbar toggles are saved as `"ClassName.method"`. Loading a session
 before `add_toolbar` adds them is fine: each one switches (calling its

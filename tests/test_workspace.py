@@ -406,7 +406,7 @@ def test_remove_signal_refuses_what_would_break(workspace):
     fill(workspace, "a", fs=10, n=5)
     workspace.add_math_signal("double", "+", "a", "a")
 
-    with pytest.raises(ValueError, match="stop the producer instead"):
+    with pytest.raises(ValueError, match="detach the producer instead"):
         workspace.remove_signal("fed")
     with pytest.raises(ValueError, match="used by math signal"):
         workspace.remove_signal("a")
@@ -422,3 +422,38 @@ def test_the_math_rows_remove_button_removes_it(workspace):
 
     next(b for b in row.findChildren(qtw.QPushButton) if b.text() == "Remove").click()
     assert "double" not in workspace.signals
+
+
+def test_detaching_a_producer_takes_its_signals_with_it(workspace):
+    from oscilab.producers import SyntheticProducer  # noqa: PLC0415
+
+    producer = SyntheticProducer(fs=100, freq=(1.0, 2.0))
+    workspace.attach_producer(producer, ["x", "y"])
+    fill(workspace, "own", fs=10, n=5)
+    plot, _ = workspace.add_plot("P")
+    workspace.link(plot="P", label="x")
+    workspace.link(plot="P", label="own")
+    workspace.add_spectrogram("y")
+
+    assert workspace.detach_producer("y") == ["x", "y"]  # Any of its signals names it
+
+    assert not producer.running
+    assert set(workspace.signals) == {"own"}
+    assert workspace.producers == {}
+    assert list(plot.curves) == ["own"]
+    assert "y" not in workspace.views  # Its spectrogram went too
+    assert list(workspace.signal_list.rows) == ["own"]
+
+
+def test_detaching_is_refused_while_a_math_signal_uses_it(workspace):
+    from oscilab.producers import SyntheticProducer  # noqa: PLC0415
+
+    producer = SyntheticProducer(fs=100)
+    workspace.attach_producer(producer, "x")
+    workspace.add_math_signal("twice", "+", "x", "x")
+
+    with pytest.raises(ValueError, match="used by math signal"):
+        workspace.detach_producer("x")
+    assert producer.running
+    with pytest.raises(ValueError, match="No producer feeds"):
+        workspace.detach_producer("twice")

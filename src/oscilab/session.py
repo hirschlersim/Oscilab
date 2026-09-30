@@ -309,20 +309,26 @@ def save(window: Oscilab, path: str | Path) -> Path:
 # --- loading --------------------------------------------------------------
 
 
-def load(window: Oscilab, path: str | Path) -> None:
-    """Read a session file and rebuild it in `window` (which must be empty)."""
-    restore(window, Session.model_validate_json(Path(path).read_text(encoding="utf-8")))
+def load(window: Oscilab, path: str | Path, replace: bool = False) -> None:
+    """Read a session file and rebuild it in `window` (see `restore`)."""
+    restore(window, Session.model_validate_json(Path(path).read_text(encoding="utf-8")), replace=replace)
 
 
-def restore(window: Oscilab, session: Session) -> None:
-    """Rebuild `session` in `window`, which must still be empty."""
+def restore(window: Oscilab, session: Session, replace: bool = False) -> None:
+    """
+    Rebuild `session` in `window`, which must still be empty — unless
+    `replace`, which clears it first (see `Oscilab.load_session`).
+    """
     ws = window.workspace
-    if ws.signals or ws.views:
-        raise ValueError("A session can only be loaded into an empty window")
+    in_use = bool(ws.signals or ws.views)
+    if in_use and not replace:
+        raise ValueError("A session can only be loaded into an empty window, unless it replaces what's there")
 
     # Construct every producer before touching the window, so an unknown
     # type, bad arguments or a device that won't open leave it as it was.
-    producers = [_build_producer(spec) for spec in session.producers]
+    producers = _build_producers(window, session.producers, pause_current=in_use)
+    if in_use:
+        window.clear()
 
     # Settings first, so the signals and plots created below start with them
     if session.window is not None:
@@ -351,6 +357,26 @@ def restore(window: Oscilab, session: Session) -> None:
             _restore_row(row, settings)
 
     window.set_toggle_states(session.toggles)  # Ones your code adds later switch when it does
+
+
+def _build_producers(window: Oscilab, specs: list[ProducerSpec], pause_current: bool) -> list[DataProducer]:
+    """
+    Construct the session's producers. With `pause_current`, the window's
+    running producers stop first — one of them may hold a device (a serial
+    port, say) that the session's producers open too — and start again if
+    one of the new ones can't be built.
+    """
+    ws = window.workspace
+    running = [ws.signals_fed_by(p)[0] for p in dict.fromkeys(ws.producers.values()) if p.running]
+    paused = running if pause_current else []
+    for label in paused:
+        ws.stop_producer(label)
+    try:
+        return [_build_producer(spec) for spec in specs]
+    except Exception:
+        for label in paused:
+            ws.start_producer(label)
+        raise
 
 
 def _build_producer(spec: ProducerSpec) -> DataProducer:

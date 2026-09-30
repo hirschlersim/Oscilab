@@ -27,6 +27,18 @@ from oscilab.toolbar import ToolbarItem, toolbar_items
 from oscilab.workspace import Workspace
 
 
+class _ProducerEntry(NamedTuple):
+    """What the window shows for one attached producer."""
+
+    label: str  # One of the signals it feeds, to ask the workspace about it
+    menu: qtw.QMenu  # Its Producers submenu
+    start: qtg.QAction
+    stop: qtg.QAction
+    functions: list[qtg.QAction]  # Its @button / @toggle methods, some also in the toolbar
+    toolbar_separator: qtg.QAction | None  # After its toolbar controls, if it has any
+    toggles: dict[str, qtg.QAction]  # By method name
+
+
 class _Export(NamedTuple):
     """One File-menu export format."""
 
@@ -178,7 +190,6 @@ class Oscilab(qtw.QMainWindow):
         # Custom toggles, for sessions (see `toggle_states`)
         self._toggles: dict[str, qtg.QAction] = {}
         self._pending_toggles: dict[str, bool] = {}  # Set before their toolbar was added
-        self._producer_toggles: dict[DataProducer, dict[str, qtg.QAction]] = {}
 
         # Layout
         self.controller_layout = qtw.QVBoxLayout()
@@ -226,7 +237,7 @@ class Oscilab(qtw.QMainWindow):
         file_menu.addSeparator()
         open_action = qtg.QAction("Open Session...", self)
         open_action.setToolTip(
-            "Rebuild a saved setup: producers, plots and settings (in a new window if this one is in use)"
+            "Rebuild a saved setup: producers, plots and settings — in place of this one, or in a new window"
         )
         open_action.triggered.connect(self.__open_session_dialog)
         file_menu.addAction(open_action)
@@ -300,10 +311,19 @@ class Oscilab(qtw.QMainWindow):
         self.producers_menu = self.menuBar().addMenu("Producers")
         self.producers_menu.menuAction().setToolTip("Start and stop the attached producers, and run their functions")
         self.producers_menu.setToolTipsVisible(True)
-        self._no_producers_action = self.producers_menu.addAction("No producers attached")
-        self._no_producers_action.setEnabled(False)
-        self._producer_menus: list[tuple[str, qtw.QMenu, qtg.QAction, qtg.QAction]] = []
+        self._no_producers_action: qtg.QAction | None = None
+        self.__show_no_producers(True)
+        self._producer_entries: dict[DataProducer, _ProducerEntry] = {}
         self.producers_menu.aboutToShow.connect(self.__update_producer_menus)
+
+    def __show_no_producers(self, show: bool) -> None:
+        """The disabled "No producers attached" placeholder in the Producers menu."""
+        if show and self._no_producers_action is None:
+            self._no_producers_action = self.producers_menu.addAction("No producers attached")
+            self._no_producers_action.setEnabled(False)
+        elif not show and self._no_producers_action is not None:
+            self.producers_menu.removeAction(self._no_producers_action)
+            self._no_producers_action = None
 
     def __build_cursors_menu(self) -> None:
         # One checkable entry per timeseries plot, added as
@@ -479,10 +499,7 @@ class Oscilab(qtw.QMainWindow):
         return models
 
     def __add_producer_menu(self, producer: DataProducer) -> None:
-        if self._no_producers_action is not None:
-            self.producers_menu.removeAction(self._no_producers_action)
-            self._no_producers_action = None
-
+        self.__show_no_producers(False)
         labels = self.workspace.signals_fed_by(producer)
         caption = f"{type(producer).__name__}: {_signals_caption(labels)}"
         menu = qtw.QMenu(caption, self.producers_menu)
@@ -495,39 +512,84 @@ class Oscilab(qtw.QMainWindow):
         stop = qtg.QAction("Stop", menu)
         stop.setToolTip("Stop producing; the data received so far stays")
         stop.triggered.connect(lambda: self.__producer_command(self.workspace.stop_producer, labels[0]))
-        menu.addActions([start, stop])
+        remove = qtg.QAction("Remove", menu)
+        remove.setToolTip("Stop it, and remove it along with the signals it feeds")
+        remove.triggered.connect(lambda: self.__producer_command(self.detach_producer, labels[0]))
+        menu.addActions([start, stop, remove])
 
         items = toolbar_items(producer, required=False)
         if items:
             menu.addSeparator()
-        in_toolbar = []
-        toggles = self._producer_toggles.setdefault(producer, {})
+        functions, in_toolbar = [], []
+        toggles: dict[str, qtg.QAction] = {}
         for item, method in items:
             run = functools.partial(self.__run_on_producer, producer, method)
             action = self.__control_action(item, run)
             menu.addAction(action)
+            functions.append(action)
             if item.kind == "toggle":
                 toggles[item.name] = action
             if item.toolbar:  # The same action: a toggle shows the same state in both places
                 action.setToolTip(f"{action.toolTip()} ({caption})")  # Which producer's, in the toolbar
                 in_toolbar.append(action)
+        separator = None
         if in_toolbar:
             self.toolbar.addActions(in_toolbar)
-            self.toolbar.addSeparator()
+            separator = self.toolbar.addSeparator()
 
-        self._producer_menus.append((labels[0], menu, start, stop))
+        self._producer_entries[producer] = _ProducerEntry(labels[0], menu, start, stop, functions, separator, toggles)
         self.__update_producer_menus()
+
+    def __remove_producer_menu(self, producer: DataProducer) -> None:
+        entry = self._producer_entries.pop(producer)
+        self.producers_menu.removeAction(entry.menu.menuAction())
+        entry.menu.deleteLater()
+        for action in entry.functions:
+            self.toolbar.removeAction(action)
+            action.deleteLater()
+        if entry.toolbar_separator is not None:
+            self.toolbar.removeAction(entry.toolbar_separator)
+        self.__show_no_producers(not self._producer_entries)
 
     def __update_producer_menus(self) -> None:
         """Start/Stop enabled, and a dot for the state: running green, stopped gray, error red."""
         colors = {"running": "green", "stopped": "gray", "error": "red"}
-        for label, menu, start, stop in self._producer_menus:
-            state = self.workspace.producer_state(label)
-            menu.menuAction().setIcon(self._dot_icon(colors[state]))
-            start.setEnabled(state != "running")
-            stop.setEnabled(state == "running")
+        for entry in self._producer_entries.values():
+            state = self.workspace.producer_state(entry.label)
+            entry.menu.menuAction().setIcon(self._dot_icon(colors[state]))
+            entry.start.setEnabled(state != "running")
+            entry.stop.setEnabled(state == "running")
 
-    def __producer_command(self, command: Callable[[str], None], label: str) -> None:
+    def detach_producer(self, label: str) -> list[str]:
+        """
+        Stop the producer feeding `label` and remove it — its Producers-menu
+        entry and toolbar controls too — along with every signal it feeds, as
+        its Remove entry does. Refused while a math signal uses one of them.
+        Returns the labels removed.
+        """
+        producer = self.workspace.producers.get(label)
+        labels = self.workspace.detach_producer(label)
+        if producer is not None:
+            self.__remove_producer_menu(producer)
+        return labels
+
+    def clear(self) -> None:
+        """
+        Remove the whole setup: every plot, math signal, signal you registered
+        and producer (stopped first). The settings, your toolbar controls and
+        the window itself stay.
+        """
+        ws = self.workspace
+        for title in list(ws.views):
+            self.remove_plot(title)
+        for label in reversed(list(ws.math_signals)):  # Each may use earlier ones
+            ws.remove_signal(label)
+        for label in [label for label in ws.signals if label not in ws.producers]:
+            ws.remove_signal(label)
+        for producer in dict.fromkeys(ws.producers.values()):
+            self.detach_producer(ws.signals_fed_by(producer)[0])
+
+    def __producer_command(self, command: Callable[[str], object], label: str) -> None:
         self.__run_tool(command.__name__, command, label)
         self.__update_producer_menus()
 
@@ -605,7 +667,8 @@ class Oscilab(qtw.QMainWindow):
 
     def producer_toggle_states(self, producer: DataProducer) -> dict[str, bool]:
         """Whether each of `producer`'s `@toggle` functions is on, keyed by method name."""
-        return {name: action.isChecked() for name, action in self._producer_toggles.get(producer, {}).items()}
+        entry = self._producer_entries.get(producer)
+        return {name: action.isChecked() for name, action in entry.toggles.items()} if entry else {}
 
     def set_producer_toggle_states(self, producer: DataProducer, states: Mapping[str, bool]) -> None:
         """
@@ -613,7 +676,8 @@ class Oscilab(qtw.QMainWindow):
         off, running them on its thread as a click would. Names it doesn't
         have are skipped with a warning.
         """
-        toggles = self._producer_toggles.get(producer, {})
+        entry = self._producer_entries.get(producer)
+        toggles = entry.toggles if entry else {}
         for name, on in states.items():
             if name in toggles:
                 toggles[name].setChecked(on)
@@ -751,18 +815,24 @@ class Oscilab(qtw.QMainWindow):
         self.log(f"Session saved to {written.name}", level="success")
         return written
 
-    def load_session(self, path: str | Path) -> None:
-        """Rebuild a saved setup in this window, which must still be empty."""
-        session.load(self, path)
+    def load_session(self, path: str | Path, replace: bool = False) -> None:
+        """
+        Rebuild a saved setup in this window. It must still be empty — unless
+        `replace`: then the current setup goes (see `clear`), but only once
+        the session's producers have all been built, so a session that can't
+        be loaded leaves the window as it was.
+        """
+        session.load(self, path, replace=replace)
         self.log(f"Session loaded from {Path(path).name}", level="success")
 
-    def open_session(self, path: str | Path) -> "Oscilab":
+    def open_session(self, path: str | Path, replace: bool = False) -> "Oscilab":
         """
-        Load a session into this window if it's still empty, otherwise into
-        a new window (shown right away). Returns the window it's in.
+        Load a session into this window if it's still empty or `replace` is
+        set (see `load_session`), otherwise into a new window, shown right
+        away. Returns the window it's in.
         """
-        if not (self.workspace.signals or self.workspace.views):
-            self.load_session(path)
+        if replace or not (self.workspace.signals or self.workspace.views):
+            self.load_session(path, replace=replace)
             return self
 
         window = Oscilab(app=self.app)
@@ -826,11 +896,37 @@ class Oscilab(qtw.QMainWindow):
 
     def __open_session_dialog(self) -> None:
         path, _ = qtw.QFileDialog.getOpenFileName(self, "Open Session", "", "Oscilab session (*.json)")
-        if path:
-            try:
-                self.open_session(path)
-            except Exception as e:  # noqa: BLE001 — a bad file or a device that won't open: report it
-                self.__session_error("open", e)
+        if not path:
+            return
+        replace = False
+        if self.workspace.signals or self.workspace.views:
+            choice = self.__ask_replace_or_new_window()
+            if choice is None:
+                return
+            replace = choice
+        try:
+            self.open_session(path, replace=replace)
+        except Exception as e:  # noqa: BLE001 — a bad file or a device that won't open: report it
+            self.__session_error("open", e)
+
+    def __ask_replace_or_new_window(self) -> bool | None:
+        """For a session opened in a window in use: True to replace its setup, False for a new window, None to cancel."""
+        box = qtw.QMessageBox(self)
+        box.setIcon(qtw.QMessageBox.Icon.Question)
+        box.setWindowTitle("Open Session")
+        box.setText("This window is in use. Replace its setup with the session, or open it in a new window?")
+        box.setInformativeText("Replacing stops and removes the current producers, signals and plots.")
+        replace = box.addButton("Replace", qtw.QMessageBox.ButtonRole.AcceptRole)
+        new_window = box.addButton("New Window", qtw.QMessageBox.ButtonRole.ActionRole)
+        box.addButton(qtw.QMessageBox.StandardButton.Cancel)
+        box.setDefaultButton(replace)
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked is replace:
+            return True
+        if clicked is new_window:
+            return False
+        return None
 
     def __session_error(self, verb: str, error: Exception) -> None:
         self.log(f"Couldn't {verb} session: {error}", level="error")

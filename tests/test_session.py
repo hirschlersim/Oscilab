@@ -291,3 +291,125 @@ def test_command_opens_a_session(qapp, make_window, tmp_path):
     qtc.QTimer.singleShot(0, close_once_shown)
     assert main([str(path)]) == 0
     assert any("P" in window.workspace.views for window in opened)
+
+
+# --- replacing the setup in place -----------------------------------------------
+
+
+class Exclusive(SyncDataProducer):
+    """Holds a device only one producer can have open at a time, like a serial port."""
+
+    taken = False
+
+    def __init__(self, fs: float = 10.0):
+        super().__init__(fs=fs)
+        self._open = False
+        self._acquire()
+
+    def _acquire(self):
+        if Exclusive.taken:
+            raise RuntimeError("device busy")
+        Exclusive.taken = self._open = True
+
+    def on_start(self):
+        if not self._open:
+            self._acquire()
+
+    def on_stop(self):
+        Exclusive.taken = self._open = False
+
+    def _generate(self, _elapsed):
+        return np.array([]), np.array([])
+
+
+def test_replace_swaps_the_whole_setup(make_window, tmp_path):
+    source = make_window()
+    source.attach_producer(SyntheticProducer(fs=100), "new")
+    source.add_timeseries_plot("Fresh")
+    source.link(plot="Fresh", label="new")
+    path = source.save_session(tmp_path / "s.json")
+
+    window = make_window()
+    old = SyntheticProducer(fs=100)
+    window.attach_producer(old, "old")
+    window.register_signal("mine", fs=10)
+    window.workspace.add_math_signal("twice", "+", "mine", "mine")
+    window.add_timeseries_plot("Old")
+    for label in ("old", "twice"):
+        window.link(plot="Old", label=label)
+    window.add_toolbar(Bench())
+
+    assert window.open_session(path, replace=True) is window
+
+    ws = window.workspace
+    assert set(ws.signals) == {"new"}
+    assert list(ws.views) == ["Fresh"]
+    assert list(ws.signal_list.rows) == ["new"]
+    assert not old.running
+    assert [a.text() for a in window.producers_menu.actions()] == ["SyntheticProducer: new"]
+    assert [a.text() for a in window.cursors_menu.actions()] == ["Fresh"]
+    assert "Lamp" in [a.text() for a in window.toolbar.actions()]  # Your own tools stay
+
+
+def test_replace_frees_a_device_for_the_sessions_producers(make_window, tmp_path):
+    Exclusive.taken = False
+    window = make_window()
+    old = Exclusive()
+    window.attach_producer(old, "device")
+    path = window.save_session(tmp_path / "s.json")
+
+    window.load_session(path, replace=True)  # Would be "device busy" if the old one still held it
+
+    new = window.workspace.producers["device"]
+    assert new is not old
+    assert not old.running
+    assert new.running
+
+
+def test_a_session_that_cant_be_built_leaves_the_setup_as_it_was(make_window, tmp_path):
+    path = tmp_path / "bad.json"
+    path.write_text(json.dumps({"producers": [{"type": "oscilab.producers:Nope", "signals": ["s"]}]}))
+    window = make_window()
+    window.attach_producer(SyntheticProducer(fs=100), "running")
+    window.attach_producer(SyntheticProducer(fs=100), "idle")
+    window.workspace.stop_producer("idle")
+
+    with pytest.raises(ValueError, match="Can't find producer type"):
+        window.load_session(path, replace=True)
+
+    ws = window.workspace
+    assert set(ws.signals) == {"running", "idle"}
+    assert ws.producer_state("running") == "running"  # Started again
+    assert ws.producer_state("idle") == "stopped"  # Left as it was
+
+
+def answer_open_session(monkeypatch, path, choice: str):
+    """File > Open Session: pick `path`, then press `choice` when asked what to do with a window in use."""
+    monkeypatch.setattr(qtw.QFileDialog, "getOpenFileName", lambda *_args: (str(path), ""))
+
+    def press(box):
+        buttons = {b.text().replace("&", ""): b for b in box.buttons()}
+        buttons[choice].click()
+
+    monkeypatch.setattr(qtw.QMessageBox, "exec", press)
+
+
+@pytest.mark.parametrize(
+    ("choice", "replaced", "new_window"),
+    [("Replace", True, False), ("New Window", False, True), ("Cancel", False, False)],
+)
+def test_open_session_asks_what_to_do_with_a_window_in_use(
+    make_window, tmp_path, monkeypatch, choice, replaced, new_window
+):
+    source = make_window()
+    source.attach_producer(SyntheticProducer(fs=100), "new")
+    path = source.save_session(tmp_path / "s.json")
+    window = make_window()
+    window.register_signal("mine", fs=10)
+    answer_open_session(monkeypatch, path, choice)
+
+    file_menu = window.menuBar().actions()[0].menu()
+    next(a for a in file_menu.actions() if a.text() == "Open Session...").trigger()
+
+    assert set(window.workspace.signals) == ({"new"} if replaced else {"mine"})
+    assert [set(w.workspace.signals) for w in Oscilab._extra_windows] == ([{"new"}] if new_window else [])

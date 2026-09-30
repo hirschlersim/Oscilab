@@ -89,8 +89,8 @@ def test_every_attached_producer_gets_an_entry(window):
     menus = submenus(window)
     assert list(menus) == ["Device: x, y", "SyntheticProducer: s"]
     assert [a.text() for a in window.producers_menu.actions()] == list(menus)  # Placeholder gone
-    assert entries(menus["Device: x, y"]) == ["Start", "Stop", "Zero", "Heater", "Explode"]
-    assert entries(menus["SyntheticProducer: s"]) == ["Start", "Stop"]
+    assert entries(menus["Device: x, y"]) == ["Start", "Stop", "Remove", "Zero", "Heater", "Explode"]
+    assert entries(menus["SyntheticProducer: s"]) == ["Start", "Stop", "Remove"]
 
 
 def test_stop_and_start_from_the_menu(window):
@@ -166,7 +166,7 @@ def test_toolbar_functions_go_in_the_toolbar_too(window):
 
     toolbar = [a.text() for a in window.toolbar.actions() if a.text()]
     assert toolbar[-3:] == ["Full Detail", "Zero", "Heater"]  # After Downsample; not Explode, it's menu-only
-    assert entries(menu) == ["Start", "Stop", "Zero", "Heater", "Explode"]  # The menu has them all
+    assert entries(menu) == ["Start", "Stop", "Remove", "Zero", "Heater", "Explode"]  # The menu has them all
     assert toolbar_action(window, "Zero") is entry(menu, "Zero")  # One control, in both places
     assert toolbar_action(window, "Zero").toolTip() == "Zero the sensor (Device: x, y)"  # Says whose it is
 
@@ -196,3 +196,36 @@ def test_a_toggle_shows_the_same_state_in_the_toolbar_and_the_menu(qapp, window)
 def test_add_toolbar_refuses_a_producer(window):
     with pytest.raises(TypeError, match=r"toolbar=True"):
         window.add_toolbar(Device())  # Its methods would run on the GUI thread
+
+
+def test_remove_detaches_the_producer_and_its_controls(window):
+    device = Device()
+    window.attach_producer(device, ["x", "y"])
+    window.attach_producer(SyntheticProducer(fs=100), "s")
+    window.add_timeseries_plot("P")
+    window.link(plot="P", label="x")
+
+    entry(submenus(window)["Device: x, y"], "Remove").trigger()
+
+    assert not device.running
+    assert set(window.workspace.signals) == {"s"}
+    assert list(submenus(window)) == ["SyntheticProducer: s"]
+    assert "Zero" not in [a.text() for a in window.toolbar.actions()]  # Its toolbar controls went too
+    assert window.producer_toggle_states(device) == {}
+
+    entry(submenus(window)["SyntheticProducer: s"], "Remove").trigger()
+    assert [a.text() for a in window.producers_menu.actions()] == ["No producers attached"]
+
+
+def test_remove_is_refused_while_a_math_signal_uses_it(window, monkeypatch):
+    shown = []
+    monkeypatch.setattr(window.statusBar(), "showMessage", lambda text, _timeout=0: shown.append(text))
+    device = Device()
+    window.attach_producer(device, ["x", "y"])
+    window.workspace.add_math_signal("sum", "+", "x", "y")
+
+    entry(submenus(window)["Device: x, y"], "Remove").trigger()
+
+    assert "used by math signal(s) sum" in shown[-1]
+    assert device.running
+    assert list(submenus(window)) == ["Device: x, y"]
