@@ -41,8 +41,9 @@ architecture in Python; still under active development (see
   can go in the toolbar too). An error stops
   only the producer that hit it. Ships with a synthetic signal generator, a CSV file-replay
   producer, an Xbox controller producer (Bluetooth or USB, on Windows), a
-  phone's sensors via the Sensor Logger app, and templates for serial and
-  `asyncio` sources.
+  phone's sensors via the Sensor Logger app, samples over UDP (an ESP32 on
+  Wi-Fi, a simulation, any program), and templates for serial and `asyncio`
+  sources.
 - **Two storage backends** — a plain `collections.deque` or a
   thread-safe, pre-allocated numpy ring buffer, selectable per signal
   (see `scripts/benchmark_buffers.py` for the throughput difference).
@@ -58,7 +59,8 @@ architecture in Python; still under active development (see
 ```
 producers.py          Background QThread data sources (Sync/Async base classes)
 xbox.py                ├─ an Xbox controller, through XInput
-sensor_logger.py       └─ a phone's sensors, from the Sensor Logger app
+sensor_logger.py       ├─ a phone's sensors, from the Sensor Logger app
+udp.py                 └─ samples over UDP
     │
 signal_model.py       Rolling buffer, filtering, scaling, metrics per signal
 math_signal.py         └─ derived signal (A op B)
@@ -235,6 +237,38 @@ common sensors' channels and units are built in (accelerometer, gravity,
 gyroscope, magnetometer, orientation, barometer, microphone, location,
 battery); for other values pass `channels=`, e.g.
 `SensorLoggerProducer("orientation", channels=["qx", "qy", "qz", "qw"])`.
+
+### Samples over UDP
+
+`UdpProducer` listens on a port for samples sent as UDP packets — from a
+microcontroller on Wi-Fi (an ESP32, a Pico W), a simulation, a test rig,
+any program. The sender needs no connection and no library, and doesn't
+care whether Oscilab is running; a lost packet is just a gap.
+
+```bash
+uv run scripts/udp_example.py          # plots lines of "x,y,z" sent to port 9000
+uv run scripts/udp_example.py --demo   # ...and sends itself some, to try it
+```
+
+```python
+from oscilab import UdpProducer
+
+scope.attach_producer(UdpProducer(port=9000, channels=("x", "y", "z"), fs=100), ["x", "y", "z"])
+```
+
+Each packet holds one or more samples, as text — a line per sample,
+`"1.23,4.56,7.89\n"`, the easiest to send from anything — or binary, with
+`binary=` a `struct` format for one sample (`"<3f"`: three little-endian
+floats), compact for fast streams. By default the samples are numbered at
+`fs`, as a serial device's are; with `time_column=True` each sample's first
+value is its time in seconds, from the sender's clock. Sending from an
+ESP32 (Arduino):
+
+```cpp
+udp.beginPacket("192.168.1.23", 9000);  // the PC — the window's title says where
+udp.printf("%f,%f,%f\n", ax, ay, az);
+udp.endPacket();
+```
 
 ### Custom toolbar buttons and toggles
 

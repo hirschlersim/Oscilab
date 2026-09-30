@@ -29,6 +29,7 @@ from oscilab.sensor_logger import SensorLoggerProducer
 from oscilab.signal_model import SignalModel
 from oscilab.storage import Storage
 from oscilab.toolbar import button, toggle
+from oscilab.udp import UdpProducer
 from oscilab.xbox import XboxControllerProducer
 
 try:
@@ -49,6 +50,7 @@ __all__ = [
     "Storage",
     "SyncDataProducer",
     "SyntheticProducer",
+    "UdpProducer",
     "XboxControllerProducer",
     "button",
     "toggle",

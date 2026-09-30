@@ -30,7 +30,6 @@ others, or other values (the orientation's quaternion `qx`...), pass
 
 import json
 import queue
-import socket
 import threading
 import time
 from collections.abc import Sequence
@@ -41,6 +40,7 @@ import numpy as np
 from loguru import logger
 from PyQt6 import QtCore as qtc
 
+from oscilab.network import local_address
 from oscilab.producers import SyncDataProducer
 
 if TYPE_CHECKING:
@@ -70,13 +70,7 @@ _origin_ns: int | None = None  # Time 0 of every Sensor Logger signal: when Osci
 
 def push_url(port: int = 8000) -> str:
     """The URL to enter in Sensor Logger's HTTP Push: this PC's address on its local network."""
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
-        try:
-            probe.connect(("192.0.2.1", 80))  # Picks the interface the default route uses; sends nothing
-            address = probe.getsockname()[0]
-        except OSError:  # No network: only this PC can reach it
-            address = "127.0.0.1"
-    return f"http://{address}:{port}/data"
+    return f"http://{local_address()}:{port}/data"
 
 
 class _Listener:

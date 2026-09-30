@@ -2,12 +2,6 @@
 
 ---
 
-## Next up
-
-1. **Network/UDP producer template.** An `AsyncDataProducer` over an
-   asyncio datagram endpoint, same shape as the existing producers. Sessions
-   save it like any other producer (import path + constructor arguments).
-
 ## Features
 
 - **Trigger.** Oscilloscope-style triggering: freeze the display when a
