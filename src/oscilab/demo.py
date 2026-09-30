@@ -11,16 +11,16 @@ class DemoTools:
     @toggle, show up in the toolbar next to Downsample.
     """
 
-    def __init__(self, scope: Oscilab, noisy: SyntheticProducer):
+    def __init__(self, scope: Oscilab, noisy: SyntheticProducer) -> None:
         self.scope = scope
         self.noisy = noisy
 
     @toggle("Noise", tooltip="Add noise to channel-1", checked=True)
-    def noise(self, on: bool):
+    def noise(self, on: bool) -> None:
         self.noisy.noise = 0.05 if on else 0.0
 
     @button("Mark", tooltip="Log a timestamped marker to the status bar and the log file")
-    def mark(self):
+    def mark(self) -> None:
         self.scope.log(f"Marker at {time.strftime('%H:%M:%S')}", level="success")
 
 

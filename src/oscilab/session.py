@@ -29,6 +29,7 @@ from typing import TYPE_CHECKING, Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic_core import PydanticSerializationError, to_jsonable_python
 
+from oscilab.display import Fps, Theme, TimeMode
 from oscilab.math_signal import OPERATORS
 from oscilab.producers import DataProducer, resolve_producer
 from oscilab.spectrogram_plot import SpectrogramPlot
@@ -121,10 +122,10 @@ class Session(_Model):
     """An Oscilab setup: display settings, data sources, plots and per-signal settings."""
 
     version: Literal[1] = 1
-    theme: Literal["dark", "light"] = "dark"
-    fps: Literal[5, 10, 30, 60] = 30
+    theme: Theme = "dark"
+    fps: Fps = 30
     duration: float = Field(10.0, gt=0, description="Seconds of history kept and shown per signal")
-    time_mode: Literal["global", "relative"] = "global"
+    time_mode: TimeMode = "global"
     downsampling: bool = False
     producers: list[ProducerSpec] = Field(default_factory=list)
     manual_signals: list[ManualSignal] = Field(default_factory=list)
@@ -156,7 +157,7 @@ class Session(_Model):
         """Every signal name the session provides; each defined once, math operands before use."""
         defined: set[str] = set()
 
-        def define(label: str):
+        def define(label: str) -> None:
             if label in defined:
                 raise ValueError(f"Signal '{label}' is defined twice")
             defined.add(label)
@@ -257,7 +258,7 @@ def _capture_row(row: SignalRow) -> SignalSettings:
     )
 
 
-def save(window: Oscilab, path) -> Path:
+def save(window: Oscilab, path: str | Path) -> Path:
     """Write `window`'s setup to `path` (`.json` is added if it has no suffix)."""
     path = Path(path)
     if not path.suffix:
@@ -269,12 +270,12 @@ def save(window: Oscilab, path) -> Path:
 # --- loading --------------------------------------------------------------
 
 
-def load(window: Oscilab, path):
+def load(window: Oscilab, path: str | Path) -> None:
     """Read a session file and rebuild it in `window` (which must be empty)."""
     restore(window, Session.model_validate_json(Path(path).read_text(encoding="utf-8")))
 
 
-def restore(window: Oscilab, session: Session):
+def restore(window: Oscilab, session: Session) -> None:
     """Rebuild `session` in `window`, which must still be empty."""
     ws = window.workspace
     if ws.signals or ws.views:
@@ -293,13 +294,13 @@ def restore(window: Oscilab, session: Session):
 
     for producer, spec in zip(producers, session.producers, strict=True):
         window.attach_producer(producer, spec.signals, storage=spec.storage)
-    for spec in session.manual_signals:
-        window.register_signal(spec.label, spec.fs, storage=spec.storage)
-    for spec in session.math_signals:
-        ws.add_math_signal(spec.label, spec.operator, spec.a, spec.b)
+    for manual in session.manual_signals:
+        window.register_signal(manual.label, manual.fs, storage=manual.storage)
+    for math in session.math_signals:
+        ws.add_math_signal(math.label, math.operator, math.a, math.b)
 
-    for spec in session.plots:
-        _restore_plot(window, spec)
+    for plot in session.plots:
+        _restore_plot(window, plot)
 
     for label, settings in session.signal_settings.items():
         row = ws.signal_list.rows.get(label)
@@ -315,23 +316,24 @@ def _build_producer(spec: ProducerSpec) -> DataProducer:
         raise ValueError(f"Can't create {spec.type} with {spec.args}: {e}") from e
 
 
-def _restore_plot(window: Oscilab, spec: TimeseriesPlotSpec | SpectrogramSpec):
+def _restore_plot(window: Oscilab, spec: TimeseriesPlotSpec | SpectrogramSpec) -> None:
+    view: View
     if spec.kind == "timeseries":
-        plot = window.add_timeseries_plot(spec.title)
+        view = plot = window.add_timeseries_plot(spec.title)
         for label in spec.signals:
             window.link(plot=spec.title, label=label)
         if spec.cursors is not None:
             window.set_cursors(spec.title, enabled=True)
-            plot.cursor_region.setRegion(spec.cursors)
+            plot.move_cursors(*spec.cursors)
     else:
-        plot = window.add_spectrogram_plot(spec.signal, nperseg=spec.nperseg, noverlap=spec.noverlap)
+        view = spectrogram = window.add_spectrogram_plot(spec.signal, nperseg=spec.nperseg, noverlap=spec.noverlap)
         if spec.color_levels is not None:
-            plot.set_color_levels(False, spec.color_levels.min, spec.color_levels.max)
+            spectrogram.set_color_levels(False, spec.color_levels.min, spec.color_levels.max)
     if spec.y_range is not None:
-        plot.set_y_range(False, spec.y_range.min, spec.y_range.max)
+        view.set_y_range(False, spec.y_range.min, spec.y_range.max)
 
 
-def _restore_row(row: SignalRow, settings: SignalSettings):
+def _restore_row(row: SignalRow, settings: SignalSettings) -> None:
     if settings.color is not None and row.has_curve:
         row.set_color(settings.color)
     row.set_visible(settings.visible)

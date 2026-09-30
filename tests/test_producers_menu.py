@@ -61,7 +61,7 @@ class Device(SyncDataProducer):
 
 
 def submenus(window: Oscilab) -> dict[str, qtw.QMenu]:
-    return {a.text(): a.menu() for a in window.producers_menu.actions() if a.menu() is not None}
+    return {a.text(): menu for a in window.producers_menu.actions() if (menu := a.menu()) is not None}
 
 
 def entry(menu: qtw.QMenu, text: str):

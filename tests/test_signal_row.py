@@ -49,7 +49,12 @@ def test_clicking_the_name_expands_and_collapses(row):
 def test_metrics_are_only_computed_while_expanded(row, model, monkeypatch):
     calls = []
     original = model.compute_metrics
-    monkeypatch.setattr(model, "compute_metrics", lambda: calls.append(1) or original())
+
+    def counted() -> dict[str, float | None]:
+        calls.append(1)
+        return original()
+
+    monkeypatch.setattr(model, "compute_metrics", counted)
 
     row.update_metrics()
     assert calls == []

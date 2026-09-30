@@ -31,7 +31,7 @@ def as_list(buf) -> list[float]:
 )
 def test_matches_deque(maxlen, chunks):
     ring = RingBuffer(maxlen)
-    ref = deque(maxlen=maxlen)
+    ref: deque[float] = deque(maxlen=maxlen)
 
     for chunk in chunks:
         ring.extend(chunk)

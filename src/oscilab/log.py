@@ -14,15 +14,18 @@ Logging: one loguru logger, three destinations.
 """
 
 from pathlib import Path
-from typing import ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from loguru import logger
 from PyQt6 import QtCore as qtc
 from PyQt6 import QtWidgets as qtw
 from PyQt6 import sip
 
+if TYPE_CHECKING:
+    from loguru import Message
+
 _FILE_FORMAT = "{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {thread.name} | {name}:{function}:{line} | {message}"
-_file_sink: dict = {"id": None, "path": None}
+_file_sink: dict[str, Any] = {"id": None, "path": None}
 
 
 def default_log_path() -> Path:
@@ -31,7 +34,7 @@ def default_log_path() -> Path:
     return Path(base) / "logs" / "oscilab.log"
 
 
-def log_to_file(path=None) -> Path:
+def log_to_file(path: str | Path | None = None) -> Path:
     """
     Also write every log message, with tracebacks, to `path` (default:
     `default_log_path()`). Once per process: later calls return the file
@@ -58,7 +61,7 @@ def log_file() -> Path | None:
     return _file_sink["path"]
 
 
-def stop_logging_to_file():
+def stop_logging_to_file() -> None:
     if _file_sink["id"] is not None:
         logger.remove(_file_sink["id"])
         _file_sink.update(id=None, path=None)
@@ -88,30 +91,30 @@ class StatusLine(qtc.QObject):
         "CRITICAL": ("✕ ", "#ff6b6b", "#c41d1d", True, 0),
     }
 
-    def __init__(self, status_bar: qtw.QStatusBar, window_id: int, theme: str = "dark"):
+    def __init__(self, status_bar: qtw.QStatusBar, window_id: int, theme: str = "dark") -> None:
         super().__init__(status_bar)  # Lives on the GUI thread, and goes away with the status bar
         self._bar = status_bar
         self.theme = theme  # "dark" or "light": picks the colors
         self._received.connect(self._show)
-        self._handler_id = logger.add(
+        self._handler_id: int | None = logger.add(
             self._write,
             level="INFO",
             format="{message}",
             filter=lambda record: record["extra"].get("window") == window_id,
         )
 
-    def close(self):
+    def close(self) -> None:
         """Stop showing messages (the window is closing)."""
         if self._handler_id is not None:
             logger.remove(self._handler_id)
             self._handler_id = None
 
-    def _write(self, message):
+    def _write(self, message: "Message") -> None:
         # A loguru sink: runs on whichever thread logged the message.
         if not sip.isdeleted(self):
             self._received.emit(message.record["level"].name, message.record["message"])
 
-    def _show(self, level: str, message: str):
+    def _show(self, level: str, message: str) -> None:
         marker, dark, light, bold, timeout = self._STYLES.get(level, self._STYLES["INFO"])
         color = dark if self.theme == "dark" else light
         rules = ([f"color: {color};"] if color else []) + (["font-weight: bold;"] if bold else [])

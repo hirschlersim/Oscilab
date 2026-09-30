@@ -14,10 +14,15 @@ from PyQt6 import QtWidgets as qtw
 
 from oscilab import session
 from oscilab.dialogs import MathDialog, PlotDialog, SpectrogramDialog
+from oscilab.display import FPS_CHOICES, TIME_MODES, Fps, Theme, TimeMode
 from oscilab.log import StatusLine, log_file, log_to_file
 from oscilab.math_signal import OPERATORS
 from oscilab.producers import DataProducer
+from oscilab.signal_controller import SignalController
+from oscilab.signal_model import SignalModel
+from oscilab.spectrogram_plot import SpectrogramPlot
 from oscilab.storage import Storage
+from oscilab.timeseries_plot import TimeseriesPlot
 from oscilab.toolbar import ToolbarItem, toolbar_items
 from oscilab.workspace import Workspace
 
@@ -102,12 +107,12 @@ class Oscilab(qtw.QMainWindow):
 
     # (plot background, plot foreground) per theme — the QSS covers widget
     # chrome, but pyqtgraph's canvas colors are set programmatically.
-    _PLOT_THEMES: ClassVar[dict[str, tuple[str, str]]] = {
+    _PLOT_THEMES: ClassVar[dict[Theme, tuple[str, str]]] = {
         "dark": ("#202f46", "#ffffff"),
         "light": ("#f5f5f5", "#1a1a1a"),
     }
 
-    def __init__(self, app=None):
+    def __init__(self, app: qtw.QApplication | None = None) -> None:
         if sys.platform == "win32":
             # Tell Windows to treat this as its own application (own taskbar
             # icon/grouping) rather than as python.exe. Must run before any
@@ -122,7 +127,8 @@ class Oscilab(qtw.QMainWindow):
 
         # Initialize QApplication — or join the running one (a second
         # window, e.g. File > Open Session; Qt allows only one per process).
-        app = app or qtw.QApplication.instance()
+        running = qtw.QApplication.instance()
+        app = app or (running if isinstance(running, qtw.QApplication) else None)
         starting_app = app is None
         self.app = self.__start_application() if starting_app else app
 
@@ -136,10 +142,12 @@ class Oscilab(qtw.QMainWindow):
         # Messages logged through `self.logger` also show in this window's
         # status bar, styled by severity (see oscilab.log). The Workspace and
         # its signal rows log through it too.
-        self._theme = "dark"  # Matches the QSS loaded above and Workspace's default plot colors
+        self._theme: Theme = "dark"  # Matches the QSS loaded above and Workspace's default plot colors
         window_id = next(_window_ids)
         self.logger = logger.bind(window=window_id)
-        self._status_line = StatusLine(self.statusBar(), window_id, theme=self._theme)
+        status_bar = qtw.QStatusBar(self)
+        self.setStatusBar(status_bar)
+        self._status_line = StatusLine(status_bar, window_id, theme=self._theme)
 
         # Splash screen — only while the application itself is starting up.
         # Not for a window joining a running app (File > Open Session): a
@@ -165,7 +173,7 @@ class Oscilab(qtw.QMainWindow):
 
         # Domain layer
         self.workspace = Workspace(logger=self.logger)
-        self._fps = 30
+        self._fps: Fps = 30
 
         # Layout
         self.controller_layout = qtw.QVBoxLayout()
@@ -193,7 +201,7 @@ class Oscilab(qtw.QMainWindow):
 
         self.log("Oscilab ready")
 
-    def __build_menu_bar(self):
+    def __build_menu_bar(self) -> None:
         self.__build_file_menu()
         self.__build_view_menu()
         self.__build_plots_menu()
@@ -202,7 +210,7 @@ class Oscilab(qtw.QMainWindow):
         self.__build_cursors_menu()
         self.__build_help_menu()
 
-    def __build_file_menu(self):
+    def __build_file_menu(self) -> None:
         file_menu = self.menuBar().addMenu("File")
         for export in _EXPORTS:
             action = qtg.QAction(export.suffix, self)
@@ -222,7 +230,7 @@ class Oscilab(qtw.QMainWindow):
         save_action.triggered.connect(self.__save_session_dialog)
         file_menu.addAction(save_action)
 
-    def __build_view_menu(self):
+    def __build_view_menu(self) -> None:
         view_menu = self.menuBar().addMenu("View")
         # Reset View's
         self.reset_views_action = qtg.QAction("Reset View", self)
@@ -252,8 +260,8 @@ class Oscilab(qtw.QMainWindow):
         }
         self._time_action_group = qtg.QActionGroup(self)
         self._time_action_group.setExclusive(True)
-        for mode, action_label in (("global", "Global"), ("relative", "Relative")):
-            time_action = qtg.QAction(action_label, self)
+        for mode in TIME_MODES:
+            time_action = qtg.QAction(mode.capitalize(), self)
             time_action.setCheckable(True)
             time_action.setChecked(mode == "global")  # matches Workspace's default
             time_action.setToolTip(time_tooltips[mode])
@@ -261,7 +269,7 @@ class Oscilab(qtw.QMainWindow):
             self._time_action_group.addAction(time_action)
             time_menu.addAction(time_action)
 
-    def __build_plots_menu(self):
+    def __build_plots_menu(self) -> None:
         plots_menu = self.menuBar().addMenu("Plots")
         plots_menu.menuAction().setToolTip("Add plots; each plot's panel can change its signals or remove it")
         add_plot = qtg.QAction("Add Time Series Plot...", self)
@@ -273,7 +281,7 @@ class Oscilab(qtw.QMainWindow):
         add_spectrogram.triggered.connect(self.__add_spectrogram_dialog)
         plots_menu.addAction(add_spectrogram)
 
-    def __build_math_menu(self):
+    def __build_math_menu(self) -> None:
         math_menu = self.menuBar().addMenu("Math")
         math_menu.menuAction().setToolTip("Create a new signal computed live from two existing ones")
         for operator in OPERATORS:
@@ -282,7 +290,7 @@ class Oscilab(qtw.QMainWindow):
             math_action.triggered.connect(lambda _checked=False, op=operator: self.__open_math_dialog(op))
             math_menu.addAction(math_action)
 
-    def __build_producers_menu(self):
+    def __build_producers_menu(self) -> None:
         # One submenu per attached producer, added by attach_producer()
         self.producers_menu = self.menuBar().addMenu("Producers")
         self.producers_menu.menuAction().setToolTip("Start and stop the attached producers, and run their functions")
@@ -292,13 +300,13 @@ class Oscilab(qtw.QMainWindow):
         self._producer_menus: list[tuple[str, qtw.QMenu, qtg.QAction, qtg.QAction]] = []
         self.producers_menu.aboutToShow.connect(self.__update_producer_menus)
 
-    def __build_cursors_menu(self):
+    def __build_cursors_menu(self) -> None:
         # One checkable entry per timeseries plot, added as
         # add_timeseries_plot() creates them (see there).
         self.cursors_menu = self.menuBar().addMenu("Cursors")
         self.cursors_menu.menuAction().setToolTip("Toggle classic two-cursor time/value measurements on a plot")
 
-    def __build_help_menu(self):
+    def __build_help_menu(self) -> None:
         help_menu = self.menuBar().addMenu("Help")
         # About Oscilab
         about_action = qtg.QAction("About Oscilab", self)
@@ -319,7 +327,7 @@ class Oscilab(qtw.QMainWindow):
         about_qt_action.triggered.connect(qtw.QApplication.aboutQt)
         help_menu.addAction(about_qt_action)
 
-    def __build_toolbar(self):
+    def __build_toolbar(self) -> None:
         self.toolbar = self.addToolBar("Controls")
         self.toolbar.setToolButtonStyle(qtc.Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self.toolbar.setMovable(False)
@@ -334,10 +342,10 @@ class Oscilab(qtw.QMainWindow):
         self.toolbar.addSeparator()
         # FPS dropdown
         fps_box = qtw.QComboBox()
-        fps_box.addItems(["5 FPS", "10 FPS", "30 FPS", "60 FPS"])
-        fps_box.setCurrentText("30 FPS")
+        fps_box.addItems([f"{fps} FPS" for fps in FPS_CHOICES])
+        fps_box.setCurrentText(f"{self._fps} FPS")
         fps_box.setToolTip("How often the plots redraw per second")
-        fps_box.currentTextChanged.connect(self.__set_fps)
+        fps_box.currentIndexChanged.connect(self.__set_fps)
         self.toolbar.addWidget(fps_box)
         self._fps_box = fps_box
         self.toolbar.addSeparator()
@@ -363,7 +371,7 @@ class Oscilab(qtw.QMainWindow):
         self.toolbar.addAction(self.downsample_action)
         self.toolbar.addSeparator()
 
-    def __build_status_bar(self):
+    def __build_status_bar(self) -> None:
         self.statusBar().setSizeGripEnabled(False)  # Disables the resize diagonal gripper lines in the corner
         load_label = qtw.QLabel("Load [%]:")
         load_tooltip = "Percent of the refresh interval spent redrawing on the last tick"
@@ -374,7 +382,7 @@ class Oscilab(qtw.QMainWindow):
         self.load_bar.setToolTip(load_tooltip)
         self.statusBar().addPermanentWidget(self.load_bar)
 
-    def add_timeseries_plot(self, title: str):
+    def add_timeseries_plot(self, title: str) -> TimeseriesPlot:
         plot, controller = self.workspace.add_plot(title)
         self.plot_layout.addWidget(plot)
         self.__insert_plot_controller(controller)
@@ -391,7 +399,7 @@ class Oscilab(qtw.QMainWindow):
         self.__add_remove_button(controller, title)
         return plot
 
-    def add_spectrogram_plot(self, label: str, nperseg: int = 256, noverlap: int = 128):
+    def add_spectrogram_plot(self, label: str, nperseg: int = 256, noverlap: int = 128) -> SpectrogramPlot:
         """Add a live STFT spectrogram for an already-registered signal."""
         spectrogram, controller = self.workspace.add_spectrogram(label, nperseg=nperseg, noverlap=noverlap)
         self.plot_layout.addWidget(spectrogram)
@@ -399,10 +407,10 @@ class Oscilab(qtw.QMainWindow):
         self.__add_remove_button(controller, label)
         return spectrogram
 
-    def __add_remove_button(self, controller, title: str):
+    def __add_remove_button(self, controller: SignalController, title: str) -> None:
         controller.add_header_button("Remove", "Remove this plot; its signals stay", lambda: self.remove_plot(title))
 
-    def remove_plot(self, title: str):
+    def remove_plot(self, title: str) -> None:
         """Remove a plot (time series or spectrogram); its signals stay."""
         self.workspace.remove_plot(title)
         for action in self.cursors_menu.actions():
@@ -410,12 +418,12 @@ class Oscilab(qtw.QMainWindow):
                 self.cursors_menu.removeAction(action)
                 action.deleteLater()
 
-    def unlink(self, plot: str, label: str):
+    def unlink(self, plot: str, label: str) -> None:
         """Take a signal off a time-series plot."""
         self.workspace.unlink(plot, label)
         self.log(f"Removed signal '{label}' from plot '{plot}'")
 
-    def __insert_plot_controller(self, controller: qtw.QWidget):
+    def __insert_plot_controller(self, controller: qtw.QWidget) -> None:
         """
         Add a per-plot "Plot:" panel above the flat "Signals:" list, which
         stays pinned to the bottom of the sidebar no matter how many plots
@@ -423,7 +431,7 @@ class Oscilab(qtw.QMainWindow):
         """
         self.controller_layout.insertWidget(self.controller_layout.count() - 1, controller)
 
-    def register_signal(self, label: str, fs: float, storage: Storage = Storage.ring):
+    def register_signal(self, label: str, fs: float, storage: Storage = Storage.ring) -> SignalModel:
         """
         Register a signal you feed yourself (producer-fed signals are
         registered by `attach_producer`). `storage`: `self.storage.ring`
@@ -431,11 +439,13 @@ class Oscilab(qtw.QMainWindow):
         """
         return self.workspace.register_signal(label, fs, storage=storage)
 
-    def link(self, plot: str, label: str):
+    def link(self, plot: str, label: str) -> None:
         self.workspace.link(plot, label)
         self.log(f"Linked signal '{label}' to plot '{plot}'")
 
-    def attach_producer(self, producer: DataProducer, signals: str | Sequence[str], storage: Storage = Storage.ring):
+    def attach_producer(
+        self, producer: DataProducer, signals: str | Sequence[str], storage: Storage = Storage.ring
+    ) -> list[SignalModel]:
         """
         Register one signal per producer channel, named by `signals` (a single
         label for a single-channel producer), and start the producer feeding
@@ -448,22 +458,24 @@ class Oscilab(qtw.QMainWindow):
         self.__add_producer_menu(producer)
         return models
 
-    def __add_producer_menu(self, producer: DataProducer):
+    def __add_producer_menu(self, producer: DataProducer) -> None:
         if self._no_producers_action is not None:
             self.producers_menu.removeAction(self._no_producers_action)
             self._no_producers_action = None
 
         labels = self.workspace.signals_fed_by(producer)
         caption = f"{type(producer).__name__}: {_signals_caption(labels)}"
-        menu = self.producers_menu.addMenu(caption)
+        menu = qtw.QMenu(caption, self.producers_menu)
+        self.producers_menu.addMenu(menu)
         menu.setToolTipsVisible(True)
         menu.menuAction().setToolTip(f"Feeds {', '.join(labels)}")
-        start = menu.addAction("Start")
+        start = qtg.QAction("Start", menu)
         start.setToolTip("Start producing again (after Stop, or an error)")
         start.triggered.connect(lambda: self.__producer_command(self.workspace.start_producer, labels[0]))
-        stop = menu.addAction("Stop")
+        stop = qtg.QAction("Stop", menu)
         stop.setToolTip("Stop producing; the data received so far stays")
         stop.triggered.connect(lambda: self.__producer_command(self.workspace.stop_producer, labels[0]))
+        menu.addActions([start, stop])
 
         items = toolbar_items(producer, required=False)
         if items:
@@ -483,7 +495,7 @@ class Oscilab(qtw.QMainWindow):
         self._producer_menus.append((labels[0], menu, start, stop))
         self.__update_producer_menus()
 
-    def __update_producer_menus(self):
+    def __update_producer_menus(self) -> None:
         """Start/Stop enabled, and a dot for the state: running green, stopped gray, error red."""
         colors = {"running": "green", "stopped": "gray", "error": "red"}
         for label, menu, start, stop in self._producer_menus:
@@ -492,11 +504,11 @@ class Oscilab(qtw.QMainWindow):
             start.setEnabled(state != "running")
             stop.setEnabled(state == "running")
 
-    def __producer_command(self, command: Callable[[str], None], label: str):
+    def __producer_command(self, command: Callable[[str], None], label: str) -> None:
         self.__run_tool(command.__name__, command, label)
         self.__update_producer_menus()
 
-    def add_toolbar(self, tools) -> list[qtg.QAction]:
+    def add_toolbar(self, tools: object) -> list[qtg.QAction]:
         """
         Put the `@button` / `@toggle` methods of `tools` — an instance of your
         own class, or the class itself if they're classmethods — in the
@@ -549,12 +561,12 @@ class Oscilab(qtw.QMainWindow):
         return action
 
     @staticmethod
-    def __run_on_producer(producer: DataProducer, method: Callable, *args):
+    def __run_on_producer(producer: DataProducer, method: Callable[..., object], *args: object) -> None:
         """Queue a producer's control method onto its own thread, between reads."""
         if not producer.queue_action(functools.partial(method, *args)):
             raise RuntimeError(f"{type(producer).__name__} isn't running")
 
-    def __run_tool(self, name: str, callback: Callable, *args) -> bool:
+    def __run_tool(self, name: str, callback: Callable[..., object], *args: object) -> bool:
         """Run a custom toolbar callback. An exception is reported (status bar, log file), never fatal."""
         try:
             callback(*args)
@@ -563,14 +575,14 @@ class Oscilab(qtw.QMainWindow):
             return False
         return True
 
-    def __run_toggle(self, action: qtg.QAction, callback: Callable[[bool], object], on: bool):
+    def __run_toggle(self, action: qtg.QAction, callback: Callable[[bool], object], on: bool) -> None:
         if self.__run_tool(action.text(), callback, on):
             action.setIcon(self._dot_icon("green" if on else "gray"))
         else:
             with qtc.QSignalBlocker(action):
                 action.setChecked(not on)  # It didn't take: show the state it's still in
 
-    def log(self, message: str, level: str = "info"):
+    def log(self, message: str, level: str = "info") -> None:
         """
         Log through this window's `logger`: to the console, the log file and
         this window's status bar. `level`: "debug", "info", "success",
@@ -579,17 +591,17 @@ class Oscilab(qtw.QMainWindow):
         self.logger.opt(depth=1).log(level.upper(), message)
 
     @property
-    def theme(self) -> str:
+    def theme(self) -> Theme:
         return self._theme
 
     @property
-    def fps(self) -> int:
+    def fps(self) -> Fps:
         return self._fps
 
     # The setters below go through the menus/toolbar, so those always show
     # what's in effect — same as if the user had picked it there.
 
-    def set_theme(self, theme: str):
+    def set_theme(self, theme: Theme) -> None:
         """`"dark"` or `"light"`."""
         if theme not in self._PLOT_THEMES:
             raise ValueError(f"Unknown theme {theme!r}; expected one of {list(self._PLOT_THEMES)}")
@@ -597,7 +609,7 @@ class Oscilab(qtw.QMainWindow):
             action.setChecked(action.text() == theme.capitalize())
         self.__set_theme(theme)
 
-    def set_fps(self, fps: int):
+    def set_fps(self, fps: Fps) -> None:
         """Redraw rate: one of the toolbar's choices (5, 10, 30, 60)."""
         text = f"{fps} FPS"
         if self._fps_box.findText(text) < 0:
@@ -605,43 +617,43 @@ class Oscilab(qtw.QMainWindow):
             raise ValueError(f"fps must be one of {choices}, got {fps}")
         self._fps_box.setCurrentText(text)
 
-    def set_duration(self, duration: float):
+    def set_duration(self, duration: float) -> None:
         """Seconds of history kept and shown per signal; any value, not just the toolbar's choices."""
         text = f"{duration:g} s"
         if self._duration_box.findText(text) < 0:
             self._duration_box.addItem(text)
         self._duration_box.setCurrentText(text)
 
-    def set_time_mode(self, mode: str):
+    def set_time_mode(self, mode: TimeMode) -> None:
         """`"global"` (time as recorded) or `"relative"` (newest sample at 0)."""
-        if mode not in ("global", "relative"):
+        if mode not in TIME_MODES:
             raise ValueError(f"Unknown time mode {mode!r}")
         for action in self._time_action_group.actions():
             action.setChecked(action.text().lower() == mode)
         self.__set_time_mode(mode)
 
-    def set_downsampling(self, enabled: bool):
+    def set_downsampling(self, enabled: bool) -> None:
         self.downsample_action.setChecked(enabled)
 
-    def set_cursors(self, plot: str, enabled: bool):
+    def set_cursors(self, plot: str, enabled: bool) -> None:
         """Two-cursor measurement on a time-series plot, as in the Cursors menu."""
         action = next((a for a in self.cursors_menu.actions() if a.text() == plot), None)
         if action is None:
             raise ValueError(f"Unknown time-series plot '{plot}'")
         action.setChecked(enabled)
 
-    def save_session(self, path) -> Path:
+    def save_session(self, path: str | Path) -> Path:
         """Save this window's setup as JSON — see `oscilab.session`."""
-        path = session.save(self, path)
-        self.log(f"Session saved to {path.name}", level="success")
-        return path
+        written = session.save(self, path)
+        self.log(f"Session saved to {written.name}", level="success")
+        return written
 
-    def load_session(self, path):
+    def load_session(self, path: str | Path) -> None:
         """Rebuild a saved setup in this window, which must still be empty."""
         session.load(self, path)
         self.log(f"Session loaded from {Path(path).name}", level="success")
 
-    def open_session(self, path) -> "Oscilab":
+    def open_session(self, path: str | Path) -> "Oscilab":
         """
         Load a session into this window if it's still empty, otherwise into
         a new window (shown right away). Returns the window it's in.
@@ -665,7 +677,7 @@ class Oscilab(qtw.QMainWindow):
         self.show()
         return self.app.exec()
 
-    def showEvent(self, event):
+    def showEvent(self, event: qtg.QShowEvent | None) -> None:
         super().showEvent(event)
         # Plain close(), not splash.finish(self): finish() spins a nested event
         # loop until the window is drawn, running timers (refresh, producers'
@@ -673,13 +685,13 @@ class Oscilab(qtw.QMainWindow):
         if self.splash is not None:
             self.splash.close()
 
-    def closeEvent(self, event):
+    def closeEvent(self, event: qtg.QCloseEvent | None) -> None:
         self.workspace.stop_producers()
         self._status_line.close()
         Oscilab._extra_windows.discard(self)
         super().closeEvent(event)
 
-    def __refresh(self):
+    def __refresh(self) -> None:
         timer = qtc.QElapsedTimer()
         timer.start()
 
@@ -688,7 +700,7 @@ class Oscilab(qtw.QMainWindow):
         progress = int((timer.elapsed() / self.refresh_timer.interval()) * 100)
         self.load_bar.setValue(min(progress, 100))
 
-    def __export(self, export: _Export):
+    def __export(self, export: _Export) -> None:
         workspace = self.workspace
         has_content = workspace.views if export.content == "plots" else workspace.signals
         if not has_content:
@@ -701,7 +713,7 @@ class Oscilab(qtw.QMainWindow):
         if path:
             export.write(workspace, path)
 
-    def __save_session_dialog(self):
+    def __save_session_dialog(self) -> None:
         path, _ = qtw.QFileDialog.getSaveFileName(self, "Save Session", "", "Oscilab session (*.json)")
         if path:
             try:
@@ -709,7 +721,7 @@ class Oscilab(qtw.QMainWindow):
             except Exception as e:  # noqa: BLE001 — reported, never fatal (this is a Qt slot)
                 self.__session_error("save", e)
 
-    def __open_session_dialog(self):
+    def __open_session_dialog(self) -> None:
         path, _ = qtw.QFileDialog.getOpenFileName(self, "Open Session", "", "Oscilab session (*.json)")
         if path:
             try:
@@ -717,7 +729,7 @@ class Oscilab(qtw.QMainWindow):
             except Exception as e:  # noqa: BLE001 — a bad file or a device that won't open: report it
                 self.__session_error("open", e)
 
-    def __session_error(self, verb: str, error: Exception):
+    def __session_error(self, verb: str, error: Exception) -> None:
         self.log(f"Couldn't {verb} session: {error}", level="error")
         qtw.QMessageBox.warning(self, f"Couldn't {verb} session", str(error))
 
@@ -737,21 +749,21 @@ class Oscilab(qtw.QMainWindow):
         with resources.files("oscilab.assets").joinpath(f"style_{theme}.qss").open("r") as f:
             return f.read()
 
-    def __set_theme(self, theme: str):
+    def __set_theme(self, theme: Theme) -> None:
         self._theme = theme
         self._status_line.theme = theme
         self.app.setStyleSheet(self.__load_qss(theme))
         self.workspace.set_theme(*self._PLOT_THEMES[theme])
         self.log(f"Theme set to {theme.capitalize()}")
 
-    def __set_time_mode(self, mode: str):
+    def __set_time_mode(self, mode: TimeMode) -> None:
         self.workspace.set_time_mode(mode)
         self.log(f"Time axis set to {mode.capitalize()}")
 
-    def __set_cursors(self, plot: str, enabled: bool):
+    def __set_cursors(self, plot: str, enabled: bool) -> None:
         self.workspace.set_cursors(plot, enabled)
 
-    def __add_plot_dialog(self):
+    def __add_plot_dialog(self) -> None:
         titles = self.workspace.views
         default = next(f"Plot {n}" for n in range(1, len(titles) + 2) if f"Plot {n}" not in titles)
         dialog = PlotDialog(signal_labels=list(self.workspace.signals), title=default, parent=self)
@@ -768,7 +780,7 @@ class Oscilab(qtw.QMainWindow):
         for label in labels:
             self.link(plot=title, label=label)
 
-    def __add_spectrogram_dialog(self):
+    def __add_spectrogram_dialog(self) -> None:
         # A spectrogram is keyed by its signal's name, so a signal can have one
         candidates = [label for label in self.workspace.signals if label not in self.workspace.views]
         if not candidates:
@@ -781,7 +793,7 @@ class Oscilab(qtw.QMainWindow):
         label, nperseg = dialog.get_values()
         self.add_spectrogram_plot(label, nperseg=nperseg, noverlap=nperseg // 2)
 
-    def __edit_plot_signals(self, title: str):
+    def __edit_plot_signals(self, title: str) -> None:
         shown = list(self.workspace.plots[title].curves)
         dialog = PlotDialog(
             signal_labels=list(self.workspace.signals), shown=shown, title=title, title_editable=False, parent=self
@@ -796,7 +808,7 @@ class Oscilab(qtw.QMainWindow):
             if label not in shown:
                 self.link(plot=title, label=label)
 
-    def __open_math_dialog(self, operator: str):
+    def __open_math_dialog(self, operator: str) -> None:
         signal_labels = list(self.workspace.signals.keys())
         plot_titles = list(self.workspace.plots.keys())
         if len(signal_labels) < 2:
@@ -821,7 +833,7 @@ class Oscilab(qtw.QMainWindow):
         self.workspace.add_math_signal(label=label, operator=operator, signal_a=signal_a, signal_b=signal_b)
         self.workspace.link(plot=plot, label=label)
 
-    def __reset_views(self):
+    def __reset_views(self) -> None:
         # Autofitting the view while data keeps streaming in would fight the
         # live scroll; only allow it while acquisition is paused. Resetting
         # itself must never touch the refresh timer / producers.
@@ -830,7 +842,7 @@ class Oscilab(qtw.QMainWindow):
             return
         self.workspace.reset_views()
 
-    def __show_about(self):
+    def __show_about(self) -> None:
         try:
             version = metadata.version("oscilab")
         except metadata.PackageNotFoundError:
@@ -862,7 +874,7 @@ class Oscilab(qtw.QMainWindow):
         painter.end()
         return qtg.QIcon(pixmap)
 
-    def __start_stop(self, checked):
+    def __start_stop(self, checked: bool) -> None:
         if checked:
             self.start_stop_action.setText("Stopped")
             self.start_stop_action.setIcon(self._dot_icon("red"))
@@ -877,17 +889,17 @@ class Oscilab(qtw.QMainWindow):
         # refresh tick would immediately scroll/rescale past it anyway.
         self.reset_views_action.setEnabled(checked)
 
-    def __set_fps(self, text):
-        self._fps = int(text.split()[0])  # "30 FPS" -> 30
+    def __set_fps(self, index: int) -> None:
+        self._fps = FPS_CHOICES[index]
         # setInterval, not start(): changing FPS while paused mustn't resume
         self.refresh_timer.setInterval(1000 // self._fps)
 
-    def __set_duration(self, text):
-        duration = float(text.split()[0])  # "10 s" -> 10.0
+    def __set_duration(self, text: str) -> None:
+        duration = float(text.split(maxsplit=1)[0])  # "10 s" -> 10.0
 
         self.workspace.set_duration(duration)
 
-    def __set_downsampling(self, checked: bool):
+    def __set_downsampling(self, checked: bool) -> None:
         # Green = full detail (nothing thinned, the default); red = downsampled
         # — same "green means everything's fully shown" convention as a
         # signal row's Visible/Hidden toggle.

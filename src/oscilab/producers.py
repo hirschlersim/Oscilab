@@ -57,15 +57,18 @@ import time
 from abc import ABCMeta, abstractmethod
 from collections.abc import Callable, Sequence
 from pathlib import Path
+from typing import Any
 
 import numpy as np
+import numpy.typing as npt
 from loguru import logger
 from PyQt6 import QtCore as qtc
+from PyQt6 import sip
 
 from oscilab.toolbar import button
 
 
-class _ProducerMeta(type(qtc.QThread), ABCMeta):
+class _ProducerMeta(sip.wrappertype, ABCMeta):
     """
     Combines PyQt's own metaclass with `ABCMeta`.
 
@@ -78,7 +81,7 @@ class _ProducerMeta(type(qtc.QThread), ABCMeta):
     """
 
 
-def _recording_init(init):
+def _recording_init(init: Callable[..., None]) -> Callable[..., None]:
     """
     Wrap a producer class's `__init__` to record the arguments it was
     called with — only for the outermost call, i.e. the user's, not a
@@ -87,10 +90,10 @@ def _recording_init(init):
     signature = inspect.signature(init)
 
     @functools.wraps(init)
-    def wrapper(self, *args, **kwargs):
+    def wrapper(self: "DataProducer", *args: Any, **kwargs: Any) -> None:
         if "_init_args" not in self.__dict__:
             bound = signature.bind(self, *args, **kwargs)
-            recorded = {}
+            recorded: dict[str, Any] = {}
             for name, value in bound.arguments.items():
                 kind = signature.parameters[name].kind
                 if name in ("self", "parent"):
@@ -142,17 +145,17 @@ class DataProducer(qtc.QThread, metaclass=_ProducerMeta):
     # on constructor arguments.
     channels: tuple[str, ...] = ("value",)
 
-    def __init_subclass__(cls, **kwargs):
+    def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
         if "__init__" in cls.__dict__:
-            cls.__init__ = _recording_init(cls.__init__)
+            cls.__init__ = _recording_init(cls.__init__)  # type: ignore[method-assign]  # Wraps it, same signature
 
     @classmethod
     def type_path(cls) -> str:
         """Where to find this class again: `"module:QualifiedName"` (see `resolve_producer`)."""
         return f"{cls.__module__}:{cls.__qualname__}"
 
-    def config(self) -> dict:
+    def config(self) -> dict[str, Any]:
         """
         The keyword arguments that rebuild this producer:
         `type(p)(**p.config())`. Recorded from its constructor call —
@@ -164,22 +167,22 @@ class DataProducer(qtc.QThread, metaclass=_ProducerMeta):
             raise ValueError(f"{type(self).__name__} takes {starred[0]}: can't be rebuilt from keyword arguments")
         return args
 
-    def __init__(self, fs: float, parent=None):
+    def __init__(self, fs: float, parent: qtc.QObject | None = None) -> None:
         super().__init__(parent)
         if fs <= 0:
             raise ValueError(f"fs must be positive, got {fs}")
         self.fs = fs  # Sampling rate in Hz; every signal fed by this producer uses it
         self._running = False
-        self._pending_actions: queue.SimpleQueue[Callable[[], None]] = queue.SimpleQueue()
+        self._pending_actions: queue.SimpleQueue[Callable[[], object]] = queue.SimpleQueue()
 
-    def start(self, *args, **kwargs):
+    def start(self, *args: Any, **kwargs: Any) -> None:
         # Set here, not in run(): a stop() that lands before the new thread
         # gets scheduled must still win, instead of run() flipping it back.
         self._running = True
         self._pending_actions = queue.SimpleQueue()  # A restart doesn't replay old clicks
         super().start(*args, **kwargs)
 
-    def run(self):
+    def run(self) -> None:
         """QThread entry point. Subclass `SyncDataProducer`/`AsyncDataProducer` rather than overriding this."""
         try:
             self.on_start()
@@ -193,11 +196,11 @@ class DataProducer(qtc.QThread, metaclass=_ProducerMeta):
             except Exception as e:  # noqa: BLE001 — same for a failing cleanup
                 self.__report(e)
 
-    def __report(self, e: Exception):
+    def __report(self, e: Exception) -> None:
         logger.opt(exception=e).error(f"{type(self).__name__} stopped")
         self.error.emit(f"{type(e).__name__}: {e}")
 
-    def stop(self):
+    def stop(self) -> None:
         """Ask the producer to stop, and wait until it has (including `on_stop()`)."""
         self._running = False
         self.wait()
@@ -207,20 +210,20 @@ class DataProducer(qtc.QThread, metaclass=_ProducerMeta):
         """True from `start()` until it stops — or is asked to (its thread may still be finishing)."""
         return self._running
 
-    def on_start(self):
+    def on_start(self) -> None:
         """
         Override to (re)acquire resources or reset per-run state. Runs on the
         producer's own thread before it starts producing — on every start,
         restarts included.
         """
 
-    def on_stop(self):
+    def on_stop(self) -> None:
         """
         Override to release resources (close a port, a socket, ...). Runs on
         the producer's own thread after it stops, for whatever reason.
         """
 
-    def queue_action(self, action: Callable[[], None]) -> bool:
+    def queue_action(self, action: Callable[[], object]) -> bool:
         """
         Run `action` on this producer's own thread, between reads — how its
         `@button` / `@toggle` methods get called. Returns False, without
@@ -231,7 +234,7 @@ class DataProducer(qtc.QThread, metaclass=_ProducerMeta):
         self._pending_actions.put(action)
         return True
 
-    def _run_pending_actions(self):
+    def _run_pending_actions(self) -> None:
         while True:
             try:
                 action = self._pending_actions.get_nowait()
@@ -239,7 +242,7 @@ class DataProducer(qtc.QThread, metaclass=_ProducerMeta):
                 return
             action()
 
-    def emit_data(self, t, x):
+    def emit_data(self, t: npt.ArrayLike, x: npt.ArrayLike) -> None:
         """
         Send one chunk of samples: `t` shape `(n,)`, `x` shape
         `(len(self.channels), n)` — or 1-D for a single channel. Empty chunks
@@ -261,7 +264,7 @@ class DataProducer(qtc.QThread, metaclass=_ProducerMeta):
         self.data_ready.emit(t, x)
 
     @abstractmethod
-    def _produce(self):
+    def _produce(self) -> None:
         """Produce data until `self._running` goes False (see the Sync/Async bases)."""
         raise NotImplementedError
 
@@ -285,11 +288,11 @@ class SyncDataProducer(DataProducer):
     due by now" self-corrects for that overshoot instead of accumulating it.
     """
 
-    def __init__(self, fs: float, interval_s: float = 0.02, parent=None):
+    def __init__(self, fs: float, interval_s: float = 0.02, parent: qtc.QObject | None = None) -> None:
         super().__init__(fs=fs, parent=parent)
         self.interval_s = interval_s
 
-    def _produce(self):
+    def _produce(self) -> None:
         start = time.perf_counter()
         next_tick = start
 
@@ -332,10 +335,10 @@ class AsyncDataProducer(DataProducer):
 
     ACTION_POLL_S = 0.02  # How often queued actions and stop requests are checked
 
-    def _produce(self):
+    def _produce(self) -> None:
         asyncio.run(self.__supervise())
 
-    async def __supervise(self):
+    async def __supervise(self) -> None:
         run_task = asyncio.create_task(self._run())
         try:
             while not run_task.done():
@@ -353,7 +356,7 @@ class AsyncDataProducer(DataProducer):
             run_task.result()  # Re-raise whatever ended `_run()` with an error
 
     @abstractmethod
-    async def _run(self):
+    async def _run(self) -> None:
         """
         Await real I/O and call `self.emit_data(t, x)` as samples arrive,
         e.g. in a `while self._running:` loop. `stop()` also cancels this
@@ -371,12 +374,12 @@ class SyntheticProducer(SyncDataProducer):
     def __init__(
         self,
         fs: float,
-        freq: float | Sequence[float] = 5.0,
+        freq: float | Sequence[float] | np.ndarray = 5.0,
         amplitude: float = 1.0,
         noise: float = 0.05,
         chunk_size: int = 10,
-        parent=None,
-    ):
+        parent: qtc.QObject | None = None,
+    ) -> None:
         super().__init__(fs=fs, interval_s=chunk_size / fs, parent=parent)
         self.freqs = np.atleast_1d(np.asarray(freq, dtype=float))
         self.channels = tuple(f"{f:g} Hz" for f in self.freqs)
@@ -386,13 +389,13 @@ class SyntheticProducer(SyncDataProducer):
         self._samples_emitted = 0
         self._run_origin = 0  # Samples emitted before the current run started
 
-    def on_start(self):
+    def on_start(self) -> None:
         # `elapsed` restarts at 0 on every start; count from here so a
         # restarted producer continues right away instead of going quiet
         # until the new run's clock catches up with the old sample count.
         self._run_origin = self._samples_emitted
 
-    def _generate(self, elapsed):
+    def _generate(self, elapsed: float) -> tuple[np.ndarray, np.ndarray]:
         samples_due = self._run_origin + int(elapsed * self.fs) - self._samples_emitted
         if samples_due <= 0:
             return np.array([]), np.array([])
@@ -417,7 +420,9 @@ class FileReplayProducer(SyncDataProducer):
     one pass to the next instead of jumping back to the start.
     """
 
-    def __init__(self, path, chunk_size: int = 10, loop: bool = False, parent=None):
+    def __init__(
+        self, path: str | Path, chunk_size: int = 10, loop: bool = False, parent: qtc.QObject | None = None
+    ) -> None:
         path = Path(path)
         header, time_col, data = self.__load(path)
         dt = float(np.mean(np.diff(time_col))) if len(time_col) > 1 else 0.02
@@ -435,7 +440,7 @@ class FileReplayProducer(SyncDataProducer):
         self._cursor = 0
         self._loop_offset = 0.0  # elapsed-time origin of the current pass
 
-    def on_start(self):
+    def on_start(self) -> None:
         # `elapsed` restarts at 0 on every start: line the replay clock up
         # with the next unsent sample, so a restart resumes where it stopped.
         if len(self._time):
@@ -455,7 +460,7 @@ class FileReplayProducer(SyncDataProducer):
         values = np.array(rows, dtype=float).reshape(-1, len(header))
         return header, values[:, 0], np.ascontiguousarray(values[:, 1:].T)
 
-    def _generate(self, elapsed):
+    def _generate(self, elapsed: float) -> tuple[np.ndarray, np.ndarray]:
         if len(self._time) == 0:
             self._running = False
             return np.array([]), np.array([])
@@ -503,8 +508,8 @@ class SerialProducer(SyncDataProducer):
         baudrate: int = 115200,
         chunk_size: int = 10,
         channels: Sequence[str] = ("value",),
-        parent=None,
-    ):
+        parent: qtc.QObject | None = None,
+    ) -> None:
         try:
             import serial  # noqa: PLC0415 — optional dependency, only needed by this producer
         except ImportError as e:
@@ -518,7 +523,7 @@ class SerialProducer(SyncDataProducer):
         self._connection = serial.Serial(port, baudrate=baudrate, timeout=1.0)
         self._sample_index = 0
 
-    def _generate(self, _elapsed):
+    def _generate(self, _elapsed: float) -> tuple[np.ndarray, np.ndarray]:
         # Blocking reads are fine here — this runs on this producer's own
         # QThread, never the GUI thread. Real hardware may need a tighter
         # per-line timeout than the 1.0s default so a quiet channel doesn't
@@ -544,15 +549,15 @@ class SerialProducer(SyncDataProducer):
         self._sample_index += len(rows)
         return n / self.fs, np.asarray(rows).T
 
-    def on_start(self):
+    def on_start(self) -> None:
         if not self._connection.is_open:  # Closed by on_stop() when a previous run ended
             self._connection.open()
 
-    def on_stop(self):
+    def on_stop(self) -> None:
         self._connection.close()
 
     @button("Reconnect", tooltip="Close and reopen the serial port")
-    def reconnect(self):
+    def reconnect(self) -> None:
         # Runs on this producer's own thread (see `DataProducer.queue_action`),
         # so it can't pull the port out from under an in-progress readline().
         self._connection.close()
@@ -569,7 +574,14 @@ class AsyncSyntheticProducer(AsyncDataProducer):
     Producers-menu entry and, with `toolbar=True`, in the toolbar.
     """
 
-    def __init__(self, fs: float, freq: float = 5.0, amplitude: float = 1.0, chunk_size: int = 10, parent=None):
+    def __init__(
+        self,
+        fs: float,
+        freq: float = 5.0,
+        amplitude: float = 1.0,
+        chunk_size: int = 10,
+        parent: qtc.QObject | None = None,
+    ) -> None:
         super().__init__(fs=fs, parent=parent)
         self.freq = freq
         self.amplitude = amplitude
@@ -577,7 +589,7 @@ class AsyncSyntheticProducer(AsyncDataProducer):
         self._sample_index = 0
         self._phase_origin = 0.0  # Time at which the sine's phase is zero
 
-    async def _run(self):
+    async def _run(self) -> None:
         # Emit whatever's due by the wall clock rather than a fixed chunk per
         # sleep: sleeps overshoot (see SyncDataProducer), and a fixed chunk
         # would let this signal fall further and further behind real time.
@@ -593,7 +605,7 @@ class AsyncSyntheticProducer(AsyncDataProducer):
             await asyncio.sleep(self.chunk_size / self.fs)  # Real code: `await client.read_chunk()` etc.
 
     @button("Reset Phase", tooltip="Restart the sine at phase 0", toolbar=True)
-    def reset_phase(self):
+    def reset_phase(self) -> None:
         # Illustrative custom action — a real one might re-sync a device's
         # onboard clock, send a calibration command, etc. Restarts the sine
         # at phase 0 from the next sample; time itself keeps running.

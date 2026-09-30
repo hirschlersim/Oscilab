@@ -1,4 +1,5 @@
-from typing import ClassVar
+from collections.abc import Callable
+from typing import TYPE_CHECKING, ClassVar, TypedDict
 
 from loguru import logger as default_logger
 from PyQt6 import QtCore as qtc
@@ -6,6 +7,22 @@ from PyQt6 import QtGui as qtg
 from PyQt6 import QtWidgets as qtw
 
 from oscilab.dialogs import FilterDialog, ScalingDialog
+from oscilab.signal_model import SignalModel
+
+if TYPE_CHECKING:
+    from loguru import Logger
+
+
+class FilterSettings(TypedDict):
+    enabled: bool
+    cutoff: float  # Hz
+    order: int
+
+
+class ScalingSettings(TypedDict):
+    enabled: bool
+    gain: float
+    offset: float
 
 
 class SignalController(qtw.QGroupBox):
@@ -20,7 +37,9 @@ class SignalController(qtw.QGroupBox):
     per-plot property, not a per-signal one.
     """
 
-    def __init__(self, title: str = "Controls:", parent=None, logger=None):
+    def __init__(
+        self, title: str = "Controls:", parent: qtw.QWidget | None = None, logger: "Logger | None" = None
+    ) -> None:
         super().__init__(title, parent)
         self._logger = logger or default_logger  # Handed to its rows
 
@@ -40,7 +59,7 @@ class SignalController(qtw.QGroupBox):
         self._cursor_label.setVisible(False)
         self._layout.addWidget(self._cursor_label)
 
-    def add_header_button(self, text: str, tooltip: str, callback) -> qtw.QPushButton:
+    def add_header_button(self, text: str, tooltip: str, callback: Callable[..., object]) -> qtw.QPushButton:
         """Add a plot-level button (e.g. "Y-Axis") above the signal rows."""
         button = qtw.QPushButton(text)
         button.setToolTip(tooltip)
@@ -48,7 +67,7 @@ class SignalController(qtw.QGroupBox):
         self._header_layout.addWidget(button)
         return button
 
-    def set_cursor_readout(self, text: str | None):
+    def set_cursor_readout(self, text: str | None) -> None:
         """Show (with `text`) or hide (`None`) this plot's cursor readout."""
         if text is None:
             self._cursor_label.setVisible(False)
@@ -57,7 +76,7 @@ class SignalController(qtw.QGroupBox):
             self._cursor_label.setText(text)
             self._cursor_label.setVisible(True)
 
-    def add_signal(self, label, model, derived: bool = False, has_curve: bool = True):
+    def add_signal(self, label: str, model: SignalModel, derived: bool = False, has_curve: bool = True) -> "SignalRow":
         if label in self.rows:
             raise ValueError(f"Signal '{label}' already added")
 
@@ -68,12 +87,12 @@ class SignalController(qtw.QGroupBox):
         self._layout.addWidget(row)
         return row
 
-    def remove_signal(self, label: str):
+    def remove_signal(self, label: str) -> None:
         row = self.rows.pop(label)
         row.hide()
         row.deleteLater()
 
-    def refresh(self):
+    def refresh(self) -> None:
         """Refresh live metric readouts for every row (called each tick)."""
         for row in self.rows.values():
             row.update_metrics()
@@ -105,7 +124,15 @@ class SignalRow(qtw.QWidget):
     }
     _NAME_TOOLTIP = "Show or hide this signal's metrics and Filter/Scaling"
 
-    def __init__(self, label: str, model, derived: bool = False, has_curve: bool = True, parent=None, logger=None):
+    def __init__(
+        self,
+        label: str,
+        model: SignalModel,
+        derived: bool = False,
+        has_curve: bool = True,
+        parent: qtw.QWidget | None = None,
+        logger: "Logger | None" = None,
+    ) -> None:
         super().__init__(parent)
         self._logger = logger or default_logger
         self.label = label
@@ -117,8 +144,8 @@ class SignalRow(qtw.QWidget):
         # Last-applied settings, kept so re-opening a dialog (or briefly
         # toggling it off) doesn't lose what was typed in. Default cutoff well
         # below Nyquist (fs/2) — a flat 50 Hz is invalid at fs <= 100.
-        self.filter_settings = {"enabled": False, "cutoff": min(50.0, model.fs / 4), "order": 4}
-        self.scaling_settings = {"enabled": False, "gain": 1.0, "offset": 0.0}
+        self.filter_settings: FilterSettings = {"enabled": False, "cutoff": min(50.0, model.fs / 4), "order": 4}
+        self.scaling_settings: ScalingSettings = {"enabled": False, "gain": 1.0, "offset": 0.0}
 
         # Built on first expand (see `set_expanded`)
         self._details: qtw.QWidget | None = None
@@ -226,7 +253,7 @@ class SignalRow(qtw.QWidget):
     def expanded(self) -> bool:
         return self.name_button.isChecked()
 
-    def set_expanded(self, expanded: bool):
+    def set_expanded(self, expanded: bool) -> None:
         """Show or hide the details (metrics, Filter/Scaling)."""
         if expanded and self._details is None:
             self._details = self.__build_details()
@@ -240,7 +267,7 @@ class SignalRow(qtw.QWidget):
         if expanded:
             self.update_metrics()  # Current values right away, not on the next tick
 
-    def update_metrics(self):
+    def update_metrics(self) -> None:
         """Refresh the metric readouts — only while expanded; collapsed rows cost nothing per tick."""
         if not self.expanded:
             return
@@ -255,7 +282,7 @@ class SignalRow(qtw.QWidget):
         formatted = f"{value:+9.3f}" if value is not None else f"{'—':>9}"
         return f"{title}: {formatted}"
 
-    def set_color(self, color: str):
+    def set_color(self, color: str) -> None:
         """Apply a curve color from either the color picker or an initial assignment."""
         self._color = color
         self.color_button.setStyleSheet(f"background-color: {color}; border: 1px solid #444;")
@@ -269,23 +296,23 @@ class SignalRow(qtw.QWidget):
     def visible(self) -> bool:
         return not self.visibility_button.isChecked()  # Checked means "Hidden"
 
-    def set_visible(self, visible: bool):
+    def set_visible(self, visible: bool) -> None:
         self.visibility_button.setChecked(not visible)
 
-    def set_error(self, message: str):
+    def set_error(self, message: str) -> None:
         """Flag that this signal's producer stopped with an error, and offer a Restart."""
         self.name_button.setText(f"⚠ {self.label}")
         self.name_button.setStyleSheet("color: red;")
         self.name_button.setToolTip(f"Producer stopped: {message}")
         self.restart_button.setVisible(True)
 
-    def clear_error(self):
+    def clear_error(self) -> None:
         self.name_button.setText(self.label)
         self.name_button.setStyleSheet("")
         self.name_button.setToolTip(self._NAME_TOOLTIP)
         self.restart_button.setVisible(False)
 
-    def enable_curve(self):
+    def enable_curve(self) -> None:
         """
         Upgrade a spectrogram-only row once its signal also gets plotted
         as a curve somewhere (e.g. linked to a `TimeseriesPlot` afterward).
@@ -320,7 +347,7 @@ class SignalRow(qtw.QWidget):
             self.__set_active_style(self.filter_button, enabled)
         return enabled
 
-    def apply_scaling(self, enabled: bool, gain: float, offset: float):
+    def apply_scaling(self, enabled: bool, gain: float, offset: float) -> None:
         """Turn gain/offset scaling on or off: output = (raw - offset) * gain."""
         if enabled:
             self.model.add_scaling(gain, offset)
@@ -334,31 +361,29 @@ class SignalRow(qtw.QWidget):
         if self.scaling_button is not None:
             self.__set_active_style(self.scaling_button, enabled)
 
-    def __pick_color(self):
+    def __pick_color(self) -> None:
         chosen = qtw.QColorDialog.getColor(qtg.QColor(self._color), self, f"Color | {self.label}")
         if chosen.isValid():
             self.set_color(chosen.name())
 
-    def __on_visibility_toggled(self, checked):
+    def __on_visibility_toggled(self, checked: bool) -> None:
         """Checked == True means "hidden" (red); unchecked means "visible" (green)."""
         visible = not checked
 
         if checked:
             self.visibility_button.setText("Hidden")
             self.visibility_button.setStyleSheet("background-color: red; color: white;")
-            self.visibility_button.setIcon(
-                qtw.QApplication.style().standardIcon(qtw.QStyle.StandardPixmap.SP_DialogNoButton)
-            )
+            icon = qtw.QStyle.StandardPixmap.SP_DialogNoButton
         else:
             self.visibility_button.setText("Visible")
             self.visibility_button.setStyleSheet("background-color: green; color: white;")
-            self.visibility_button.setIcon(
-                qtw.QApplication.style().standardIcon(qtw.QStyle.StandardPixmap.SP_DialogYesButton)
-            )
+            icon = qtw.QStyle.StandardPixmap.SP_DialogYesButton
+        if (style := qtw.QApplication.style()) is not None:
+            self.visibility_button.setIcon(style.standardIcon(icon))
 
         self.visibility_changed.emit(self.label, visible)
 
-    def __open_filter_dialog(self):
+    def __open_filter_dialog(self) -> None:
         settings = self.filter_settings
         dialog = FilterDialog(
             label=self.label,
@@ -371,7 +396,7 @@ class SignalRow(qtw.QWidget):
         if dialog.exec() == qtw.QDialog.DialogCode.Accepted:
             self.apply_filter(*dialog.get_values())
 
-    def __open_scaling_dialog(self):
+    def __open_scaling_dialog(self) -> None:
         settings = self.scaling_settings
         dialog = ScalingDialog(
             label=self.label,
@@ -384,7 +409,7 @@ class SignalRow(qtw.QWidget):
             self.apply_scaling(*dialog.get_values())
 
     @staticmethod
-    def __set_active_style(button, active: bool):
+    def __set_active_style(button: qtw.QPushButton, active: bool) -> None:
         # Red = this signal's data is being altered (filtered/scaled); empty
         # falls back to the normal blue QSS button style when untouched.
         button.setStyleSheet("background-color: red; color: white;" if active else "")

@@ -16,20 +16,23 @@ from PyQt6 import QtGui as qtg
 from PyQt6 import QtWidgets as qtw
 from scipy import signal
 
+from oscilab.display import TIME_MODES, TimeMode
+from oscilab.signal_model import SignalModel
+
 
 class SpectrogramPlot(qtw.QWidget):
     """Live STFT of one signal (see module docstring). Implements `oscilab.view.View`."""
 
     y_unit = "Hz"  # The Y axis is frequency
 
-    def __init__(self, label: str, model, nperseg: int = 256, noverlap: int = 128):
+    def __init__(self, label: str, model: SignalModel, nperseg: int = 256, noverlap: int = 128) -> None:
         super().__init__()
         self.label = label
         self.model = model
         self.nperseg = nperseg
         self.noverlap = min(noverlap, nperseg - 1)
         self._levels_initialized = False
-        self.time_mode = "global"  # "global" (as recorded) or "relative" ([-duration, 0], now at 0)
+        self.time_mode: TimeMode = "global"  # "global" (as recorded) or "relative" ([-duration, 0], now at 0)
         self.y_range_auto = True  # Off: Y (frequency) pinned to (y_range_min, y_range_max)
         self.y_range_min = 0.0
         self.y_range_max = 1.0
@@ -39,7 +42,7 @@ class SpectrogramPlot(qtw.QWidget):
 
         # STFT column cache — see module docstring.
         self._cached_times = np.array([])  # absolute center-time of each cached column
-        self._cached_cols = None  # (n_freq_bins, n_cached_columns), in dB
+        self._cached_cols: np.ndarray | None = None  # (n_freq_bins, n_cached_columns), in dB
 
         layout = qtw.QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -57,7 +60,7 @@ class SpectrogramPlot(qtw.QWidget):
         self.set_theme(bg="#202f46", fg="#ffffff")
         self.__update_axis_label()
 
-    def set_theme(self, bg: str, fg: str):
+    def set_theme(self, bg: str, fg: str) -> None:
         self.plot.setBackground(bg)
         self.plot.setTitle(self.label, color=fg)  # Which signal this spectrogram belongs to
         self.plot.getAxis("left").setTextPen(fg)
@@ -65,12 +68,12 @@ class SpectrogramPlot(qtw.QWidget):
         self.plot.getAxis("left").setPen(fg)
         self.plot.getAxis("bottom").setPen(fg)
 
-    def set_time_mode(self, mode: str):
+    def set_time_mode(self, mode: TimeMode) -> None:
         """
         "global": x-axis shows time as recorded. "relative": shifted so the
         newest sample sits at 0 and the buffer's start sits at -duration.
         """
-        if mode not in ("global", "relative"):
+        if mode not in TIME_MODES:
             raise ValueError(f"Unknown time mode '{mode}'")
         self.time_mode = mode
         self.__update_axis_label()
@@ -81,7 +84,7 @@ class SpectrogramPlot(qtw.QWidget):
         self.refresh()
         self.reset_view()
 
-    def __update_axis_label(self):
+    def __update_axis_label(self) -> None:
         label = "Time (relative to now)" if self.time_mode == "relative" else "Time"
         self.plot.setLabel("bottom", label, units="s")
 
@@ -93,14 +96,14 @@ class SpectrogramPlot(qtw.QWidget):
         y_min, y_max = self.plot.getViewBox().viewRange()[1]
         return y_min, y_max
 
-    def set_downsampling(self, _enabled: bool):
+    def set_downsampling(self, _enabled: bool) -> None:
         """No-op: a spectrogram's pixels are already STFT-bin aggregates, not raw samples."""
 
-    def set_visible(self, _label: str, visible: bool):
+    def set_visible(self, _label: str, visible: bool) -> None:
         """Show/hide the whole spectrogram — its signal row's Visible toggle."""
         self.setVisible(visible)
 
-    def set_y_range(self, auto: bool, y_min: float = 0.0, y_max: float = 1.0):
+    def set_y_range(self, auto: bool, y_min: float = 0.0, y_max: float = 1.0) -> None:
         """
         Auto: frequency axis keeps auto-fitting to the image (0..Nyquist,
         as before). Manual: pin exactly [y_min, y_max] Hz.
@@ -114,7 +117,7 @@ class SpectrogramPlot(qtw.QWidget):
             self.plot.enableAutoRange(axis="y", enable=False)
             self.plot.setYRange(y_min, y_max, padding=0)
 
-    def set_color_levels(self, auto: bool, lo: float = 0.0, hi: float = 1.0):
+    def set_color_levels(self, auto: bool, lo: float = 0.0, hi: float = 1.0) -> None:
         """
         Auto: colormap levels auto-snapshot from the first STFT frame and
         then hold (today's behavior). Manual: pin exactly [lo, hi] dB.
@@ -128,7 +131,7 @@ class SpectrogramPlot(qtw.QWidget):
             self.img.setLevels((lo, hi))
             self._levels_initialized = True  # stop the auto-snapshot logic in refresh() from overriding this
 
-    def refresh(self, now: float | None = None):
+    def refresh(self, now: float | None = None) -> None:
         """
         Extend the STFT with the samples that arrived since last tick and
         redraw (called each tick). `now` is shown as 0 in relative time mode;
@@ -139,7 +142,7 @@ class SpectrogramPlot(qtw.QWidget):
             return  # Not enough samples yet for even one STFT window
 
         stft = self.__update_cache(time_full, data_full)
-        if stft is None or self._cached_times.size == 0:
+        if stft is None or self._cached_cols is None or self._cached_times.size == 0:
             return
         freqs, preview_cols, preview_times = stft
 
@@ -151,7 +154,9 @@ class SpectrogramPlot(qtw.QWidget):
 
         self.__draw(display_cols, display_times, freqs, newest=now if now is not None else time_full[-1])
 
-    def __update_cache(self, time_full: np.ndarray, data_full: np.ndarray):
+    def __update_cache(
+        self, time_full: np.ndarray, data_full: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray] | None:
         """
         Add the columns that are new since last tick to the cache and evict
         the ones that have scrolled out of the buffer.
@@ -222,7 +227,7 @@ class SpectrogramPlot(qtw.QWidget):
         # Evict cached columns that have scrolled out of the buffer's
         # current window, the same way `SignalModel`'s own buffer ages out.
         evict = int(np.searchsorted(self._cached_times, time_full[0], side="left"))
-        if evict > 0:
+        if evict > 0 and self._cached_cols is not None:
             self._cached_cols = self._cached_cols[:, evict:]
             self._cached_times = self._cached_times[evict:]
 
@@ -239,7 +244,7 @@ class SpectrogramPlot(qtw.QWidget):
 
         return f, preview_amp_db, preview_col_times
 
-    def __draw(self, cols: np.ndarray, times: np.ndarray, freqs: np.ndarray, newest: float):
+    def __draw(self, cols: np.ndarray, times: np.ndarray, freqs: np.ndarray, newest: float) -> None:
         """Show `cols` (freq bins x columns, dB) with each column centered on its time."""
         now = newest if self.time_mode == "relative" else 0.0
         dt = (self.nperseg - self.noverlap) / self.model.fs
@@ -263,7 +268,7 @@ class SpectrogramPlot(qtw.QWidget):
             i -= 1
         return i
 
-    def reset_view(self):
+    def reset_view(self) -> None:
         self.plot.autoRange()
         # autoRange() only does a ONE-TIME fit — it actually leaves the
         # ViewBox's continuous auto-range OFF afterward (both axes), which is

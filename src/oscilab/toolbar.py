@@ -43,9 +43,11 @@ refuses them.
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, TypeVar
 
 _MARK = "_oscilab_toolbar_item"
+
+_Method = TypeVar("_Method")  # A function, or the classmethod/staticmethod wrapping one
 
 
 @dataclass(frozen=True)
@@ -57,8 +59,8 @@ class ToolbarItem:
     toolbar: bool = False  # A producer's: in the toolbar too, not only in its Producers-menu entry
 
 
-def _mark(item: ToolbarItem):
-    def decorate(method):
+def _mark(item: ToolbarItem) -> Callable[[_Method], _Method]:
+    def decorate(method: _Method) -> _Method:
         # Mark the underlying function, so either decorator order works with
         # @classmethod/@staticmethod (which wrap it).
         setattr(getattr(method, "__func__", method), _MARK, item)
@@ -67,7 +69,7 @@ def _mark(item: ToolbarItem):
     return decorate
 
 
-def button(text: str, tooltip: str = "", toolbar: bool = False):
+def button(text: str, tooltip: str = "", toolbar: bool = False) -> Callable[[_Method], _Method]:
     """
     Mark a method as a toolbar button: `method()` runs when it's clicked.
     `toolbar`: on a producer, put it in the toolbar as well as its
@@ -76,7 +78,7 @@ def button(text: str, tooltip: str = "", toolbar: bool = False):
     return _mark(ToolbarItem("button", text, tooltip, toolbar=toolbar))
 
 
-def toggle(text: str, tooltip: str = "", checked: bool = False, toolbar: bool = False):
+def toggle(text: str, tooltip: str = "", checked: bool = False, toolbar: bool = False) -> Callable[[_Method], _Method]:
     """
     Mark a method as a toolbar toggle: `method(on)` runs with the new state on
     every click. `checked` is the initial state; the method isn't called for it.
@@ -86,11 +88,11 @@ def toggle(text: str, tooltip: str = "", checked: bool = False, toolbar: bool = 
     return _mark(ToolbarItem("toggle", text, tooltip, checked, toolbar))
 
 
-def _marked(attr) -> ToolbarItem | None:
+def _marked(attr: object) -> ToolbarItem | None:
     return getattr(attr, _MARK, None) or getattr(getattr(attr, "__func__", None), _MARK, None)
 
 
-def toolbar_items(tools, required: bool = True) -> list[tuple[ToolbarItem, Callable]]:
+def toolbar_items(tools: object, required: bool = True) -> list[tuple[ToolbarItem, Callable[..., object]]]:
     """
     The `@button` / `@toggle` methods of `tools` — an instance, or a class whose
     marked methods are all classmethods — as (item, bound method) pairs, in

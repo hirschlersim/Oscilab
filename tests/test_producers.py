@@ -283,7 +283,7 @@ def test_file_replay_loop_keeps_time_increasing(qapp, tmp_path):  # noqa: ARG001
     path.write_text("time,value\n" + "".join(f"{i / 10:.1f},{i}\n" for i in range(5)))  # 0.0 .. 0.4 s
     producer = FileReplayProducer(path, loop=True)
 
-    times = []
+    times: list[float] = []
     for elapsed in np.arange(0.0, 2.0, 0.05):  # several passes' worth of ticks
         t, _ = producer._generate(elapsed)
         times.extend(t)

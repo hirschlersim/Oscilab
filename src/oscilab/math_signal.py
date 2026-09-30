@@ -1,8 +1,12 @@
 """Derived signals computed live from two existing SignalModels."""
 
+from collections.abc import Callable
+
 import numpy as np
 
-_FUNCS = {
+from oscilab.signal_model import SignalModel
+
+_FUNCS: dict[str, Callable[[np.ndarray, np.ndarray], np.ndarray]] = {
     "+": lambda a, b: a + b,
     "-": lambda a, b: a - b,
     "*": lambda a, b: a * b,
@@ -21,7 +25,7 @@ class MathSignal:
     them, so the two may have different rates or start times.
     """
 
-    def __init__(self, label: str, model_a, model_b, operator: str):
+    def __init__(self, label: str, model_a: SignalModel, model_b: SignalModel, operator: str) -> None:
         if operator not in _FUNCS:
             raise ValueError(f"Unsupported operator '{operator}'")
         self.label = label

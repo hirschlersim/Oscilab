@@ -25,6 +25,16 @@ jobs:
       - run: uv run --locked --only-dev ruff check --output-format=github
       - run: uv run --locked --only-dev ruff format --check
 
+  types:
+    name: Mypy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+      # Not --only-dev: mypy reads the dependencies' own type information
+      # (PyQt6, numpy, pydantic, ...). It only reads them, so Linux is fine.
+      - run: uv run --locked mypy
+
   test:
     name: Pytest
     # Windows is the app's target platform, and PyQt6's wheels need no extra

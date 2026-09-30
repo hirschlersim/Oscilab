@@ -10,6 +10,7 @@ from PyQt6 import QtWidgets as qtw
 from oscilab import session
 from oscilab.dialogs import PlotDialog, SpectrogramDialog
 from oscilab.oscilab import Oscilab
+from oscilab.session import TimeseriesPlotSpec
 
 
 @pytest.fixture
@@ -31,8 +32,8 @@ def answer(monkeypatch, dialog_cls, fill=lambda _dialog: None, accept: bool = Tr
     monkeypatch.setattr(dialog_cls, "exec", exec_)
 
 
-def menu_action(window: Oscilab, menu: str, text: str):
-    menu = next(a.menu() for a in window.menuBar().actions() if a.text() == menu)
+def menu_action(window: Oscilab, title: str, text: str):
+    menu = next(a.menu() for a in window.menuBar().actions() if a.text() == title)
     return next(a for a in menu.actions() if a.text() == text)
 
 
@@ -103,7 +104,7 @@ def test_add_and_remove_a_spectrogram(window, monkeypatch, qapp):
     spectrogram = window.workspace.spectrograms["b"]
     assert (spectrogram.nperseg, spectrogram.noverlap) == (512, 256)
 
-    offered = []
+    offered: list[str] = []
     answer(
         monkeypatch,
         SpectrogramDialog,
@@ -123,5 +124,6 @@ def test_a_setup_built_in_the_gui_saves_as_a_session(window, monkeypatch):
     answer(monkeypatch, PlotDialog, lambda dialog: dialog.set_checked(["b"]))
     panel_button(window, "Built", "Signals...").click()
 
-    plots = session.capture(window).plots
-    assert [(p.title, p.signals) for p in plots] == [("Built", ["b"])]
+    (plot,) = session.capture(window).plots
+    assert isinstance(plot, TimeseriesPlotSpec)
+    assert (plot.title, plot.signals) == ("Built", ["b"])

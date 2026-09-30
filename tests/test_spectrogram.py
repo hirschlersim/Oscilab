@@ -62,6 +62,7 @@ def test_cache_matches_single_full_stft(chunk):
     ref_db = 20 * np.log10(np.abs(z_ref) + 1e-9)
     k = np.rint(times / COL_DT).astype(int)
     np.testing.assert_allclose(times, t_ref[k])
+    assert spec._cached_cols is not None
     np.testing.assert_allclose(spec._cached_cols, ref_db[:, k], atol=1e-6)
 
 

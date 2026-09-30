@@ -7,6 +7,8 @@ Filter/Scaling/Range ones put their fields behind an enable (or "Auto")
 checkbox, so turning a setting off doesn't lose what was typed in.
 """
 
+from collections.abc import Collection
+
 from PyQt6 import QtCore as qtc
 from PyQt6 import QtWidgets as qtw
 
@@ -24,8 +26,8 @@ class RangeDialog(qtw.QDialog):
         current_min: float = 0.0,
         current_max: float = 1.0,
         unit: str = "",
-        parent=None,
-    ):
+        parent: qtw.QWidget | None = None,
+    ) -> None:
         super().__init__(parent)
         self.setWindowTitle(title)
         self.setMinimumWidth(250)
@@ -99,8 +101,8 @@ class FilterDialog(qtw.QDialog):
         current_cutoff: float = 100.0,
         current_order: int = 4,
         sampling_rate: float | None = None,
-        parent=None,
-    ):
+        parent: qtw.QWidget | None = None,
+    ) -> None:
         super().__init__(parent)
         self.setWindowTitle(f"Filter | {label}")
         self.setMinimumWidth(250)
@@ -179,8 +181,8 @@ class ScalingDialog(qtw.QDialog):
         scaling_enabled: bool = False,
         current_gain: float = 1.0,
         current_offset: float = 0.0,
-        parent=None,
-    ):
+        parent: qtw.QWidget | None = None,
+    ) -> None:
         super().__init__(parent)
         self.setWindowTitle(f"Scaling | {label}")
         self.setMinimumWidth(250)
@@ -247,7 +249,9 @@ class ScalingDialog(qtw.QDialog):
 class MathDialog(qtw.QDialog):
     """Pick two signals, a target plot, and a name for a new math signal."""
 
-    def __init__(self, operator: str, signal_labels: list[str], plot_titles: list[str], parent=None):
+    def __init__(
+        self, operator: str, signal_labels: list[str], plot_titles: list[str], parent: qtw.QWidget | None = None
+    ) -> None:
         super().__init__(parent)
         self.setWindowTitle(f"Math | {operator}")
         self.setMinimumWidth(280)
@@ -280,7 +284,7 @@ class MathDialog(qtw.QDialog):
 
         layout.addLayout(form)
 
-        def suggest_label():
+        def suggest_label() -> None:
             a, b = self.combo_a.currentText(), self.combo_b.currentText()
             if a and b:
                 self.edit_label.setText(f"{a}{operator}{b}")
@@ -315,11 +319,11 @@ class PlotDialog(qtw.QDialog):
     def __init__(
         self,
         signal_labels: list[str],
-        shown: list[str] = (),
+        shown: Collection[str] = (),
         title: str = "",
         title_editable: bool = True,
-        parent=None,
-    ):
+        parent: qtw.QWidget | None = None,
+    ) -> None:
         super().__init__(parent)
         self.setWindowTitle("Add Time Series Plot" if title_editable else f"Signals | {title}")
         self.setMinimumWidth(280)
@@ -335,11 +339,13 @@ class PlotDialog(qtw.QDialog):
         layout.addWidget(qtw.QLabel("Signals shown:"))
         self.signal_list = qtw.QListWidget()
         self.signal_list.setToolTip("Tick the signals this plot should draw")
+        self._items: list[qtw.QListWidgetItem] = []
         for label in signal_labels:
             item = qtw.QListWidgetItem(label)
             item.setFlags(item.flags() | qtc.Qt.ItemFlag.ItemIsUserCheckable)
             item.setCheckState(qtc.Qt.CheckState.Checked if label in shown else qtc.Qt.CheckState.Unchecked)
             self.signal_list.addItem(item)
+            self._items.append(item)
         layout.addWidget(self.signal_list)
 
         button_box = qtw.QDialogButtonBox(
@@ -349,19 +355,14 @@ class PlotDialog(qtw.QDialog):
         button_box.rejected.connect(self.reject)
         layout.addWidget(button_box)
 
-    def set_checked(self, labels: list[str]):
-        for i in range(self.signal_list.count()):
-            item = self.signal_list.item(i)
+    def set_checked(self, labels: Collection[str]) -> None:
+        for item in self._items:
             checked = item.text() in labels
             item.setCheckState(qtc.Qt.CheckState.Checked if checked else qtc.Qt.CheckState.Unchecked)
 
     def get_values(self) -> tuple[str, list[str]]:
         """Return (title, ticked signals in list order)."""
-        ticked = [
-            self.signal_list.item(i).text()
-            for i in range(self.signal_list.count())
-            if self.signal_list.item(i).checkState() == qtc.Qt.CheckState.Checked
-        ]
+        ticked = [item.text() for item in self._items if item.checkState() == qtc.Qt.CheckState.Checked]
         return self.edit_title.text().strip(), ticked
 
 
@@ -370,7 +371,7 @@ class SpectrogramDialog(qtw.QDialog):
 
     WINDOW_LENGTHS = (64, 128, 256, 512, 1024, 2048)
 
-    def __init__(self, signal_labels: list[str], parent=None):
+    def __init__(self, signal_labels: list[str], parent: qtw.QWidget | None = None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Add Spectrogram")
         self.setMinimumWidth(280)

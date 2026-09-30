@@ -77,7 +77,7 @@ class _PainterExporter(pg_exporters.Exporter):
     def _device(self, file_name: str, width: float, height: float) -> qtg.QPaintDevice:
         raise NotImplementedError
 
-    def export(self, file_name: str):
+    def export(self, file_name: str) -> None:
         source_rect = self.getSourceRect()
         device = self._device(file_name, source_rect.width(), source_rect.height())
         target_rect = qtc.QRectF(0, 0, source_rect.width(), source_rect.height())
@@ -97,7 +97,7 @@ class _PdfExporter(_PainterExporter):
     always pops up an OS print dialog — so render to a `QPdfWriter`.
     """
 
-    def _device(self, file_name, width, height):
+    def _device(self, file_name: str, width: float, height: float) -> qtg.QPaintDevice:
         writer = qtg.QPdfWriter(file_name)
         writer.setResolution(96)
         writer.setPageSize(qtg.QPageSize(qtc.QSizeF(width, height), qtg.QPageSize.Unit.Point))
@@ -113,7 +113,7 @@ class _SvgExporter(_PainterExporter):
     `QSvgGenerator` writes the vector output without that step.
     """
 
-    def _device(self, file_name, width, height):
+    def _device(self, file_name: str, width: float, height: float) -> qtg.QPaintDevice:
         generator = QSvgGenerator()
         generator.setFileName(file_name)
         generator.setSize(qtc.QSize(round(width), round(height)))
@@ -129,7 +129,7 @@ IMAGE_EXPORTERS = {
 
 
 def export_images(
-    plot_items: dict[str, pg.PlotItem], base_path, suffix: str
+    plot_items: dict[str, pg.PlotItem], base_path: str | Path, suffix: str
 ) -> tuple[list[Path], dict[str, Exception]]:
     """
     Render every plot to an image file of type `suffix` (a key of
@@ -153,7 +153,7 @@ def export_images(
     return written, failed
 
 
-def export_csv(signals: dict[str, SignalModel], base_path) -> list[Path]:
+def export_csv(signals: dict[str, SignalModel], base_path: str | Path) -> list[Path]:
     """One `time,value` CSV per signal."""
     base_path = Path(base_path)
     written = []
@@ -168,7 +168,7 @@ def export_csv(signals: dict[str, SignalModel], base_path) -> list[Path]:
     return written
 
 
-def export_mat(signals: dict[str, SignalModel], path) -> Path:
+def export_mat(signals: dict[str, SignalModel], path: str | Path) -> Path:
     """
     Every signal into one MATLAB .mat file, as `<name>_time` / `<name>_data`
     variables, `<name>` being the label made a valid MATLAB variable name
@@ -185,7 +185,7 @@ def export_mat(signals: dict[str, SignalModel], path) -> Path:
     return path
 
 
-def export_h5(signals: dict[str, SignalModel], path) -> Path:
+def export_h5(signals: dict[str, SignalModel], path: str | Path) -> Path:
     """Every signal into one HDF5 file: a group per signal with `time`/`data` datasets and `fs`/`label` attributes."""
     path = Path(path).with_suffix(".h5")
     with h5py.File(path, "w") as f:

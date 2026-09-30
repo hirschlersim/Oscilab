@@ -1,10 +1,13 @@
 from collections import deque
 
 import numpy as np
+import numpy.typing as npt
 from scipy import signal
 
 from oscilab.ring_buffer import RingBuffer
 from oscilab.storage import Storage
+
+type RollingBuffer = RingBuffer | deque[float]
 
 
 class SignalModel:
@@ -31,7 +34,7 @@ class SignalModel:
     call `snapshot()` instead and they share one. Invalidated on any write.
     """
 
-    def __init__(self, label: str, fs: float, duration: float = 10.0, storage: Storage = Storage.ring):
+    def __init__(self, label: str, fs: float, duration: float = 10.0, storage: Storage = Storage.ring) -> None:
         self.label = label
         self.fs = fs
         self.duration = duration  # How many seconds of history the buffer holds
@@ -39,26 +42,26 @@ class SignalModel:
         maxlen = self.__maxlen_for(duration)
         self.data = self.__make_buffer(maxlen)
         self.time = self.__make_buffer(maxlen)
-        self.sos = None  # Filter
-        self.zi = None
-        self.gain = None  # Scaling
-        self.offset = None
-        self._cache = None  # (time_array, data_array), see `snapshot()`
+        self.sos: np.ndarray | None = None  # Filter
+        self.zi: np.ndarray | None = None
+        self.gain: float | None = None  # Scaling
+        self.offset: float | None = None
+        self._cache: tuple[np.ndarray, np.ndarray] | None = None  # (time_array, data_array), see `snapshot()`
 
     def __maxlen_for(self, duration: float) -> int:
         return max(1, round(duration * self.fs))
 
-    def __make_buffer(self, maxlen: int):
+    def __make_buffer(self, maxlen: int) -> RollingBuffer:
         return RingBuffer(maxlen) if self.storage is Storage.ring else deque(maxlen=maxlen)
 
-    def __rebuilt(self, existing, maxlen):
+    def __rebuilt(self, existing: RollingBuffer, maxlen: int) -> RollingBuffer:
         """New empty buffer of `maxlen`, refilled with `existing`'s current tail."""
         buffer = self.__make_buffer(maxlen)
         values = np.asarray(existing)
         buffer.extend(values[-maxlen:] if len(values) > maxlen else values)
         return buffer
 
-    def set_duration(self, duration: float):
+    def set_duration(self, duration: float) -> None:
         """
         Resize the rolling buffer to hold `duration` seconds at this signal's fs.
 
@@ -71,20 +74,20 @@ class SignalModel:
         self.data = self.__rebuilt(self.data, maxlen)
         self._cache = None
 
-    def add_data(self, t, x):
-        x = np.asarray(x)
+    def add_data(self, t: npt.ArrayLike, x: npt.ArrayLike) -> None:
+        samples = np.asarray(x)
 
-        if self.gain is not None:
-            x = (x - self.offset) * self.gain
+        if self.gain is not None and self.offset is not None:
+            samples = (samples - self.offset) * self.gain
 
-        if self.sos is not None:
-            x, self.zi = signal.sosfilt(sos=self.sos, x=x, zi=self.zi)
+        if self.sos is not None and self.zi is not None:
+            samples, self.zi = signal.sosfilt(sos=self.sos, x=samples, zi=self.zi)
 
-        self.data.extend(x)
-        self.time.extend(t)
+        self.data.extend(samples)
+        self.time.extend(np.asarray(t))
         self._cache = None
 
-    def set_data(self, t, x):
+    def set_data(self, t: npt.ArrayLike, x: npt.ArrayLike) -> None:
         """
         Wholesale-replace the buffer (used by derived/math signals).
 
@@ -93,9 +96,9 @@ class SignalModel:
         doesn't hold for a value recomputed from scratch every tick.
         """
         self.time.clear()
-        self.time.extend(t)
+        self.time.extend(np.asarray(t))
         self.data.clear()
-        self.data.extend(x)
+        self.data.extend(np.asarray(x))
         self._cache = None
 
     def snapshot(self) -> tuple[np.ndarray, np.ndarray]:
@@ -107,7 +110,7 @@ class SignalModel:
             self._cache = (np.asarray(self.time), np.asarray(self.data))
         return self._cache
 
-    def compute_metrics(self) -> dict:
+    def compute_metrics(self) -> dict[str, float | None]:
         """Live stats over the current buffer: min, mean, max, peak-to-peak, RMS."""
         if not self.data:
             return {"min": None, "mean": None, "max": None, "ptp": None, "rms": None}
@@ -122,18 +125,18 @@ class SignalModel:
             "rms": float(np.sqrt(np.dot(arr, arr) / len(arr))),  # same as np.sqrt(np.mean(np.square(arr)))
         }
 
-    def add_filter(self, cutoff: float = 50.0, order: int = 4):
-        self.sos = signal.butter(N=order, Wn=cutoff, btype="low", analog=False, fs=self.fs, output="sos")
-        self.zi = signal.sosfilt_zi(self.sos)
+    def add_filter(self, cutoff: float = 50.0, order: int = 4) -> None:
+        sos = signal.butter(N=order, Wn=cutoff, btype="low", analog=False, fs=self.fs, output="sos")
+        self.sos, self.zi = sos, signal.sosfilt_zi(sos)
 
-    def remove_filter(self):
+    def remove_filter(self) -> None:
         self.sos = None
         self.zi = None
 
-    def add_scaling(self, gain: float, offset: float):
+    def add_scaling(self, gain: float, offset: float) -> None:
         self.gain = gain
         self.offset = offset
 
-    def remove_scaling(self):
+    def remove_scaling(self) -> None:
         self.gain = None
         self.offset = None

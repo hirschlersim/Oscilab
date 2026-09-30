@@ -73,7 +73,7 @@ def build_everything(window: Oscilab):
         window.link(plot="Main", label=label)
     plot.set_y_range(False, -2.0, 2.0)
     window.set_cursors("Main", enabled=True)
-    plot.cursor_region.setRegion((1.0, 2.5))
+    plot.move_cursors(1.0, 2.5)
 
     spectrogram = window.add_spectrogram_plot("b", nperseg=128, noverlap=64)
     spectrogram.set_color_levels(False, -80.0, 0.0)

@@ -19,12 +19,14 @@ every public method here holds `self._lock` for its whole body.
 """
 
 import threading
+from collections.abc import Iterator
 
 import numpy as np
+import numpy.typing as npt
 
 
 class RingBuffer:
-    def __init__(self, maxlen: int):
+    def __init__(self, maxlen: int) -> None:
         if maxlen <= 0:
             raise ValueError("maxlen must be positive")
         self.maxlen = maxlen
@@ -33,7 +35,7 @@ class RingBuffer:
         self._count = 0  # number of valid elements currently stored
         self._lock = threading.Lock()
 
-    def extend(self, values):
+    def extend(self, values: npt.ArrayLike) -> None:
         values = np.asarray(values, dtype=np.float64)
         n = len(values)
         if n == 0:
@@ -60,7 +62,7 @@ class RingBuffer:
                 new_count = self.maxlen
             self._count = new_count
 
-    def clear(self):
+    def clear(self) -> None:
         with self._lock:
             self._start = 0
             self._count = 0
@@ -77,7 +79,7 @@ class RingBuffer:
             # The valid range wraps past the end of the backing array.
             return np.concatenate((self._buf[self._start : self.maxlen], self._buf[0 : end - self.maxlen]))
 
-    def __array__(self, dtype=None) -> np.ndarray:
+    def __array__(self, dtype: npt.DTypeLike | None = None) -> np.ndarray:
         arr = self.to_array()
         return arr.astype(dtype) if dtype is not None else arr
 
@@ -85,10 +87,11 @@ class RingBuffer:
         with self._lock:
             return self._count
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[float]:
         return iter(self.to_array())  # to_array() takes a consistent snapshot under the lock
 
-    def __getitem__(self, index):
+    def __getitem__(self, index: int) -> float:
+
         with self._lock:
             if self._count == 0:
                 raise IndexError("RingBuffer is empty")

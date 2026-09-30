@@ -6,27 +6,38 @@ registry/wiring logic here. Keeping this Qt-widget-light makes it possible
 to test linking/producer logic without spinning up a full window.
 """
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
+from typing import TYPE_CHECKING
 
+import numpy as np
 from loguru import logger as default_logger
 from PyQt6 import QtCore as qtc
 from PyQt6 import QtWidgets as qtw
 
 from oscilab import exporters
 from oscilab.dialogs import RangeDialog
+from oscilab.display import TimeMode
 from oscilab.math_signal import MathSignal
 from oscilab.producers import DataProducer
-from oscilab.signal_controller import SignalController
+from oscilab.signal_controller import SignalController, SignalRow
 from oscilab.signal_model import SignalModel
 from oscilab.spectrogram_plot import SpectrogramPlot
 from oscilab.storage import Storage
 from oscilab.timeseries_plot import TimeseriesPlot
 from oscilab.view import View
 
+if TYPE_CHECKING:
+    from loguru import Logger
+
 
 def _ask_range(
-    parent, title: str, auto: bool, pinned: tuple[float, float], live: tuple[float, float], unit: str = ""
+    parent: qtw.QWidget | None,
+    title: str,
+    auto: bool,
+    pinned: tuple[float, float],
+    live: tuple[float, float],
+    unit: str = "",
 ) -> tuple[bool, float, float] | None:
     """
     Ask for an Auto/Min/Max range, pre-filled with what's in effect right
@@ -52,7 +63,7 @@ class _ProducerLink(qtc.QObject):
     after its producers had been garbage-collected: a hard crash.
     """
 
-    def __init__(self, producer: DataProducer, models: list[SignalModel], on_error):
+    def __init__(self, producer: DataProducer, models: list[SignalModel], on_error: Callable[[str], None]) -> None:
         super().__init__(producer)
         self._models = models
         self._on_error = on_error
@@ -60,18 +71,18 @@ class _ProducerLink(qtc.QObject):
         producer.error.connect(self.report_error)
 
     @qtc.pyqtSlot(object, object)
-    def deliver(self, t, x):
+    def deliver(self, t: np.ndarray, x: np.ndarray) -> None:
         # Queued from the producer's thread, so this never races the refresh loop
         for model, row in zip(self._models, x, strict=True):
             model.add_data(t, row)
 
     @qtc.pyqtSlot(str)
-    def report_error(self, message: str):
+    def report_error(self, message: str) -> None:
         self._on_error(message)
 
 
 class Workspace:
-    def __init__(self, logger=None):
+    def __init__(self, logger: "Logger | None" = None) -> None:
         # Oscilab passes its window's logger, so messages reach its status bar
         self._logger = logger or default_logger
 
@@ -85,10 +96,10 @@ class Workspace:
         self._producer_errors: dict[str, str] = {}  # signal label -> why its producer stopped
         self._plot_theme = ("#202f46", "#ffffff")  # (background, foreground), applied to new plots too
         self._duration = 10.0  # seconds of history kept/displayed, applied to new signals too
-        self._time_mode = "global"  # "global" or "relative", applied to new plots too
+        self._time_mode: TimeMode = "global"  # "global" or "relative", applied to new plots too
         self._downsampling = False  # min-max curve downsampling, applied to new plots too
 
-    def _log(self, message: str, level: str = "info"):
+    def _log(self, message: str, level: str = "info") -> None:
         self._logger.opt(depth=1).log(level.upper(), message)
 
     @property
@@ -97,7 +108,7 @@ class Workspace:
         return self._duration
 
     @property
-    def time_mode(self) -> str:
+    def time_mode(self) -> TimeMode:
         return self._time_mode
 
     @property
@@ -152,7 +163,7 @@ class Workspace:
         spectrogram = SpectrogramPlot(label=label, model=model, nperseg=nperseg, noverlap=noverlap)
         controller = self.__add_view(label, spectrogram)
 
-        def open_color_dialog():
+        def open_color_dialog() -> None:
             levels = spectrogram.img.getLevels()  # None until the first STFT frame is drawn
             chosen = _ask_range(
                 controller,
@@ -176,7 +187,7 @@ class Workspace:
         row.visibility_changed.connect(spectrogram.set_visible)
         return spectrogram, controller
 
-    def __check_new_title(self, title: str):
+    def __check_new_title(self, title: str) -> None:
         if title in self.views:
             raise ValueError(f"Plot '{title}' already exists")
 
@@ -200,7 +211,7 @@ class Workspace:
         self.controllers[title] = controller
         return controller
 
-    def __open_y_axis_dialog(self, title: str):
+    def __open_y_axis_dialog(self, title: str) -> None:
         view = self.views[title]
         chosen = _ask_range(
             self.controllers[title],
@@ -247,7 +258,7 @@ class Workspace:
         self._log(f"Created math signal '{label}' = {signal_a} {operator} {signal_b}")
         return derived_model
 
-    def link(self, plot: str, label: str):
+    def link(self, plot: str, label: str) -> None:
         if plot not in self.views:
             raise ValueError(f"Unknown plot '{plot}'")
         if plot not in self.plots:
@@ -267,7 +278,7 @@ class Workspace:
         row.color_changed.connect(target_plot.set_color)
         row.set_color(color)  # Sync the row's swatch to the color the plot assigned
 
-    def _link_row(self, label: str, model, derived: bool, has_curve: bool):
+    def _link_row(self, label: str, model: SignalModel, derived: bool, has_curve: bool) -> SignalRow:
         """
         Return this signal's one row in the flat `signal_list`, creating
         it on first use. A signal linked to a second/third plot reuses the
@@ -287,7 +298,7 @@ class Workspace:
             row.set_error(self._producer_errors[label])
         return row
 
-    def unlink(self, plot: str, label: str):
+    def unlink(self, plot: str, label: str) -> None:
         """Take a signal off a time-series plot. Its row goes once no plot shows it."""
         if plot not in self.plots:
             raise ValueError(f"Unknown time-series plot '{plot}'")
@@ -298,7 +309,7 @@ class Workspace:
         target.remove_signal(label)
         self.__drop_row_if_unshown(label)
 
-    def remove_plot(self, title: str):
+    def remove_plot(self, title: str) -> None:
         """
         Remove a plot — time series or spectrogram. Its signals stay; rows of
         signals no plot shows anymore go.
@@ -321,7 +332,7 @@ class Workspace:
             self.__drop_row_if_unshown(label)
         self._log(f"Removed plot '{title}'")
 
-    def remove_signal(self, label: str):
+    def remove_signal(self, label: str) -> None:
         """
         Remove a math signal, or one you registered yourself, from every plot
         and the list. A producer-fed signal can't go on its own — its producer
@@ -344,24 +355,24 @@ class Workspace:
         del self.signals[label]
         self._log(f"Removed signal '{label}'")
 
-    def __remove_signal_from_row(self, label: str):
+    def __remove_signal_from_row(self, label: str) -> None:
         try:
             self.remove_signal(label)
         except ValueError as e:  # E.g. another math signal uses it: say so (this is a Qt slot)
             self._log(str(e), level="warning")
 
-    def __disconnect_row(self, label: str, view: View):
+    def __disconnect_row(self, label: str, view: View) -> None:
         row = self.signal_list.rows[label]
         row.visibility_changed.disconnect(view.set_visible)
         if isinstance(view, TimeseriesPlot):
             row.color_changed.disconnect(view.set_color)
 
-    def __drop_row_if_unshown(self, label: str):
+    def __drop_row_if_unshown(self, label: str) -> None:
         shown = label in self.spectrograms or any(label in plot.curves for plot in self.plots.values())
         if not shown and label in self.signal_list.rows:
             self.signal_list.remove_signal(label)
 
-    def __relink_x_axes(self):
+    def __relink_x_axes(self) -> None:
         """Link every time-series plot's X axis to the first one again (e.g. after the first was removed)."""
         plots = list(self.plots.values())
         for plot in plots:
@@ -402,7 +413,7 @@ class Workspace:
         self._log(f"Started {type(producer).__name__} for {', '.join(repr(label) for label in labels)}")
         return models
 
-    def __on_producer_error(self, labels: list[str], message: str):
+    def __on_producer_error(self, labels: list[str], message: str) -> None:
         names = ", ".join(repr(label) for label in labels)
         self._log(f"Producer for {names} stopped: {message}", level="error")
         for label in labels:
@@ -410,20 +421,20 @@ class Workspace:
             if label in self.signal_list.rows:
                 self.signal_list.rows[label].set_error(message)
 
-    def start_producer(self, label: str):
+    def start_producer(self, label: str) -> None:
         """Start the producer feeding `label` (and its other signals) again, if it's stopped."""
         producer = self.__producer_feeding(label)
         if not producer.running:
             self.__start(producer, "Started")
 
-    def stop_producer(self, label: str):
+    def stop_producer(self, label: str) -> None:
         """Stop the producer feeding `label` (and its other signals); its data stays."""
         producer = self.__producer_feeding(label)
         if producer.running:
             producer.stop()
             self._log(f"Stopped {self.__describe(producer)}")
 
-    def restart_producer(self, label: str):
+    def restart_producer(self, label: str) -> None:
         """
         Restart the producer feeding `label` (and its other signals), e.g.
         after it stopped with an error. A running producer is stopped first.
@@ -432,7 +443,7 @@ class Workspace:
         producer.stop()
         self.__start(producer, "Restarted")
 
-    def __start(self, producer: DataProducer, verb: str):
+    def __start(self, producer: DataProducer, verb: str) -> None:
         producer.wait()  # An error's on_stop() may still be finishing
         for name in self.signals_fed_by(producer):
             self._producer_errors.pop(name, None)
@@ -460,11 +471,11 @@ class Workspace:
     def __describe(self, producer: DataProducer) -> str:
         return f"{type(producer).__name__} for {', '.join(repr(name) for name in self.signals_fed_by(producer))}"
 
-    def stop_producers(self):
+    def stop_producers(self) -> None:
         for producer in dict.fromkeys(self.producers.values()):  # a multi-channel producer is listed once per signal
             producer.stop()
 
-    def refresh(self):
+    def refresh(self) -> None:
         for math_signal in self.math_signals.values():
             t, x = math_signal.compute()
             self.signals[math_signal.label].set_data(t, x)
@@ -472,7 +483,7 @@ class Workspace:
         self.__refresh_views()
         self.signal_list.refresh()
 
-    def __refresh_views(self):
+    def __refresh_views(self) -> None:
         now = self.__newest_shown_time()
         for view in self.views.values():
             view.refresh(now)
@@ -490,11 +501,11 @@ class Workspace:
         newest = [self.signals[label].time[-1] for label in self.signal_list.rows if self.signals[label].time]
         return max(newest, default=None)
 
-    def reset_views(self):
+    def reset_views(self) -> None:
         for view in self.views.values():
             view.reset_view()
 
-    def set_cursors(self, plot: str, enabled: bool):
+    def set_cursors(self, plot: str, enabled: bool) -> None:
         """Toggle classic two-cursor measurement on `plot` (see `TimeseriesPlot.set_cursors`)."""
         if plot not in self.plots:
             raise ValueError(f"Unknown plot '{plot}'")
@@ -505,13 +516,13 @@ class Workspace:
             self.controllers[plot].set_cursor_readout(None)
         self._log(f"Cursors {'enabled' if enabled else 'disabled'} on '{plot}'")
 
-    def __refresh_cursor_readout(self, title: str):
+    def __refresh_cursor_readout(self, title: str) -> None:
         """
         Recompute and display `title`'s cursor readout, if cursors are on.
         Called every refresh tick and also directly on every cursor drag, so
         it stays live even while the refresh timer is stopped (paused).
         """
-        readout = self.views[title].cursor_readout()
+        readout = self.plots[title].cursor_readout()
         if readout is not None:
             self.controllers[title].set_cursor_readout(self.__format_cursor_readout(readout))
 
@@ -523,13 +534,13 @@ class Workspace:
             lines.append(f"  {label}: A={v['value_a']:+.3f}  B={v['value_b']:+.3f}  Δ={v['delta']:+.3f}")
         return "\n".join(lines)
 
-    def set_theme(self, bg: str, fg: str):
+    def set_theme(self, bg: str, fg: str) -> None:
         """Apply a plot color theme now, and remember it for plots added later."""
         self._plot_theme = (bg, fg)
         for view in self.views.values():
             view.set_theme(bg, fg)
 
-    def set_time_mode(self, mode: str):
+    def set_time_mode(self, mode: TimeMode) -> None:
         """
         Apply a time-axis mode ("global"/"relative") now, and remember it
         for plots added later.
@@ -539,7 +550,7 @@ class Workspace:
             view.set_time_mode(mode)
         self.__refresh_views()  # On the shared "now" right away, even while paused
 
-    def set_downsampling(self, enabled: bool):
+    def set_downsampling(self, enabled: bool) -> None:
         """
         Apply min-max curve downsampling now, and remember it for plots
         added later. (Spectrograms ignore it — their pixels are already
@@ -550,7 +561,7 @@ class Workspace:
             view.set_downsampling(enabled)
         self._log(f"Downsampling {'enabled' if enabled else 'disabled'}")
 
-    def set_duration(self, duration: float):
+    def set_duration(self, duration: float) -> None:
         """
         Resize every signal's rolling buffer to hold `duration` seconds,
         and remember it for signals registered later.
@@ -564,7 +575,7 @@ class Workspace:
         """Every view's `PlotItem`, keyed by title — what the image exporters render."""
         return {title: view.plot_item for title, view in self.views.items()}
 
-    def __export_images(self, base_path, suffix: str) -> list[Path]:
+    def __export_images(self, base_path: str | Path, suffix: str) -> list[Path]:
         written, failed = exporters.export_images(self.__plot_items(), base_path, suffix)
         format_name = suffix.lstrip(".").upper()
         for title, error in failed.items():
@@ -572,32 +583,32 @@ class Workspace:
         self._log(f"Exported {len(written)} plot(s) to {format_name}", level="success")
         return written
 
-    def export_png(self, base_path) -> list[Path]:
+    def export_png(self, base_path: str | Path) -> list[Path]:
         """Export every plot to a PNG next to `base_path` (raster)."""
         return self.__export_images(base_path, ".png")
 
-    def export_svg(self, base_path) -> list[Path]:
+    def export_svg(self, base_path: str | Path) -> list[Path]:
         """Export every plot to an SVG next to `base_path` (vector)."""
         return self.__export_images(base_path, ".svg")
 
-    def export_pdf(self, base_path) -> list[Path]:
+    def export_pdf(self, base_path: str | Path) -> list[Path]:
         """Export every plot to a PDF next to `base_path` (vector)."""
         return self.__export_images(base_path, ".pdf")
 
-    def export_csv(self, base_path) -> list[Path]:
+    def export_csv(self, base_path: str | Path) -> list[Path]:
         """Export every signal's (time, value) buffer to a CSV next to `base_path`."""
         written = exporters.export_csv(self.signals, base_path)
         self._log(f"Exported {len(written)} signal(s) to CSV", level="success")
         return written
 
-    def export_mat(self, path) -> Path:
+    def export_mat(self, path: str | Path) -> Path:
         """Export every signal's (time, value) buffer into one MATLAB .mat file."""
-        path = exporters.export_mat(self.signals, path)
-        self._log(f"Exported {len(self.signals)} signal(s) to {path.name}", level="success")
-        return path
+        written = exporters.export_mat(self.signals, path)
+        self._log(f"Exported {len(self.signals)} signal(s) to {written.name}", level="success")
+        return written
 
-    def export_h5(self, path) -> Path:
+    def export_h5(self, path: str | Path) -> Path:
         """Export every signal's (time, value) buffer into one HDF5 .h5 file."""
-        path = exporters.export_h5(self.signals, path)
-        self._log(f"Exported {len(self.signals)} signal(s) to {path.name}", level="success")
-        return path
+        written = exporters.export_h5(self.signals, path)
+        self._log(f"Exported {len(self.signals)} signal(s) to {written.name}", level="success")
+        return written

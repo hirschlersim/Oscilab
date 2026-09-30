@@ -13,6 +13,8 @@ from typing import Protocol, runtime_checkable
 
 import pyqtgraph as pg
 
+from oscilab.display import TimeMode
+
 
 @runtime_checkable
 class View(Protocol):
@@ -37,12 +39,16 @@ class View(Protocol):
 
     def set_theme(self, bg: str, fg: str) -> None: ...
 
-    def set_time_mode(self, mode: str) -> None:
+    def set_time_mode(self, mode: TimeMode) -> None:
         """`"global"` (time as recorded) or `"relative"` (newest sample at 0)."""
         ...
 
     def set_downsampling(self, enabled: bool) -> None:
         """Min-max curve downsampling; a no-op where it doesn't apply."""
+        ...
+
+    def set_visible(self, label: str, visible: bool) -> None:
+        """Show or hide signal `label` — its row's Visible toggle."""
         ...
 
     def set_y_range(self, auto: bool, y_min: float = 0.0, y_max: float = 1.0) -> None: ...
@@ -54,3 +60,8 @@ class View(Protocol):
     def reset_view(self) -> None:
         """Re-fit to the data (View > Reset View), keeping a pinned Y range."""
         ...
+
+    # A view is a QWidget; removing a plot uses these two of its methods.
+    def hide(self) -> None: ...
+
+    def deleteLater(self) -> None: ...  # noqa: N802 — Qt's name
