@@ -4,6 +4,10 @@
 
 ## Code quality
 
+- **Split the workspace**, as the window was (`oscilab.ui`): `workspace.py`
+  is 907 lines. The triggering — feeding the acquisition, capturing records
+  into the time plots, the level lines — would be a class of its own, as
+  could the plot creation and removal; the workspace keeps the registries.
 - **Smoke-test the demo and the example scripts.** Nothing runs `demo.py`,
   `scripts/xbox_controller.py`, `sensor_logger.py` or `udp_example.py` today
   (0% coverage): run each headless for a second, with a fake controller,
