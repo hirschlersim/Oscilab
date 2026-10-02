@@ -254,4 +254,6 @@ class TriggerPanel(qtw.QGroupBox):
         self.__show_rows_for(settings.type)
 
     def set_status(self, text: str, color: str) -> None:
-        self.status.setText(f"<span style='color: {color}'>●</span> {text}")
+        status = f"<span style='color: {color}'>●</span> {text}"
+        if self.status.text() != status:  # Called every refresh: lay out anew only when it changed
+            self.status.setText(status)

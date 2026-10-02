@@ -5,10 +5,16 @@ import pyqtgraph as pg
 from PyQt6 import QtCore as qtc
 
 from oscilab.display import TIME_MODES, TimeMode
+from oscilab.grid import GridPlotWidget
 from oscilab.signal_model import SignalModel
 
+# Downsampled, a curve keeps the min and max of this many groups of samples
+# per pixel column: two, about one per physical pixel at 150 % scaling.
+# (pyqtgraph's own default of five draws 2.5x the points, no better looking.)
+_GROUPS_PER_PIXEL = 2.0
 
-class TimeseriesPlot(pg.PlotWidget):
+
+class TimeseriesPlot(GridPlotWidget):
     """Scrolling multi-signal time-series plot. Implements `oscilab.view.View`."""
 
     cursor_changed = qtc.pyqtSignal()  # Cursor region dragged — fires even while paused
@@ -18,7 +24,7 @@ class TimeseriesPlot(pg.PlotWidget):
 
         self._title = title
         self.time_mode: TimeMode = "global"  # "global" (as recorded) or "relative" ([-duration, 0], now at 0)
-        self.downsampling = False  # Off by default — opt in via the toolbar "Downsample" button
+        self.downsampling = True  # On by default — the toolbar's Downsample button turns it off
         self.y_range_auto = True  # Off: Y is pinned to (y_range_min, y_range_max), sticky across Reset View
         self.y_range_min = 0.0
         self.y_range_max = 1.0
@@ -35,8 +41,7 @@ class TimeseriesPlot(pg.PlotWidget):
         self.curves: dict[str, pg.PlotDataItem] = {}
         self.models: dict[str, SignalModel] = {}
 
-        # Style and Color
-        self.showGrid(x=True, y=True, alpha=0.3)
+        # Style and Color (the grid: see GridPlotWidget)
         self.addLegend()
         # Y ticks show the values as they are, like the metrics and cursor
         # readouts, instead of rescaling them to mV, k°C, ...
@@ -100,6 +105,7 @@ class TimeseriesPlot(pg.PlotWidget):
                 continue
             x, y = model.snapshot()
             self._draw(label, x - self._shift, y)
+        self._settle_view()
 
     def _draw(self, label: str, t: np.ndarray, y: np.ndarray) -> None:
         """Show one signal's samples; `t` is already in screen time. Subclasses draw them their own way."""
@@ -111,7 +117,12 @@ class TimeseriesPlot(pg.PlotWidget):
 
     def add_signal(self, label: str, model: SignalModel) -> str:
         color = self.colors[len(self.curves) % len(self.colors)]
-        curve = self.plot(pen=pg.mkPen(color, width=1.5), name=model.display_name, antialias=False)
+        curve = self.plot(
+            pen=pg.mkPen(color, width=1.5),
+            name=model.display_name,
+            antialias=False,
+            autoDownsampleFactor=_GROUPS_PER_PIXEL,
+        )
         curve.setDownsampling(auto=self.downsampling, method="peak")
         curve.setClipToView(self.downsampling)
         self.curves[label] = curve
@@ -157,9 +168,9 @@ class TimeseriesPlot(pg.PlotWidget):
 
     def set_downsampling(self, enabled: bool) -> None:
         """
-        Min-max ("peak") downsampling: for every screen pixel column, keep
-        only that column's min and max sample — a spike is never dropped
-        just because there are more samples than pixels to draw them in.
+        Min-max ("peak") downsampling: for every half pixel column, keep
+        only its min and max sample — a spike is never dropped just because
+        there are more samples than pixels to draw them in.
         Paired with clip-to-view (skip processing off-screen points) since
         both are the same "render less without changing what you'd see"
         tradeoff. Applies to every curve, current and future.

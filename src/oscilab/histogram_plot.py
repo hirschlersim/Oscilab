@@ -12,10 +12,11 @@ import numpy as np
 import pyqtgraph as pg
 
 from oscilab.display import TimeMode
+from oscilab.grid import GridPlotWidget
 from oscilab.signal_model import SignalModel
 
 
-class HistogramPlot(pg.PlotWidget):
+class HistogramPlot(GridPlotWidget):
     """One signal's value distribution — see the module docstring. Implements `oscilab.view.View`."""
 
     y_unit = ""  # Counts
@@ -33,7 +34,6 @@ class HistogramPlot(pg.PlotWidget):
         self.y_range_min = 0.0
         self.y_range_max = 1.0
 
-        self.showGrid(x=True, y=True, alpha=0.3)
         self.setMenuEnabled(False)
         self.getAxis("bottom").enableAutoSIPrefix(False)
         self.setLabel("left", "Count")
@@ -76,6 +76,7 @@ class HistogramPlot(pg.PlotWidget):
         else:
             self.bars.clear()
         self.setTitle(self.__title_with_stats(), color=self._fg)
+        self._settle_view()
 
     def __title_with_stats(self) -> str:
         _, data = self.model.snapshot()

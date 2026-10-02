@@ -43,6 +43,7 @@ def trigger(**changes) -> TriggerSettings:
 
 @pytest.fixture
 def feed(workspace):
+    workspace.set_downsampling(False)  # Every sample drawn: the curves are exactly the records
     feed = Feed(workspace, s=sine, c=lambda t: np.cos(2 * np.pi * 2 * t))
     for title, labels in (("A", ["s"]), ("B", ["c"])):
         workspace.add_plot(title)

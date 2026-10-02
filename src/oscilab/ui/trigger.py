@@ -24,6 +24,7 @@ class TriggerControls:
         self.action = qtg.QAction("Trigger", window)
         self.action.setCheckable(True)
         self.action.setIcon(dot_icon("gray"))
+        self.__shown = ("Trigger", "gray")  # The button's text and dot color
         self.action.setToolTip(
             "Trigger the time plots, as a scope does: each shows the record around a trigger, held until the next.\n"
             "Its settings: the Trigger panel; Run, Single, Stop and Force: the drop-down"
@@ -142,11 +143,17 @@ class TriggerControls:
         if acquisition is None:
             if self.action.isChecked():  # Turned off by the workspace: its source went
                 self.set(None)
-            self.action.setText("Trigger")
-            self.action.setIcon(dot_icon("gray"))
+            self.__show("Trigger", "gray")
             return
         text, color = acquisition.status()
-        self.action.setText(f"Trigger: {text}")
-        self.action.setIcon(dot_icon(color))
+        self.__show(f"Trigger: {text}", color)
         self.panel.set_status(text, color)
         self.panel.set_signals(list(self.window.workspace.signals))
+
+    def __show(self, text: str, color: str) -> None:
+        """The toolbar button's text and dot — only when they change: each change lays out the toolbar anew."""
+        if (text, color) == self.__shown:
+            return
+        self.__shown = (text, color)
+        self.action.setText(text)
+        self.action.setIcon(dot_icon(color))

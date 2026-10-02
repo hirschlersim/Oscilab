@@ -89,7 +89,7 @@ class Workspace:
         self._plot_theme = ("#202f46", "#ffffff")  # (background, foreground), applied to new plots too
         self._duration = 10.0  # seconds of history kept/displayed, applied to new signals too
         self._time_mode: TimeMode = "global"  # "global" or "relative", applied to new plots too
-        self._downsampling = False  # min-max curve downsampling, applied to new plots too
+        self._downsampling = True  # min-max curve downsampling, applied to new plots too
         self.trigger_changed: Callable[[], None] | None = None  # Told when a level line is dragged
 
         self.plotting = Plotting(self)

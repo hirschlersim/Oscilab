@@ -246,7 +246,7 @@ class Session(_Model):
     fps: Fps = 30
     duration: float = Field(10.0, gt=0, description="Seconds of history kept and shown per signal")
     time_mode: TimeMode = "global"
-    downsampling: bool = False
+    downsampling: bool = True
     recording: RecordingSpec | None = Field(None, description="null = the default settings")
     producers: list[ProducerSpec] = Field(default_factory=list)
     manual_signals: list[ManualSignal] = Field(default_factory=list)

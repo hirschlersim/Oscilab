@@ -16,7 +16,7 @@ The result is a figure of the time per frame over channels x sample rate,
 with the fast-enough area outlined, saved as a PNG (`--output`) and shown.
 
     uv run --group bench scripts/benchmark_refresh.py
-    uv run --group bench scripts/benchmark_refresh.py --downsampling --fps 60
+    uv run --group bench scripts/benchmark_refresh.py --full-detail --fps 60
     uv run --group bench scripts/benchmark_refresh.py --help
 
 The window is on screen while it runs, maximized unless given a `--size`.
@@ -76,36 +76,6 @@ class BlockProducer(SyncDataProducer):
         return n / self.fs, self.table.take(n, axis=1, mode="wrap")
 
 
-class BusyMeter:
-    """How long the GUI thread is busy: from its event loop waking up until it waits again."""
-
-    def __init__(self) -> None:
-        dispatcher = qtc.QAbstractEventDispatcher.instance()
-        if dispatcher is None:
-            raise RuntimeError("No event dispatcher: create the QApplication first")
-        dispatcher.awake.connect(self.__awake)
-        dispatcher.aboutToBlock.connect(self.__about_to_block)
-        self.reset()
-
-    def reset(self) -> None:
-        self.__busy = 0.0
-        self.__awake_since: float | None = time.perf_counter()  # Running this: busy
-
-    def __awake(self) -> None:
-        if self.__awake_since is None:
-            self.__awake_since = time.perf_counter()
-
-    def __about_to_block(self) -> None:
-        if self.__awake_since is not None:
-            self.__busy += time.perf_counter() - self.__awake_since
-            self.__awake_since = None
-
-    def busy(self) -> float:
-        """Seconds busy since `reset`."""
-        running = time.perf_counter() - self.__awake_since if self.__awake_since is not None else 0.0
-        return self.__busy + running
-
-
 @dataclass
 class Result:
     channels: int
@@ -139,7 +109,7 @@ class Bench:
         self.window = Oscilab(app=self.app)
         self.window.set_fps(args.fps)
         self.window.set_duration(args.duration)
-        self.window.set_downsampling(args.downsampling)
+        self.window.set_downsampling(not args.full_detail)
         if args.size is None:
             self.window.showMaximized()
         else:
@@ -150,7 +120,7 @@ class Bench:
         dpr = self.window.devicePixelRatioF()
         self.size = f"{self.window.width()}x{self.window.height()}" + (f" (x{dpr:g} pixels)" if dpr != 1 else "")
 
-        self.meter = BusyMeter()
+        self.meter = self.window.load_ui.meter  # The window's Load bar's
         self.frames = 0
         self.window.refresh_timer.timeout.connect(self.__count_frame)
 
@@ -165,12 +135,13 @@ class Bench:
     def __measured(self) -> tuple[float, float]:
         """After the warm-up: (ms per frame, frames per second)."""
         self.run_for(self.args.warmup)
-        self.meter.reset()
+        busy = self.meter.busy()
         self.frames = 0
         start = time.perf_counter()
         self.run_for(self.args.seconds)
         elapsed = time.perf_counter() - start
-        frame_ms = 1000 * self.meter.busy() / self.frames if self.frames else math.inf
+        busy = self.meter.busy() - busy
+        frame_ms = 1000 * busy / self.frames if self.frames else math.inf
         return frame_ms, self.frames / elapsed
 
     def idle(self) -> tuple[float, float]:
@@ -287,7 +258,7 @@ def figure(results: list[Result], args: argparse.Namespace, size: str, idle: tup
     ax.set_ylabel("Sample rate per channel [Hz]")
     settings = (
         f"{args.fps} FPS, {args.duration:g} s of history, {size} window, "
-        f"downsampling {'on' if args.downsampling else 'off'}, {args.block_rate:g} blocks/s\n"
+        f"{'full detail' if args.full_detail else 'downsampled'}, {args.block_rate:g} blocks/s\n"
         f"Empty window: {idle[0]:.0f} ms per frame, {idle[1]:.0f} FPS"
     )
     ax.set_title(f"Where Oscilab keeps up\n{settings}", fontsize=9)
@@ -315,7 +286,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--per-plot", type=int, default=4, help="signals per time plot (default: 4)")
     parser.add_argument("--fps", type=int, choices=FPS_CHOICES, default=30, help="refresh rate (default: 30)")
     parser.add_argument("--duration", type=float, default=10.0, help="seconds of history kept (default: 10)")
-    parser.add_argument("--downsampling", action="store_true", help="with the toolbar's Downsample on")
+    parser.add_argument("--full-detail", action="store_true", help="with the toolbar's Downsample off")
     parser.add_argument("--block-rate", type=float, default=100.0, help="blocks per second sent (default: 100)")
     parser.add_argument("--size", help="window size, e.g. 1280x800 (default: maximized)")
     parser.add_argument("--warmup", type=float, default=1.0, help="seconds before measuring each (default: 1)")

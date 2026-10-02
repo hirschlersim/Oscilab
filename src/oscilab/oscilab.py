@@ -35,6 +35,7 @@ from oscilab.trigger import TriggerSettings
 from oscilab.ui.common import dot_icon
 from oscilab.ui.controls import CustomControls
 from oscilab.ui.file_menu import FileMenu
+from oscilab.ui.load import LoadBar
 from oscilab.ui.plots_menu import MathMenu, PlotsMenu
 from oscilab.ui.producers_menu import ProducersMenu
 from oscilab.ui.recording import RecordingControls
@@ -132,6 +133,9 @@ class Oscilab(qtw.QMainWindow):
 
         # Timer / Update loop
         self.refresh_timer = qtc.QTimer()
+        # Precise: a coarse timer's 33 ms come round to Windows' 15.6 ms clock
+        # ticks, every 47 ms: 21 frames a second for 30.
+        self.refresh_timer.setTimerType(qtc.Qt.TimerType.PreciseTimer)
         self.refresh_timer.timeout.connect(self.__refresh)
         self.refresh_timer.start(1000 // self._fps)
 
@@ -278,10 +282,12 @@ class Oscilab(qtw.QMainWindow):
         self.downsample_action = qtg.QAction(self)
         self.downsample_action.setCheckable(True)
         self.downsample_action.setToolTip(
-            "Min-max downsampling: thin large buffers down to screen resolution\n"
-            "for faster rendering, without dropping visible spikes"
+            "Downsampled (the default): each curve thinned to the screen's resolution, keeping every\n"
+            "pixel column's min and max, so no spike is dropped; and only the samples in view are drawn.\n"
+            "Full Detail: every sample drawn, much slower with big buffers"
         )
-        self.__set_downsampling(checked=False)
+        self.downsample_action.setChecked(self.workspace.downsampling)
+        self.__set_downsampling(checked=self.workspace.downsampling)
         self.downsample_action.toggled.connect(self.__set_downsampling)
         self.toolbar.addAction(self.downsample_action)
         self.toolbar.addSeparator()
@@ -303,13 +309,9 @@ class Oscilab(qtw.QMainWindow):
     def __build_status_bar(self) -> None:
         self.statusBar().setSizeGripEnabled(False)  # Disables the resize diagonal gripper lines in the corner
         self.statusBar().addPermanentWidget(self.recording_ui.label)
-        load_label = qtw.QLabel("Load [%]:")
-        load_tooltip = "Percent of the refresh interval spent redrawing on the last tick"
-        load_label.setToolTip(load_tooltip)
-        self.statusBar().addPermanentWidget(load_label)
-        self.load_bar = qtw.QProgressBar()
-        self.load_bar.setRange(0, 100)
-        self.load_bar.setToolTip(load_tooltip)
+        self.load_ui = LoadBar(self)
+        self.load_bar = self.load_ui.bar
+        self.statusBar().addPermanentWidget(self.load_ui.label)
         self.statusBar().addPermanentWidget(self.load_bar)
 
     # --- plots --------------------------------------------------------------------------
@@ -716,14 +718,9 @@ class Oscilab(qtw.QMainWindow):
         super().closeEvent(event)
 
     def __refresh(self) -> None:
-        timer = qtc.QElapsedTimer()
-        timer.start()
-
         self.workspace.refresh()
         self.trigger_ui.update_status()
-
-        progress = int((timer.elapsed() / self.refresh_timer.interval()) * 100)
-        self.load_bar.setValue(min(progress, 100))
+        self.load_ui.update()
 
     def __start_application(self) -> qtw.QApplication:
         """The QApplication, when this window is the one starting it: styled, and logging to a file."""
@@ -808,14 +805,13 @@ class Oscilab(qtw.QMainWindow):
         self.workspace.set_duration(duration)
 
     def __set_downsampling(self, checked: bool) -> None:
-        # Green = full detail (nothing thinned, the default); red = downsampled
-        # — same "green means everything's fully shown" convention as a
-        # signal row's Visible/Hidden toggle.
+        # Green = downsampled, the default; orange = full detail, which can
+        # take many times as long to draw with big buffers.
         if checked:
             self.downsample_action.setText("Downsampled")
-            self.downsample_action.setIcon(dot_icon("red"))
+            self.downsample_action.setIcon(dot_icon("green"))
         else:
             self.downsample_action.setText("Full Detail")
-            self.downsample_action.setIcon(dot_icon("green"))
+            self.downsample_action.setIcon(dot_icon("orange"))
 
         self.workspace.set_downsampling(checked)

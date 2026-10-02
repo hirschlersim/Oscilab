@@ -13,12 +13,13 @@ import numpy as np
 import pyqtgraph as pg
 
 from oscilab.display import TimeMode
+from oscilab.grid import GridPlotWidget
 from oscilab.signal_model import SignalModel
 
 _CURVE = "#4ea3ff"
 
 
-class XYPlot(pg.PlotWidget):
+class XYPlot(GridPlotWidget):
     """`y` against `x` — see the module docstring. Implements `oscilab.view.View`."""
 
     def __init__(self, title: str, x: SignalModel, y: SignalModel, trail: float | None = None) -> None:
@@ -36,7 +37,6 @@ class XYPlot(pg.PlotWidget):
         self.x_range_max = 1.0
         self._hidden: set[str] = set()  # Signals whose rows say Hidden: the trace goes while any is
 
-        self.showGrid(x=True, y=True, alpha=0.3)
         self.setMenuEnabled(False)
         for axis in ("left", "bottom"):
             self.getAxis(axis).enableAutoSIPrefix(False)  # Values as they are, like everywhere else
@@ -73,6 +73,7 @@ class XYPlot(pg.PlotWidget):
         x, y = self.points()
         self.curve.setData(x, y)
         self.head.setData(x[-1:], y[-1:])
+        self._settle_view()
 
     def set_theme(self, bg: str, fg: str) -> None:
         self.setBackground(bg)
