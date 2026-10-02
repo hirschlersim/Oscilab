@@ -17,3 +17,6 @@ site/
 
 # Benchmark figures (scripts/benchmark_refresh.py)
 benchmark_*.png
+
+# Coverage data (coverage run)
+.coverage
