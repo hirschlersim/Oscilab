@@ -618,6 +618,8 @@ class Oscilab(qtw.QMainWindow):
 
     def set_duration(self, duration: float) -> None:
         """Seconds of history kept and shown per signal; any value, not just the toolbar's choices."""
+        if duration <= 0:  # Checked here, before the toolbar shows it
+            raise ValueError(f"duration must be positive, got {duration}")
         text = f"{duration:g} s"
         if self._duration_box.findText(text) < 0:
             self._duration_box.addItem(text)
@@ -735,7 +737,7 @@ class Oscilab(qtw.QMainWindow):
         return app
 
     def __load_qss(self, theme: str) -> str:
-        with resources.files("oscilab.assets").joinpath(f"style_{theme}.qss").open("r") as f:
+        with resources.files("oscilab.assets").joinpath(f"style_{theme}.qss").open("r", encoding="utf-8") as f:
             return f.read()
 
     def __set_theme(self, theme: Theme) -> None:

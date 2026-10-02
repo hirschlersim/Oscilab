@@ -91,7 +91,10 @@ class FileMenu:
             self.window, f"Save {export.content.capitalize()} as {export.suffix}", "", export.file_filter
         )
         if path:
-            export.write(workspace, path)
+            try:
+                export.write(workspace, path)
+            except Exception as e:  # noqa: BLE001 — a file open in another program, say: reported (this is a Qt slot)
+                self.__error(f"export the {export.content} as {export.suffix}", e)
 
     def __save_session(self) -> None:
         path, _ = qtw.QFileDialog.getSaveFileName(self.window, "Save Session", "", "Oscilab session (*.json)")
@@ -99,7 +102,7 @@ class FileMenu:
             try:
                 self.window.save_session(path)
             except Exception as e:  # noqa: BLE001 — reported, never fatal (this is a Qt slot)
-                self.__error("save", e)
+                self.__error("save the session", e)
 
     def __open_session(self) -> None:
         path, _ = qtw.QFileDialog.getOpenFileName(self.window, "Open Session", "", "Oscilab session (*.json)")
@@ -114,7 +117,7 @@ class FileMenu:
         try:
             self.window.open_session(path, replace=replace)
         except Exception as e:  # noqa: BLE001 — a bad file or a device that won't open: report it
-            self.__error("open", e)
+            self.__error("open the session", e)
 
     def __ask_replace_or_new_window(self) -> bool | None:
         """For a session opened in a window in use: True to replace its setup, False for a new window, None to cancel."""
@@ -135,6 +138,7 @@ class FileMenu:
             return False
         return None
 
-    def __error(self, verb: str, error: Exception) -> None:
-        self.window.log(f"Couldn't {verb} session: {error}", level="error")
-        qtw.QMessageBox.warning(self.window, f"Couldn't {verb} session", str(error))
+    def __error(self, doing: str, error: Exception) -> None:
+        """Say what couldn't be done, and why: in the status bar and in a message box."""
+        self.window.log(f"Couldn't {doing}: {error}", level="error")
+        qtw.QMessageBox.warning(self.window, f"Couldn't {doing}", str(error))

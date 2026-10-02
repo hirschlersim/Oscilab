@@ -10,6 +10,7 @@ them (`Workspace.set_trigger`) and shows the acquisition's status here.
 from PyQt6 import QtCore as qtc
 from PyQt6 import QtWidgets as qtw
 
+from oscilab.dialogs import NumberBox
 from oscilab.trigger import COUPLINGS, SLOPES, TIME_PER_DIV, TRIGGER_TYPES, Slope, TriggerSettings
 
 _SLOPE_TEXT = {"rising": "↗ Rising", "falling": "↘ Falling", "either": "↕ Either"}
@@ -159,10 +160,8 @@ class TriggerPanel(qtw.QGroupBox):
         return buttons
 
     @staticmethod
-    def __value_spin(tip: str, minimum: float = -1e12) -> qtw.QDoubleSpinBox:
-        spin = qtw.QDoubleSpinBox()
-        spin.setRange(minimum, 1e12)
-        spin.setDecimals(4)
+    def __value_spin(tip: str, minimum: float = -1e15) -> qtw.QDoubleSpinBox:
+        spin = NumberBox(minimum=minimum)  # A level of a few µV, or of millions of counts
         spin.setSingleStep(0.1)
         spin.setToolTip(tip)
         return spin

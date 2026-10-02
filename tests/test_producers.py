@@ -447,3 +447,26 @@ def test_starting_or_stopping_needs_a_producer(workspace):
     workspace.register_signal("manual", fs=10)
     with pytest.raises(ValueError, match="No producer feeds 'manual'"):
         workspace.stop_producer("manual")
+
+
+def test_file_replay_skips_rows_that_arent_numbers(qapp, tmp_path):  # noqa: ARG001
+    path = tmp_path / "rec.csv"
+    path.write_text("time,value\n0.0,1\n0.1,oops\n\n0.2,3\n0.3\n0.4,5\n")  # A note, a blank, one cut short
+    producer = FileReplayProducer(path)
+    t, x = producer._generate(elapsed=1.0)
+    np.testing.assert_allclose(t, [0.0, 0.2, 0.4])
+    np.testing.assert_allclose(x, [[1, 3, 5]])
+
+
+def test_file_replay_reads_utf8_with_or_without_excels_mark(qapp, tmp_path):  # noqa: ARG001
+    path = tmp_path / "rec.csv"
+    path.write_text("﻿time,Temp °C\n0.0,21.5\n0.1,21.6\n", encoding="utf-8")
+    assert FileReplayProducer(path).channels == ("Temp °C",)
+
+
+@pytest.mark.parametrize("times", ["0.0,0.1,0.05", "0.5,0.5,0.5"])
+def test_file_replay_needs_times_that_increase(qapp, tmp_path, times):  # noqa: ARG001
+    path = tmp_path / "rec.csv"
+    path.write_text("time,value\n" + "".join(f"{t},1\n" for t in times.split(",")))
+    with pytest.raises(ValueError, match="must increase"):
+        FileReplayProducer(path)

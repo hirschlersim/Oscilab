@@ -335,3 +335,45 @@ def test_sessions_rebuild_them(qapp, window, tmp_path):
         assert restored.workspace.views["L"].threshold == 2.5
     finally:
         restored.close()
+
+
+# --- what every kind of plot does ----------------------------------------------------------------
+
+
+@pytest.mark.parametrize("kind", ["timeseries", "logic", "xy", "histogram", "spectrogram"])
+def test_a_pinned_y_range_survives_reset_view(workspace, kind):
+    signal(workspace, "a", 100, np.sin(np.arange(300) / 10))
+    signal(workspace, "b", 100, np.cos(np.arange(300) / 10))
+    add = {
+        "timeseries": lambda: workspace.add_plot("P"),
+        "logic": lambda: workspace.add_logic_plot("P"),
+        "xy": lambda: workspace.add_xy_plot("P", "a", "b"),
+        "histogram": lambda: workspace.add_histogram("a", title="P"),
+        "spectrogram": lambda: workspace.add_spectrogram("a", nperseg=64, noverlap=32),
+    }
+    view, _ = add[kind]()
+    if kind in ("timeseries", "logic"):
+        workspace.link(plot="P", label="a")
+    workspace.refresh()
+
+    view.set_y_range(False, -2.0, 3.0)
+    workspace.reset_views()
+    assert view.live_y_range() == pytest.approx((-2.0, 3.0))
+    view.set_y_range(True)
+    assert view.y_range_auto
+
+
+@pytest.mark.parametrize("kind", ["timeseries", "xy", "histogram", "spectrogram"])
+def test_every_plot_takes_the_theme(workspace, kind):
+    signal(workspace, "a", 100, np.arange(300.0))
+    signal(workspace, "b", 100, np.arange(300.0))
+    add = {
+        "timeseries": lambda: workspace.add_plot("P"),
+        "xy": lambda: workspace.add_xy_plot("P", "a", "b"),
+        "histogram": lambda: workspace.add_histogram("a", title="P"),
+        "spectrogram": lambda: workspace.add_spectrogram("a"),
+    }
+    view, _ = add[kind]()
+    workspace.set_theme("#f5f5f5", "#1a1a1a")
+    background = view.plot_item.getViewBox().scene().views()[0].backgroundBrush().color().name()
+    assert background == "#f5f5f5"

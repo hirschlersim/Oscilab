@@ -175,3 +175,22 @@ def test_closing_or_clearing_the_window_ends_the_recording(qapp, tmp_path, end):
     assert not recorder.recording
     np.testing.assert_allclose(samples_in(recorder.files[0], "s"), [])  # Closed properly: readable
     scope.close()
+
+
+def test_settings_without_a_file_are_refused(window, shown, monkeypatch):
+    def fill_in(dialog: StreamDialog) -> qtw.QDialog.DialogCode:
+        dialog.edit_path.setText("")
+        return qtw.QDialog.DialogCode.Accepted
+
+    before = window.recording_options
+    monkeypatch.setattr(StreamDialog, "exec", fill_in)
+    window.stream_settings_action.trigger()
+    assert window.recording_options == before
+    assert shown[-1] == "⚠ Save Stream needs a file to save to"
+
+
+def test_cancelled_settings_change_nothing(window, monkeypatch):
+    before = window.recording_options
+    monkeypatch.setattr(StreamDialog, "exec", lambda _self: qtw.QDialog.DialogCode.Rejected)
+    window.stream_settings_action.trigger()
+    assert window.recording_options == before

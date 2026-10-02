@@ -227,3 +227,49 @@ def test_a_session_saves_the_replay(window, folder):
     (spec,) = session.capture(window).producers
     assert spec.type == "oscilab.replay:RecordingReplayProducer"
     assert spec.args == {"path": str(folder), "signal": "s", "loop": True}
+
+
+def test_replaying_a_recording_twice_numbers_its_plot(window, folder):
+    window.replay_recording(folder)
+    window.replay_recording(folder)
+    assert {"Replay: runs", "Replay: runs (2)"} <= set(window.workspace.plots)
+
+
+def test_a_recording_without_signals_is_refused(window, tmp_path):
+    with h5py.File(tmp_path / "empty.h5", "w") as f:
+        f.attrs["started"] = "never"
+    with pytest.raises(ValueError, match="No signals to replay"):
+        window.replay_recording(tmp_path / "empty.h5")
+
+
+@pytest.fixture
+def logged(window, monkeypatch) -> list[str]:
+    messages: list[str] = []
+    monkeypatch.setattr(window.statusBar(), "showMessage", lambda text, _timeout=0: messages.append(text))
+    return messages
+
+
+def test_the_dialog_with_no_signal_ticked_replays_nothing(window, folder, monkeypatch, logged):
+    def pick(dialog: ReplayDialog) -> qtw.QDialog.DialogCode:
+        dialog.edit_path.setText(str(folder))
+        dialog.edit_path.editingFinished.emit()
+        for row in range(dialog.signal_list.count()):
+            dialog.signal_list.item(row).setCheckState(dialog.signal_list.item(row).checkState().Unchecked)
+        return qtw.QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(ReplayDialog, "exec", pick)
+    window.replay_action.trigger()
+    assert not window.workspace.signals
+    assert logged[-1].endswith("No signals ticked to replay")
+
+
+def test_the_dialog_says_when_a_replay_fails(window, folder, monkeypatch, logged):
+    def pick(dialog: ReplayDialog) -> qtw.QDialog.DialogCode:
+        dialog.edit_path.setText(str(folder))
+        dialog.edit_path.editingFinished.emit()
+        (folder / "rec_B_001.h5").write_bytes(b"not HDF5 any more")  # Between the scan and the replay
+        return qtw.QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(ReplayDialog, "exec", pick)
+    window.replay_action.trigger()  # Must not raise: a Qt slot
+    assert "Couldn't replay" in logged[-1]

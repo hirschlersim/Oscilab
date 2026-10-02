@@ -12,6 +12,7 @@ signal into the one file, the idiomatic layout for both.
 
 import csv
 import re
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 import h5py
@@ -59,11 +60,34 @@ def matlab_names(labels: list[str]) -> dict[str, str]:
     return names
 
 
-def spread_path(base_path: Path, name: str, count: int, suffix: str) -> Path:
-    """`base_path` as-is for a single item; `<base_path>_<name><suffix>` for several."""
-    if count <= 1:
-        return base_path.with_suffix(suffix)
-    return base_path.with_name(f"{base_path.stem}_{safe_name(name)}{suffix}")
+def unique_names(names: Sequence[str], fold: Callable[[str], str] = str) -> list[str]:
+    """
+    `names`, with repeats numbered so each one is unique — `a`, `a_2`, `a_3` —
+    compared after `fold` (`str.lower` for file names, which Windows
+    compares regardless of case).
+    """
+    unique: list[str] = []
+    taken: set[str] = set()
+    for name in names:
+        candidate, n = name, 2
+        while fold(candidate) in taken:
+            candidate, n = f"{name}_{n}", n + 1
+        taken.add(fold(candidate))
+        unique.append(candidate)
+    return unique
+
+
+def spread_paths(base_path: Path, names: Sequence[str], suffix: str) -> list[Path]:
+    """
+    Where each of the items named `names` goes: `base_path` itself for a
+    single one; `<base_path>_<name><suffix>` for several — numbered where
+    two would otherwise share a file (`a-b` and `a_b`, `A` and `a`), so
+    none overwrites another.
+    """
+    if len(names) <= 1:
+        return [base_path.with_suffix(suffix) for _ in names]
+    stems = unique_names([f"{base_path.stem}_{safe_name(name)}" for name in names], fold=str.lower)
+    return [base_path.with_name(stem + suffix) for stem in stems]
 
 
 class _PainterExporter(pg_exporters.Exporter):
@@ -139,11 +163,10 @@ def export_images(
     A plot that fails to export is skipped and reported, not fatal: it
     shouldn't crash the app or stop the other plots from exporting.
     """
-    base_path = Path(base_path)
     exporter_cls = IMAGE_EXPORTERS[suffix]
     written, failed = [], {}
-    for title, plot_item in plot_items.items():
-        path = spread_path(base_path, title, len(plot_items), suffix)
+    paths = spread_paths(Path(base_path), list(plot_items), suffix)
+    for (title, plot_item), path in zip(plot_items.items(), paths, strict=True):
         try:
             exporter_cls(plot_item).export(str(path))
         except Exception as e:  # noqa: BLE001 — see docstring
@@ -155,12 +178,11 @@ def export_images(
 
 def export_csv(signals: dict[str, SignalModel], base_path: str | Path) -> list[Path]:
     """One `time,value` CSV per signal."""
-    base_path = Path(base_path)
     written = []
-    for label, model in signals.items():
-        path = spread_path(base_path, label, len(signals), ".csv")
+    paths = spread_paths(Path(base_path), list(signals), ".csv")
+    for model, path in zip(signals.values(), paths, strict=True):
         time_arr, data_arr = model.snapshot()
-        with path.open("w", newline="") as f:
+        with path.open("w", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
             writer.writerow(["time", "value"])
             writer.writerows(zip(time_arr, data_arr, strict=True))
@@ -188,10 +210,11 @@ def export_mat(signals: dict[str, SignalModel], path: str | Path) -> Path:
 def export_h5(signals: dict[str, SignalModel], path: str | Path) -> Path:
     """Every signal into one HDF5 file: a group per signal with `time`/`data` datasets and `fs`/`label`/`unit` attributes."""
     path = Path(path).with_suffix(".h5")
+    groups = unique_names([safe_name(label) for label in signals])  # `a-b` and `a_b` would share one
     with h5py.File(path, "w") as f:
-        for label, model in signals.items():
+        for (label, model), name in zip(signals.items(), groups, strict=True):
             time_arr, data_arr = model.snapshot()
-            group = f.create_group(safe_name(label))
+            group = f.create_group(name)
             group.create_dataset("time", data=time_arr)
             group.create_dataset("data", data=data_arr)
             group.attrs["fs"] = model.fs

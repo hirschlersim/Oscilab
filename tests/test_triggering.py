@@ -151,3 +151,36 @@ def test_removing_the_source_turns_it_off(workspace):
     workspace.set_trigger(trigger())
     workspace.remove_signal("s")
     assert workspace.trigger is None
+
+
+@pytest.mark.usefixtures("feed")
+@pytest.mark.parametrize(
+    ("line", "to", "low", "high"),
+    [
+        (0, -0.4, -0.4, 0.3),  # The low end
+        (1, 0.6, -0.2, 0.6),  # The high end
+        (0, 0.5, 0.3, 0.5),  # The low end dragged past the high one: they swap
+    ],
+)
+def test_dragging_a_window_line_moves_its_end(workspace, line, to, low, high):
+    workspace.set_trigger(trigger(type="window", low=-0.2, high=0.3))
+    dragged = workspace.plots["A"]._level_lines[line]
+    dragged.setValue(to)
+    dragged.sigPositionChangeFinished.emit(dragged)
+    settings = workspace.trigger.settings
+    assert (settings.low, settings.high) == pytest.approx((low, high))
+
+
+@pytest.mark.usefixtures("feed")
+def test_an_immediate_trigger_has_no_level_lines(workspace):
+    workspace.set_trigger(trigger(type="immediate"))
+    assert workspace.plots["A"]._level_lines == []
+
+
+@pytest.mark.usefixtures("feed")
+def test_a_line_dragged_after_the_trigger_went_off_changes_nothing(workspace):
+    workspace.set_trigger(trigger(level=0.25))
+    (line,) = workspace.plots["A"]._level_lines
+    workspace.set_trigger(None)
+    line.sigPositionChangeFinished.emit(line)  # A drag that ends just after
+    assert workspace.trigger is None

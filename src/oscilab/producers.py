@@ -452,15 +452,19 @@ class FileReplayProducer(SyncDataProducer):
 
     @staticmethod
     def __load(path: Path) -> tuple[list[str], np.ndarray, np.ndarray]:
-        with path.open(newline="") as f:
+        # UTF-8, as Oscilab writes it; "-sig" also drops the mark Excel puts in front
+        with path.open(newline="", encoding="utf-8-sig", errors="replace") as f:
             reader = csv.reader(f)
             header = next(reader, None)
             if not header or len(header) < 2:
                 raise ValueError(f"{path}: expected a header row like 'time,value'")
             # Skip blank or malformed rows rather than failing the whole file
-            rows = [[float(v) for v in row] for row in reader if len(row) == len(header)]
+            rows = [numbers for row in reader if (numbers := _numbers(row, len(header))) is not None]
 
         values = np.array(rows, dtype=float).reshape(-1, len(header))
+        steps = np.diff(values[:, 0])
+        if steps.size and (np.any(steps < 0) or not np.mean(steps) > 0):
+            raise ValueError(f"{path}: the times in the first column must increase from row to row")
         return header, values[:, 0], np.ascontiguousarray(values[:, 1:].T)
 
     def _generate(self, elapsed: float) -> tuple[np.ndarray, np.ndarray]:
@@ -487,6 +491,16 @@ class FileReplayProducer(SyncDataProducer):
         x_chunk = self._data[:, self._cursor : end]
         self._cursor = end
         return t_chunk, x_chunk
+
+
+def _numbers(row: list[str], width: int) -> list[float] | None:
+    """A CSV row's values, or None for one that isn't `width` numbers: blank, cut short, a stray note."""
+    if len(row) != width:
+        return None
+    try:
+        return [float(value) for value in row]
+    except ValueError:
+        return None
 
 
 class SerialProducer(SyncDataProducer):

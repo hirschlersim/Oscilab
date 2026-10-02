@@ -1,3 +1,4 @@
+import threading
 from collections import deque
 from collections.abc import Callable
 
@@ -33,11 +34,19 @@ class SignalModel:
     spectrogram) used to redo its own `np.asarray(self.data)` independently,
     so a signal read by N consumers paid for the conversion N times over —
     call `snapshot()` instead and they share one. Invalidated on any write.
+
+    Writes and `snapshot()` hold a lock, so the time and data buffers stay
+    in step for a reader on another thread: a signal fed by hand may be fed
+    from any thread while the GUI thread draws it.
     """
 
     def __init__(
         self, label: str, fs: float, duration: float = 10.0, storage: Storage = Storage.ring, unit: str = ""
     ) -> None:
+        if fs <= 0:
+            raise ValueError(f"fs must be positive, got {fs}")
+        if duration <= 0:
+            raise ValueError(f"duration must be positive, got {duration}")
         self.label = label
         self.fs = fs
         self.unit = (
@@ -54,6 +63,7 @@ class SignalModel:
         self.offset: float | None = None
         self._cache: tuple[np.ndarray, np.ndarray] | None = None  # (time_array, data_array), see `snapshot()`
         self._listeners: list[Callable[[np.ndarray, np.ndarray], None]] = []
+        self._lock = threading.Lock()  # Keeps `time` and `data` in step, see the class docstring
 
     @property
     def display_name(self) -> str:
@@ -80,27 +90,55 @@ class SignalModel:
         The most recent samples that still fit are kept; older ones are
         dropped. Growing the duration doesn't back-fill lost history.
         """
-        self.duration = duration
+        if duration <= 0:
+            raise ValueError(f"duration must be positive, got {duration}")
         maxlen = self.__maxlen_for(duration)
-        self.time = self.__rebuilt(self.time, maxlen)
-        self.data = self.__rebuilt(self.data, maxlen)
-        self._cache = None
+        with self._lock:
+            self.duration = duration
+            self.time = self.__rebuilt(self.time, maxlen)
+            self.data = self.__rebuilt(self.data, maxlen)
+            self._cache = None
 
     def add_data(self, t: npt.ArrayLike, x: npt.ArrayLike) -> None:
-        samples = np.asarray(x)
+        """
+        Append samples: `t` their times, `x` their values, in pairs — arrays
+        of the same length, or one time and one value. Scaled, then filtered,
+        if those are on.
+        """
+        times = np.atleast_1d(np.asarray(t, dtype=float))
+        samples = np.atleast_1d(np.asarray(x, dtype=float))
+        if times.ndim != 1 or times.shape != samples.shape:
+            raise ValueError(f"'{self.label}': times {times.shape} and values {samples.shape} don't pair up")
 
         if self.gain is not None and self.offset is not None:
             samples = (samples - self.offset) * self.gain
 
-        if self.sos is not None and self.zi is not None:
-            samples, self.zi = signal.sosfilt(sos=self.sos, x=samples, zi=self.zi)
-
-        times = np.asarray(t)
-        self.data.extend(samples)
-        self.time.extend(times)
+        with self._lock:
+            if self.sos is not None:
+                samples = self.__filtered(self.sos, samples)
+            self.data.extend(samples)
+            self.time.extend(times)
+            self._cache = None
         for listener in tuple(self._listeners):  # A copy: one may be removed from another thread meanwhile
             listener(times, samples)
-        self._cache = None
+
+    def __filtered(self, sos: np.ndarray, samples: np.ndarray) -> np.ndarray:
+        """
+        `samples` low-pass filtered, the filter's state carried over from the
+        last chunk. It starts in the steady state for the first sample, as if
+        the signal had always been there — not for 1.0, which made the output
+        climb from 1 to wherever the signal was. NaN passes through unfiltered:
+        in the filter, it would stay in its state, and every sample after it
+        would come out NaN.
+        """
+        finite = np.isfinite(samples)
+        if not finite.any():
+            return samples
+        if self.zi is None:
+            self.zi = signal.sosfilt_zi(sos) * samples[finite][0]
+        filtered = samples.copy()
+        filtered[finite], self.zi = signal.sosfilt(sos=sos, x=samples[finite], zi=self.zi)
+        return filtered
 
     def add_listener(self, listener: Callable[[np.ndarray, np.ndarray], None]) -> None:
         """
@@ -121,27 +159,34 @@ class SignalModel:
         an incrementally-growing stream with persistent filter state, which
         doesn't hold for a value recomputed from scratch every tick.
         """
-        self.time.clear()
-        self.time.extend(np.asarray(t))
-        self.data.clear()
-        self.data.extend(np.asarray(x))
-        self._cache = None
+        with self._lock:
+            self.time.clear()
+            self.time.extend(np.asarray(t))
+            self.data.clear()
+            self.data.extend(np.asarray(x))
+            self._cache = None
 
     def snapshot(self) -> tuple[np.ndarray, np.ndarray]:
         """
         (time_array, data_array) for the buffer's current contents,
         computed once and cached until the next write — see class docstring.
         """
-        if self._cache is None:
-            self._cache = (np.asarray(self.time), np.asarray(self.data))
-        return self._cache
+        with self._lock:
+            if self._cache is None:
+                self._cache = (np.asarray(self.time), np.asarray(self.data))
+            return self._cache
 
     def compute_metrics(self) -> dict[str, float | None]:
-        """Live stats over the current buffer: min, mean, max, peak-to-peak, RMS."""
-        if not self.data:
+        """
+        Live stats over the current buffer: min, mean, max, peak-to-peak, RMS —
+        of its finite values, so a NaN (A / B where B is 0, say) doesn't make
+        them all NaN for as long as it's in the buffer.
+        """
+        _, arr = self.snapshot()
+        arr = arr[np.isfinite(arr)]
+        if arr.size == 0:
             return {"min": None, "mean": None, "max": None, "ptp": None, "rms": None}
 
-        _, arr = self.snapshot()
         lo, hi = float(arr.min()), float(arr.max())
         return {
             "min": lo,
@@ -153,7 +198,7 @@ class SignalModel:
 
     def add_filter(self, cutoff: float = 50.0, order: int = 4) -> None:
         sos = signal.butter(N=order, Wn=cutoff, btype="low", analog=False, fs=self.fs, output="sos")
-        self.sos, self.zi = sos, signal.sosfilt_zi(sos)
+        self.sos, self.zi = sos, None  # The state starts from the next sample filtered, see `add_data`
 
     def remove_filter(self) -> None:
         self.sos = None

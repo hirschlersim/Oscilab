@@ -95,3 +95,16 @@ def test_resumes_after_pause_longer_than_buffer():
     assert times.size > 0
     np.testing.assert_allclose(np.diff(times), COL_DT)
     assert times[0] >= model.time[0]
+
+
+@pytest.mark.usefixtures("qapp")
+def test_nan_in_the_signal_doesnt_spoil_the_color_levels():
+    # The levels are taken once, from the first frame: NaN ones stayed until set by hand
+    model, spec = make_spectrogram()
+    x = make_recording(1.0)
+    x[100] = np.nan  # A / B where B was 0, say
+    model.add_data(np.arange(x.size) / model.fs, x)
+    spec.refresh()
+    levels = spec.img.getLevels()
+    assert levels is not None
+    assert np.all(np.isfinite(levels))

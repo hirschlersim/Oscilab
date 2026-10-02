@@ -7,10 +7,67 @@ Filter/Scaling/Range ones put their fields behind an enable (or "Auto")
 checkbox, so turning a setting off doesn't lose what was typed in.
 """
 
+import re
 from collections.abc import Callable, Collection
 
 from PyQt6 import QtCore as qtc
+from PyQt6 import QtGui as qtg
 from PyQt6 import QtWidgets as qtw
+
+_PARTIAL_NUMBER = re.compile(r"[+-]?(\d+\.?\d*|\.\d*)?([eE][+-]?\d*)?")  # On the way to a number: "-", "1e", "2.5e-"
+
+
+class NumberBox(qtw.QDoubleSpinBox):
+    """
+    A spin box for a value of any size — a few µV, millions of ADC counts:
+    shown and typed with six significant digits ("0.00025", "2.98e-07",
+    "1.6e+07") instead of a fixed number of decimals, which rounded small
+    values to 0 and capped large ones.
+    """
+
+    _WIDEST = "-8.88888e-88"  # Six significant digits, a sign and an exponent: the most it shows
+
+    def __init__(self, minimum: float = -1e15, maximum: float = 1e15) -> None:
+        super().__init__()
+        self.setDecimals(15)  # What Qt rounds the value itself to
+        self.setRange(minimum, maximum)
+
+    def sizeHint(self) -> qtc.QSize:  # noqa: N802 — Qt's name
+        return self.__widened(super().sizeHint())
+
+    def minimumSizeHint(self) -> qtc.QSize:  # noqa: N802 — Qt's name
+        return self.__widened(super().minimumSizeHint())
+
+    def __widened(self, hint: qtc.QSize) -> qtc.QSize:
+        """Qt makes room for the minimum and the maximum, "-1e+15": make it for any value."""
+        metrics = self.fontMetrics()
+        sized_for = max(self.textFromValue(self.minimum()), self.textFromValue(self.maximum()), key=len)
+        extra = metrics.horizontalAdvance(self._WIDEST) - metrics.horizontalAdvance(sized_for)
+        return qtc.QSize(hint.width() + max(extra, 0), hint.height())
+
+    def textFromValue(self, v: float) -> str:  # noqa: N802 — Qt's name
+        return f"{v:.6g}"
+
+    def valueFromText(self, text: str | None) -> float:  # noqa: N802 — Qt's name
+        try:
+            return float(self.__number(text))
+        except ValueError:
+            return self.value()
+
+    def validate(self, input: str | None, pos: int) -> tuple[qtg.QValidator.State, str, int]:  # noqa: A002 — Qt's name
+        number = self.__number(input)
+        try:
+            value = float(number)
+        except ValueError:
+            partial = _PARTIAL_NUMBER.fullmatch(number) is not None
+            state = qtg.QValidator.State.Intermediate if partial else qtg.QValidator.State.Invalid
+        else:
+            in_range = self.minimum() <= value <= self.maximum()
+            state = qtg.QValidator.State.Acceptable if in_range else qtg.QValidator.State.Intermediate
+        return state, input or "", pos
+
+    def __number(self, text: str | None) -> str:
+        return (text or "").removeprefix(self.prefix()).removesuffix(self.suffix()).strip()
 
 
 class RangeDialog(qtw.QDialog):
@@ -49,9 +106,7 @@ class RangeDialog(qtw.QDialog):
         # Min
         min_layout = qtw.QHBoxLayout()
         min_layout.addWidget(qtw.QLabel(f"Min{suffix}:"))
-        self.spin_min = qtw.QDoubleSpinBox()
-        self.spin_min.setRange(-1e6, 1e6)
-        self.spin_min.setDecimals(3)
+        self.spin_min = NumberBox()
         self.spin_min.setSingleStep(0.1)
         self.spin_min.setValue(current_min)
         self.spin_min.setToolTip("Lower bound of the manual range.")
@@ -61,9 +116,7 @@ class RangeDialog(qtw.QDialog):
         # Max
         max_layout = qtw.QHBoxLayout()
         max_layout.addWidget(qtw.QLabel(f"Max{suffix}:"))
-        self.spin_max = qtw.QDoubleSpinBox()
-        self.spin_max.setRange(-1e6, 1e6)
-        self.spin_max.setDecimals(3)
+        self.spin_max = NumberBox()
         self.spin_max.setSingleStep(0.1)
         self.spin_max.setValue(current_max)
         self.spin_max.setToolTip("Upper bound of the manual range.")
@@ -199,9 +252,7 @@ class ScalingDialog(qtw.QDialog):
         # Gain
         gain_layout = qtw.QHBoxLayout()
         gain_layout.addWidget(qtw.QLabel("Gain:"))
-        self.spin_gain = qtw.QDoubleSpinBox()
-        self.spin_gain.setRange(-1e6, 1e6)
-        self.spin_gain.setDecimals(6)
+        self.spin_gain = NumberBox()
         self.spin_gain.setSingleStep(0.1)
         self.spin_gain.setValue(current_gain)
         self.spin_gain.setToolTip("Multiplier applied after subtracting the offset")
@@ -211,9 +262,7 @@ class ScalingDialog(qtw.QDialog):
         # Offset
         offset_layout = qtw.QHBoxLayout()
         offset_layout.addWidget(qtw.QLabel("Offset:"))
-        self.spin_offset = qtw.QDoubleSpinBox()
-        self.spin_offset.setRange(-1e6, 1e6)
-        self.spin_offset.setDecimals(6)
+        self.spin_offset = NumberBox()
         self.spin_offset.setSingleStep(0.1)
         self.spin_offset.setValue(current_offset)
         self.spin_offset.setToolTip("Subtracted from the raw value before applying gain")
@@ -636,11 +685,9 @@ class HistogramDialog(qtw.QDialog):
         self.check_auto.setToolTip("Off: a fixed range, so the bars don't shift as the data's range changes")
         form.addRow("Range:", self.check_auto)
         low, high = value_range or (0.0, 1.0)
-        self.spin_min = qtw.QDoubleSpinBox()
-        self.spin_max = qtw.QDoubleSpinBox()
+        self.spin_min = NumberBox()
+        self.spin_max = NumberBox()
         for spin, value in ((self.spin_min, low), (self.spin_max, high)):
-            spin.setRange(-1e12, 1e12)
-            spin.setDecimals(4)
             spin.setValue(value)
         form.addRow("Min:", self.spin_min)
         form.addRow("Max:", self.spin_max)

@@ -15,6 +15,7 @@ from PyQt6 import QtWidgets as qtw
 from scipy.io import loadmat
 
 from oscilab import plotting
+from oscilab.trigger import TriggerSettings
 from oscilab.view import View
 from oscilab.workspace import Workspace
 
@@ -122,6 +123,41 @@ def test_set_duration_applies_to_existing_and_future_signals(workspace):
 
     assert workspace.signals["before"].duration == 3.0
     assert workspace.signals["after"].duration == 3.0
+
+
+@pytest.mark.parametrize("duration", [0, -1.0])
+def test_a_duration_must_be_positive(workspace, duration):
+    with pytest.raises(ValueError, match="must be positive"):
+        workspace.set_duration(duration)
+
+
+def test_a_shorter_duration_shortens_a_record_that_no_longer_fits(workspace):
+    # Else the record could never complete: the trigger would wait forever
+    workspace.register_signal("s", fs=1_000)
+    workspace.set_trigger(TriggerSettings(source="s", time_per_div=0.5))  # 5 s records
+    told: list[bool] = []
+    workspace.trigger_changed = lambda: told.append(True)
+
+    workspace.set_duration(2.0)
+
+    assert workspace.trigger is not None
+    assert workspace.trigger.settings.time_per_div == 0.2  # The most that fits: 2 s
+    assert told  # The trigger panel shows it
+
+
+def test_a_record_that_still_fits_is_left_alone(workspace):
+    workspace.register_signal("s", fs=1_000)
+    workspace.set_trigger(TriggerSettings(source="s", time_per_div=0.1))
+    workspace.set_duration(5.0)
+    assert workspace.trigger is not None
+    assert workspace.trigger.settings.time_per_div == 0.1
+
+
+def test_the_trigger_goes_off_when_no_record_fits(workspace):
+    workspace.register_signal("s", fs=1_000_000)
+    workspace.set_trigger(TriggerSettings(source="s", time_per_div=0.001))
+    workspace.set_duration(1e-5)  # Less than the shortest record, 10 x 10 µs
+    assert workspace.trigger is None
 
 
 def test_math_signal_is_recomputed_on_refresh(workspace):
@@ -296,6 +332,40 @@ def test_h5_round_trip(workspace, tmp_path):
         np.testing.assert_allclose(group["data"][()], x)
 
 
+@pytest.mark.parametrize("labels", [["a b", "a_b"], ["Plot", "plot"], ["x/1", "x 1", "x_1"]])
+def test_csv_files_of_names_that_clash_dont_overwrite_each_other(workspace, tmp_path, labels):
+    # Made safe for a file name - and, on Windows, regardless of case - these share one
+    for i, label in enumerate(labels):
+        workspace.register_signal(label, fs=10).add_data([0.0], [float(i)])
+    written = workspace.export_csv(tmp_path / "out.csv")
+
+    assert len({path.name.lower() for path in written}) == len(labels)
+    assert [read_csv(path)[1].item() for path in written] == list(range(len(labels)))
+
+
+def test_csv_is_utf8(workspace, tmp_path):
+    fill(workspace, "a", fs=10, n=2)
+    written = workspace.export_csv(tmp_path / "out.csv")[0]
+    written.read_bytes().decode("utf-8")  # Whatever the system's code page
+
+
+def test_png_files_of_titles_that_clash_dont_overwrite_each_other(workspace, tmp_path):
+    workspace.add_plot("P 1")
+    workspace.add_plot("P_1")
+    written = workspace.export_png(tmp_path / "out.png")
+    assert sorted(path.name for path in written) == ["out_P_1.png", "out_P_1_2.png"]
+
+
+def test_h5_keeps_signals_whose_names_clash(workspace, tmp_path):
+    workspace.register_signal("a-b", fs=10).add_data([0.0], [1.0])
+    workspace.register_signal("a_b", fs=10).add_data([0.0], [2.0])
+    path = workspace.export_h5(tmp_path / "out.h5")  # Failed: the group "a_b" existed already
+
+    with h5py.File(path, "r") as f:
+        values = {group.attrs["label"]: group["data"][0] for group in f.values()}
+    assert values == {"a-b": 1.0, "a_b": 2.0}
+
+
 # --- removing at runtime ------------------------------------------------------
 
 
@@ -458,3 +528,14 @@ def test_detaching_is_refused_while_a_math_signal_uses_it(workspace):
     assert producer.running
     with pytest.raises(ValueError, match="No producer feeds"):
         workspace.detach_producer("twice")
+
+
+def test_a_spectrogram_signal_shown_as_a_curve_too_gets_a_color(workspace):
+    workspace.register_signal("s", fs=100)
+    workspace.add_spectrogram("s")
+    row = workspace.signal_list.rows["s"]
+    assert not row.color_button.isEnabled()  # Nothing drawn as a line yet
+
+    workspace.add_plot("P")
+    workspace.link(plot="P", label="s")
+    assert row.color_button.isEnabled()

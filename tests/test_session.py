@@ -259,7 +259,7 @@ def test_a_failing_open_from_the_menu_warns_instead_of_crashing(make_window, tmp
     file_menu = window.menuBar().actions()[0].menu()
     next(a for a in file_menu.actions() if a.text() == "Open Session...").trigger()
 
-    assert warnings == ["Couldn't open session"]
+    assert warnings == ["Couldn't open the session"]
 
 
 # --- the `oscilab` command ------------------------------------------------------
@@ -416,3 +416,24 @@ def test_open_session_asks_what_to_do_with_a_window_in_use(
 
     assert set(window.workspace.signals) == ({"new"} if replaced else {"mine"})
     assert [set(w.workspace.signals) for w in Oscilab._extra_windows] == ([{"new"}] if new_window else [])
+
+
+def test_a_failing_save_from_the_menu_warns_instead_of_crashing(make_window, tmp_path, monkeypatch):
+    target = tmp_path / "no such folder" / "s.json"
+    warnings = []
+    monkeypatch.setattr(qtw.QFileDialog, "getSaveFileName", lambda *_args: (str(target), ""))
+    monkeypatch.setattr(qtw.QMessageBox, "warning", lambda _parent, title, _text: warnings.append(title))
+    window = make_window()
+
+    file_menu = window.menuBar().actions()[0].menu()
+    next(a for a in file_menu.actions() if a.text() == "Save Session...").trigger()
+
+    assert warnings == ["Couldn't save the session"]
+
+
+def test_cancelling_the_open_dialog_opens_nothing(make_window, monkeypatch):
+    monkeypatch.setattr(qtw.QFileDialog, "getOpenFileName", lambda *_args: ("", ""))
+    window = make_window()
+    file_menu = window.menuBar().actions()[0].menu()
+    next(a for a in file_menu.actions() if a.text() == "Open Session...").trigger()
+    assert not window.workspace.signals

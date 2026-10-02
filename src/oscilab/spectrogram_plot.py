@@ -266,8 +266,12 @@ class SpectrogramPlot(qtw.QWidget):
         self.img.setTransform(transform)
 
         if not self._levels_initialized:
-            self.img.setLevels((float(cols.min()), float(cols.max())))
-            self._levels_initialized = True
+            # From the finite columns only: a NaN in the signal makes its windows' columns NaN,
+            # and NaN levels would leave the colors broken until set by hand
+            finite = cols[np.isfinite(cols)]
+            if finite.size:
+                self.img.setLevels((float(finite.min()), float(finite.max())))
+                self._levels_initialized = True
 
     @staticmethod
     def __nearest_index(times: np.ndarray, t: float) -> int:

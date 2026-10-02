@@ -11,6 +11,7 @@ creation and removal (`oscilab.plotting`), and triggering them
 """
 
 from collections.abc import Callable, Sequence
+from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -30,7 +31,7 @@ from oscilab.signal_model import SignalModel
 from oscilab.spectrogram_plot import SpectrogramPlot
 from oscilab.storage import Storage
 from oscilab.timeseries_plot import TimeseriesPlot
-from oscilab.trigger import Acquisition, TriggerSettings
+from oscilab.trigger import TIME_PER_DIV, Acquisition, TriggerSettings
 from oscilab.triggering import Triggering
 from oscilab.view import View  # noqa: TC001 - imported at runtime, so the API docs can resolve `views`
 from oscilab.xy_plot import XYPlot
@@ -520,12 +521,32 @@ class Workspace:
     def set_duration(self, duration: float) -> None:
         """
         Resize every signal's rolling buffer to hold `duration` seconds,
-        and remember it for signals registered later.
+        and remember it for signals registered later. The trigger's record
+        must fit: if it no longer does, it gets the most time per division
+        that does (see `set_trigger`).
         """
+        if duration <= 0:
+            raise ValueError(f"duration must be positive, got {duration}")
         self._duration = duration
         for model in self.signals.values():
             model.set_duration(duration)
         self.log(f"Display duration set to {duration:g}s")
+        self.__fit_trigger()
+
+    def __fit_trigger(self) -> None:
+        """A record longer than the history kept never completes: the trigger would wait forever."""
+        trigger = self.trigger
+        if trigger is None or trigger.settings.span <= self._duration:
+            return
+        fitting = [step for step in TIME_PER_DIV if replace(trigger.settings, time_per_div=step).span <= self._duration]
+        if fitting:
+            self.set_trigger(replace(trigger.settings, time_per_div=fitting[-1]))
+            self.log(f"Trigger: {fitting[-1]:g} s a division now, so its record fits the history kept", level="warning")
+        else:
+            self.set_trigger(None)
+            self.log("Trigger turned off: not even its shortest record fits the history kept", level="warning")
+        if self.trigger_changed is not None:
+            self.trigger_changed()
 
     # --- exports ---------------------------------------------------------------------------------
 

@@ -145,3 +145,17 @@ def test_a_write_error_ends_the_recording_and_is_kept(models, tmp_path, monkeypa
     feed(models["a"], 0, 10)
     recorder.stop()
     assert str(recorder.error) == "disk full"
+
+
+def test_signals_whose_names_clash_each_get_their_own_group(tmp_path):
+    # "a-b" and "a_b" made one HDF5 name, so the recording failed to start
+    models = {label: SignalModel(label=label, fs=10.0) for label in ("a-b", "a_b")}
+    recorder = Recorder(models, tmp_path / "run.h5")
+    recorder.start()
+    models["a-b"].add_data([0.0], [1.0])
+    models["a_b"].add_data([0.0], [2.0])
+    files = recorder.stop()
+
+    with h5py.File(files[0]) as f:
+        values = {group.attrs["label"]: group["data"][()].tolist() for group in f.values()}
+    assert values == {"a-b": [1.0], "a_b": [2.0]}

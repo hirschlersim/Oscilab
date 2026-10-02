@@ -31,7 +31,7 @@ from typing import Any
 import h5py
 import numpy as np
 
-from oscilab.exporters import safe_name
+from oscilab.exporters import safe_name, unique_names
 from oscilab.signal_model import SignalModel
 
 _BATCH_S = 0.25  # Chunks gathered before each write
@@ -51,6 +51,8 @@ class Recorder:
             raise ValueError(f"max_file_bytes must be positive (or None for no limit), got {max_file_bytes}")
         path = Path(path)
         self.models = dict(models)
+        # Each signal's group in the files: `a-b` and `a_b` would share one
+        self._groups = dict(zip(self.models, unique_names([safe_name(label) for label in self.models]), strict=True))
         self.base_path = path if path.suffix else path.with_suffix(".h5")
         self.max_file_bytes = max_file_bytes
         self.files: list[Path] = []  # Written so far, the current one last
@@ -130,10 +132,9 @@ class Recorder:
             chunks.setdefault(label, []).append((t, x))
         return chunks, False
 
-    @staticmethod
-    def __append(file: h5py.File, chunks: _Chunks) -> None:
+    def __append(self, file: h5py.File, chunks: _Chunks) -> None:
         for label, pieces in chunks.items():
-            group = file[safe_name(label)]
+            group = file[self._groups[label]]
             columns = {"time": [t for t, _ in pieces], "data": [x for _, x in pieces]}
             for name, arrays in columns.items():
                 values = np.concatenate(arrays)
@@ -162,7 +163,7 @@ class Recorder:
         file.attrs["part"] = part
         file.attrs["oscilab_version"] = _version()
         for label, model in self.models.items():
-            group = file.create_group(safe_name(label))
+            group = file.create_group(self._groups[label])
             for name in ("time", "data"):
                 group.create_dataset(name, shape=(0,), maxshape=(None,), dtype="f8", chunks=(4096,))
             group.attrs["fs"] = model.fs

@@ -167,3 +167,20 @@ def test_the_panel_is_atop_the_sidebar(window):
     window.trigger_action.trigger()
     assert window.controller_layout.itemAt(0).widget() is window.trigger_panel
     assert isinstance(window.trigger_panel, qtw.QGroupBox)
+
+
+def test_commands_with_the_trigger_off_say_to_turn_it_on(window, monkeypatch):
+    messages: list[str] = []
+    monkeypatch.setattr(window.statusBar(), "showMessage", lambda text, _timeout=0: messages.append(text))
+    commands = {a.text(): a for a in window.toolbar.widgetForAction(window.trigger_action).menu().actions()}
+    commands["Run"].trigger()
+    assert window.workspace.trigger is None
+    assert messages[-1].endswith("Turn the trigger on first")
+
+
+def test_autoset_keeps_the_record_within_the_history_kept(window):
+    window.set_duration(1.0)
+    window.trigger_action.trigger()
+    commands = {a.text(): a for a in window.toolbar.widgetForAction(window.trigger_action).menu().actions()}
+    commands["Autoset"].trigger()
+    assert window.workspace.trigger.settings.span <= 1.0
