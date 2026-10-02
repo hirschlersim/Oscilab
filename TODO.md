@@ -1,49 +1,58 @@
-# TODO / ideas
+# TODO: Oscilab as a portfolio piece
 
----
+What a reviewer sees in their first two minutes counts most: few will run
+it, fewer will read the code. In order:
 
-## Code quality
+1. **Make the repo public.** First look through the history for anything
+   that shouldn't be shown. Public also makes GitHub Pages free (step 5).
 
-- **Split the workspace**, as the window was (`oscilab.ui`): `workspace.py`
-  is 907 lines. The triggering — feeding the acquisition, capturing records
-  into the time plots, the level lines — would be a class of its own, as
-  could the plot creation and removal; the workspace keeps the registries.
-- **Smoke-test the demo and the example scripts.** Nothing runs `demo.py`,
-  `scripts/xbox_controller.py`, `sensor_logger.py` or `udp_example.py` today
-  (0% coverage): run each headless for a second, with a fake controller,
-  phone or UDP sender, so an API change can't break them unnoticed.
-- **Coverage in CI**, with a floor (about 90% — it's 92% now), so it can't
-  drift down unnoticed.
-- **Merge the pending Dependabot update** (`uv.lock` only) once CI is green.
-- **A refresh benchmark.** Every tick redraws each curve from its whole
-  buffer on the GUI thread (10 s at 1 kHz: 10,000 points a curve, 30 times a
-  second). Measure the load against channels × sample rate, as
-  `scripts/benchmark_buffers.py` does for the buffers, then fix what it
-  shows: drawing only the visible range, thinning big buffers
-  automatically, skipping signals that haven't changed.
-- **Publish the API docs.** CI builds them on every run (the `api-docs`
-  artifact, see `scripts/docs.py`); GitHub Pages could host the latest from
-  `main`. Needs Pages turned on for the repo — for a private repo, that takes
-  a paid GitHub plan.
+2. **Start up faster.** `import oscilab` takes 7–11 s on battery, most of it
+   `scipy.signal`, which only filters and spectrograms need: import it when
+   one is first used. A slow first launch spoils a demo.
 
-## Features
+3. **A GIF at the top of the README**: live scrolling plots, the trigger
+   catching an edge, a spectrogram. Below, one screenshot per showcase
+   (Xbox controller, phone sensors, UDP).
 
-- **Measurements**, as on a scope's front panel: Vpp, RMS, frequency,
-  period, rise and fall time, duty cycle of the triggered record, in a table.
-- **Persistence**: successive triggered records drawn over each other,
-  fading — jitter and variation at a glance.
-- **Math expressions**: `a*b + 2`, `abs(a)`, a derivative or integral, a
-  moving average — not only A op B.
-- **FFT/PSD plot** of a signal.
+4. **A tight README top section**: a one-sentence pitch, the GIF, badges
+   (CI, coverage, Python 3.12, license, docs), a 30-second quick start, the
+   commands table. The deep detail moves to the docs site. For the coverage
+   badge, measure coverage in CI, with a floor of about 90 %.
 
-## Everyday use
+5. **Publish the API docs on GitHub Pages.** CI already builds them (the
+   `api-docs` artifact, `scripts/docs.py`): deploy the latest from `main`.
 
-- **Remember settings between runs** (`QSettings`): theme, recording folder,
-  the last session, window position — today only a saved session keeps them.
-- **Resizable layout**: dividers to drag between the plots, and a sidebar
-  that collapses; today the plots are a stack of equal height.
+6. **Publish on PyPI**, so anyone can run it without cloning:
+   `uvx --from oscilab oscilab-demo`.
 
-## Distribution
+7. **A Windows `.exe` on GitHub Releases** (PyInstaller), for people
+   without Python.
 
-- **A standalone Windows `.exe`** (PyInstaller), or a PyPI package, so
-  colleagues can run Oscilab without Python or uv.
+8. **The performance story**, as a README section: the benchmark figures
+   before and after the fixes, with what was found (the grid at 25 ms a
+   frame, every frame painted twice) and what fixed it.
+
+9. **A short video with real hardware**: an Xbox controller, a phone's
+   tilt, an ESP32 over UDP, each live in about 30 seconds.
+
+10. **A "How it works" page, written in your own words**: 4–5 short design
+    notes (producers handing data over through queued Qt signals, the
+    thread-safe ring buffer, the trigger's interpolated crossings and
+    holdoff, the incremental STFT cache, the domain layer apart from the
+    window's parts) and a Mermaid architecture diagram. Interviewers will
+    ask about the design: these notes are how you show you own it.
+
+11. **A CHANGELOG and tagged releases** (it's at 0.2.0).
+
+12. **A "write your own producer" guide**: ten lines from your own sensor
+    to a live plot.
+
+13. **FFT and measurements** (frequency, amplitude, RMS on screen): what
+    makes it read as a real oscilloscope.
+
+14. **The pitch, for a CV or LinkedIn**: "Built Oscilab, a real-time
+    oscilloscope and data-acquisition app in Python/Qt: it streams any
+    source (serial, UDP, phone sensors, game controllers) into live plots
+    at 30 FPS, with an NI-style trigger, HDF5 recording and replay —
+    profiled and optimized, backed by about 540 tests, strict typing and
+    CI."
