@@ -1,8 +1,7 @@
 """
-How fast Oscilab is, measured — each a command of its own.
+How fast Oscilab is, measured.
 
-    uv run oscilab-bench           # where it keeps up: a figure over channels x sample rate
-    uv run oscilab-bench-buffers   # the rolling buffers: deque against RingBuffer
+    uv run oscilab-bench   # where it keeps up: a figure over channels x sample rate
 
-`--help` lists a command's options.
+`--help` lists its options.
 """

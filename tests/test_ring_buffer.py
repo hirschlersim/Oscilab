@@ -1,11 +1,7 @@
 """
-Correctness tests for RingBuffer: it must behave like deque(maxlen=...)
-for the same sequence of writes, including wraparound. Performance is
-covered separately by oscilab.benchmarks.buffers, not here — timing
-numbers make flaky pass/fail assertions.
+Correctness tests for RingBuffer: after any sequence of writes, including
+wraparound, it holds the newest `maxlen` values, oldest first.
 """
-
-from collections import deque
 
 import numpy as np
 import pytest
@@ -29,14 +25,14 @@ def as_list(buf) -> list[float]:
         (1, [[1, 2, 3]]),  # maxlen of 1
     ],
 )
-def test_matches_deque(maxlen, chunks):
+def test_keeps_the_newest_maxlen_values(maxlen, chunks):
     ring = RingBuffer(maxlen)
-    ref: deque[float] = deque(maxlen=maxlen)
+    ref: list[float] = []  # Everything written, cut to the newest maxlen: what it must hold
 
     for chunk in chunks:
         ring.extend(chunk)
-        ref.extend(chunk)
-        assert as_list(ring) == list(ref)
+        ref = (ref + chunk)[-maxlen:]
+        assert as_list(ring) == ref
         assert len(ring) == len(ref)
         if ref:
             assert ring[0] == ref[0]

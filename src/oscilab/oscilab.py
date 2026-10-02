@@ -29,7 +29,6 @@ from oscilab.producers import DataProducer
 from oscilab.signal_controller import SignalController
 from oscilab.signal_model import SignalModel
 from oscilab.spectrogram_plot import SpectrogramPlot
-from oscilab.storage import Storage
 from oscilab.timeseries_plot import TimeseriesPlot
 from oscilab.trigger import TriggerSettings
 from oscilab.ui.common import dot_icon
@@ -51,10 +50,6 @@ class Oscilab(qtw.QMainWindow):
     The main window — see the module docstring. Everything a script does
     goes through its methods: add plots, attach producers, save sessions, ...
     """
-
-    # Exposed as `Oscilab.storage` / `scope.storage` so callers write e.g.
-    # `scope.attach_producer(..., storage=scope.storage.deque)` instead of a bare string.
-    storage = Storage
 
     _extra_windows: ClassVar[set["Oscilab"]] = set()  # Opened by open_session(); see there
 
@@ -410,14 +405,12 @@ class Oscilab(qtw.QMainWindow):
 
     # --- signals and producers -----------------------------------------------------------------
 
-    def register_signal(self, label: str, fs: float, storage: Storage = Storage.ring, unit: str = "") -> SignalModel:
+    def register_signal(self, label: str, fs: float, unit: str = "") -> SignalModel:
         """
         Register a signal you feed yourself (producer-fed signals are
-        registered by `attach_producer`). `storage`: `self.storage.ring`
-        (default) or `self.storage.deque` — see `oscilab.ring_buffer.RingBuffer`.
-        `unit`: e.g. "V" (see `set_unit`).
+        registered by `attach_producer`). `unit`: e.g. "V" (see `set_unit`).
         """
-        return self.workspace.register_signal(label, fs, storage=storage, unit=unit)
+        return self.workspace.register_signal(label, fs, unit=unit)
 
     def set_unit(self, label: str, unit: str) -> None:
         """
@@ -431,7 +424,6 @@ class Oscilab(qtw.QMainWindow):
         self,
         producer: DataProducer,
         signals: str | Sequence[str],
-        storage: Storage = Storage.ring,
         units: str | Sequence[str] | None = None,
     ) -> list[SignalModel]:
         """
@@ -444,7 +436,7 @@ class Oscilab(qtw.QMainWindow):
         `@button` / `@toggle` methods, which run on its own thread; those
         marked `toolbar=True` go in the toolbar too (see `oscilab.toolbar`).
         """
-        models = self.workspace.attach_producer(producer, signals, storage=storage, units=units)
+        models = self.workspace.attach_producer(producer, signals, units=units)
         self.producers_ui.add(producer)
         return models
 

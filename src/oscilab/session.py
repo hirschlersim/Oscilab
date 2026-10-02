@@ -37,7 +37,6 @@ from oscilab.logic_plot import LogicPlot
 from oscilab.math_signal import OPERATORS
 from oscilab.producers import DataProducer, resolve_producer
 from oscilab.spectrogram_plot import SpectrogramPlot
-from oscilab.storage import Storage
 from oscilab.timeseries_plot import TimeseriesPlot
 from oscilab.trigger import Coupling, Slope, TriggerSettings, TriggerType, WindowCondition
 from oscilab.xy_plot import XYPlot
@@ -73,19 +72,34 @@ class Scaling(_Model):
     offset: float = 0.0
 
 
+def _without_storage(data: Any) -> Any:
+    """
+    A producer's or signal's entry without "storage": files saved before the
+    ring buffer was the only one named a buffer to use. Ignored, so they
+    still open.
+    """
+    if isinstance(data, dict):
+        return {key: value for key, value in data.items() if key != "storage"}
+    return data
+
+
 class ProducerSpec(_Model):
     type: str = Field(
         description='The producer class as "module:ClassName", e.g. "oscilab.producers:SyntheticProducer"'
     )
     args: dict[str, Any] = Field(default_factory=dict, description="Its constructor's keyword arguments")
     signals: list[str] = Field(min_length=1, description="One signal name per channel, in channel order")
-    storage: Storage = Field(Storage.ring, description="Buffer backend for its signals")
     units: list[str] | None = Field(
         None, description='One unit per signal, in the same order ("" for none); null = the producer\'s own'
     )
     toggles: dict[str, bool] = Field(
         default_factory=dict, description="Its @toggle functions' states, keyed by method name"
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _from_old_files(cls, data: Any) -> Any:
+        return _without_storage(data)
 
     @model_validator(mode="after")
     def _check_units(self) -> ProducerSpec:
@@ -99,8 +113,12 @@ class ManualSignal(_Model):
 
     label: str
     fs: float = Field(gt=0, description="Sampling rate in Hz")
-    storage: Storage = Storage.ring
     unit: str = Field("", description='E.g. "V"; "" for none')
+
+    @model_validator(mode="before")
+    @classmethod
+    def _from_old_files(cls, data: Any) -> Any:
+        return _without_storage(data)
 
 
 class WindowSpec(_Model):
@@ -323,7 +341,6 @@ def capture(window: Oscilab) -> Session:
                 type=producer.type_path(),
                 args=_jsonable_args(producer),
                 signals=labels,
-                storage=ws.signals[labels[0]].storage,
                 units=None if units == own_units else units,
                 toggles=window.producer_toggle_states(producer),
             )
@@ -341,7 +358,7 @@ def capture(window: Oscilab) -> Session:
         recording=RecordingSpec(path=str(recording_path), max_file_mb=max_file_mb),
         producers=producers,
         manual_signals=[
-            ManualSignal(label=label, fs=model.fs, storage=model.storage, unit=model.unit)
+            ManualSignal(label=label, fs=model.fs, unit=model.unit)
             for label, model in ws.signals.items()
             if label not in ws.producers and label not in ws.math_signals
         ],
@@ -455,10 +472,10 @@ def restore(window: Oscilab, session: Session, replace: bool = False) -> None:
     _restore_settings(window, session)  # First, so the signals and plots created below start with them
 
     for producer, spec in zip(producers, session.producers, strict=True):
-        window.attach_producer(producer, spec.signals, storage=spec.storage, units=spec.units)
+        window.attach_producer(producer, spec.signals, units=spec.units)
         window.set_producer_toggle_states(producer, spec.toggles)
     for manual in session.manual_signals:
-        window.register_signal(manual.label, manual.fs, storage=manual.storage, unit=manual.unit)
+        window.register_signal(manual.label, manual.fs, unit=manual.unit)
     for math in session.math_signals:
         ws.add_math_signal(math.label, math.operator, math.a, math.b)
 

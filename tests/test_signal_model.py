@@ -1,9 +1,4 @@
-"""
-SignalModel: rolling buffer, scaling/filter pipeline, resizing, metrics.
-
-Parametrized over both storage backends wherever the buffer is involved —
-they're meant to be interchangeable.
-"""
+"""SignalModel: rolling buffer, scaling/filter pipeline, resizing, metrics."""
 
 import threading
 
@@ -12,9 +7,6 @@ import pytest
 from scipy import signal
 
 from oscilab.signal_model import SignalModel
-from oscilab.storage import Storage
-
-BACKENDS = [Storage.ring, Storage.deque]
 
 
 def feed_chunks(model: SignalModel, t: np.ndarray, x: np.ndarray, chunk: int):
@@ -22,9 +14,8 @@ def feed_chunks(model: SignalModel, t: np.ndarray, x: np.ndarray, chunk: int):
         model.add_data(t[i : i + chunk], x[i : i + chunk])
 
 
-@pytest.mark.parametrize("storage", BACKENDS)
-def test_buffer_keeps_only_the_last_duration_seconds(storage):
-    model = SignalModel(label="s", fs=10.0, duration=1.0, storage=storage)  # 10 samples
+def test_buffer_keeps_only_the_last_duration_seconds():
+    model = SignalModel(label="s", fs=10.0, duration=1.0)  # 10 samples
     t = np.arange(25) / 10.0
     feed_chunks(model, t, t * 2, chunk=4)
 
@@ -33,9 +24,8 @@ def test_buffer_keeps_only_the_last_duration_seconds(storage):
     np.testing.assert_array_equal(data_arr, t[-10:] * 2)
 
 
-@pytest.mark.parametrize("storage", BACKENDS)
-def test_set_duration_keeps_the_newest_samples(storage):
-    model = SignalModel(label="s", fs=10.0, duration=2.0, storage=storage)
+def test_set_duration_keeps_the_newest_samples():
+    model = SignalModel(label="s", fs=10.0, duration=2.0)
     t = np.arange(20) / 10.0
     model.add_data(t, t)
 
@@ -48,11 +38,6 @@ def test_set_duration_keeps_the_newest_samples(storage):
     t_more = 2.0 + np.arange(30) / 10.0  # ...but room for 30 samples again
     model.add_data(t_more, t_more)
     assert len(model.snapshot()[0]) == 30
-
-
-@pytest.mark.parametrize("storage", ["ring", "deque"])
-def test_storage_accepts_its_string_value(storage):
-    assert SignalModel(label="s", fs=1.0, storage=storage).storage is Storage(storage)
 
 
 def test_snapshot_is_cached_until_the_next_write():
@@ -142,10 +127,9 @@ def test_metrics_of_an_empty_buffer_are_none():
 # --- what add_data takes -------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("storage", BACKENDS)
-def test_one_time_and_one_value_is_a_sample(storage):
+def test_one_time_and_one_value_is_a_sample():
     # A sensor read by hand gives one value at a time
-    model = SignalModel(label="s", fs=10.0, storage=storage)
+    model = SignalModel(label="s", fs=10.0)
     model.add_data(0.1, 2.5)
     model.add_data(0.2, 3)
     assert model.snapshot()[0].tolist() == [0.1, 0.2]

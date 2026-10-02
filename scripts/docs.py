@@ -28,7 +28,6 @@ MODULES = [
     "oscilab.triggering",
     "oscilab.log",
     "oscilab.display",
-    "oscilab.storage",
     "oscilab.signal_model",
     "oscilab.math_signal",
     "oscilab.ring_buffer",

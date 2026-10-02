@@ -1,21 +1,18 @@
 """
-Fixed-capacity, pre-allocated numpy circular buffer.
-
-Exposes the same surface `SignalModel` needs from `collections.deque(maxlen=...)`
-— `extend()`, `clear()`, `len()`, `[0]`/`[-1]`, iteration, and `np.asarray()`
-via `__array__` — so it's a drop-in alternative storage backend, picked per
-signal via `SignalModel(..., storage="ring")` / `Workspace.register_signal(...,
-storage="ring")`. See `oscilab.benchmarks.buffers` for a deque-vs-ring
-throughput comparison.
+The rolling buffer every signal keeps its times and values in
+(`oscilab.signal_model.SignalModel`): a fixed-capacity, pre-allocated numpy
+circular buffer. `extend()` adds samples, dropping the oldest once it's
+full; `np.asarray()` (through `__array__`) reads them all as one array,
+oldest first — what every refresh does, for every signal shown. `len()`,
+`[0]`, `[-1]` and iteration too.
 
 Thread-safe: producer data attached via `Workspace.attach_producer` arrives
 on the GUI thread, but a signal fed by hand (`register_signal` + `add_data`) may
 be written from any thread while the GUI thread reads it via
-`to_array()`/`__array__` every refresh tick. `deque.append`/`extend` are
-atomic under the GIL, but writing into a
-pre-allocated array is several separate steps (slice assignment, then
-`_start`/`_count` bookkeeping) that a reader could observe mid-update — so
-every public method here holds `self._lock` for its whole body.
+`to_array()`/`__array__` every refresh tick. Writing into the array is
+several separate steps (slice assignment, then `_start`/`_count`
+bookkeeping) that a reader could observe mid-update — so every public
+method here holds `self._lock` for its whole body.
 """
 
 import threading

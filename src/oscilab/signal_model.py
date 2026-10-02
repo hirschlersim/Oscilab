@@ -1,5 +1,4 @@
 import threading
-from collections import deque
 from collections.abc import Callable
 
 import numpy as np
@@ -7,9 +6,6 @@ import numpy.typing as npt
 from scipy import signal
 
 from oscilab.ring_buffer import RingBuffer
-from oscilab.storage import Storage
-
-type RollingBuffer = RingBuffer | deque[float]
 
 
 class SignalModel:
@@ -20,14 +16,9 @@ class SignalModel:
     thread (see `oscilab.producers.DataProducer`) and unit-tested in
     isolation.
 
-    `storage` (an `oscilab.storage.Storage` member) picks the rolling-buffer
-    backend: `Storage.ring` (default — a pre-allocated numpy circular
-    buffer, see `oscilab.ring_buffer.RingBuffer`) or `Storage.deque`
-    (`collections.deque(maxlen=...)`). Both expose the same
-    `extend`/`clear`/`len`/`[0]`/`[-1]`/`np.asarray()` surface, so the rest of
-    this class doesn't need to care which one is in use — `ring` defaults on
-    because it measures 12-126x faster at exactly the operation every
-    consumer below does every tick; see `oscilab.benchmarks.buffers`.
+    Its time and data are kept in `oscilab.ring_buffer.RingBuffer`s: rolling
+    windows of `duration` seconds in pre-allocated numpy arrays, cheap to
+    read as one array every tick.
 
     `snapshot()` caches that `np.asarray()` conversion for the tick: every
     consumer (a plot's curve, `compute_metrics()`, a `MathSignal`, a
@@ -40,9 +31,7 @@ class SignalModel:
     from any thread while the GUI thread draws it.
     """
 
-    def __init__(
-        self, label: str, fs: float, duration: float = 10.0, storage: Storage = Storage.ring, unit: str = ""
-    ) -> None:
+    def __init__(self, label: str, fs: float, duration: float = 10.0, unit: str = "") -> None:
         if fs <= 0:
             raise ValueError(f"fs must be positive, got {fs}")
         if duration <= 0:
@@ -53,10 +42,9 @@ class SignalModel:
             unit  # E.g. "V", "°C"; "" for none. Change it through `Workspace.set_unit`, which updates the plots.
         )
         self.duration = duration  # How many seconds of history the buffer holds
-        self.storage = Storage(storage)  # Accepts a Storage member or its string value
         maxlen = self.__maxlen_for(duration)
-        self.data = self.__make_buffer(maxlen)
-        self.time = self.__make_buffer(maxlen)
+        self.data = RingBuffer(maxlen)
+        self.time = RingBuffer(maxlen)
         self.sos: np.ndarray | None = None  # Filter
         self.zi: np.ndarray | None = None
         self.gain: float | None = None  # Scaling
@@ -73,12 +61,9 @@ class SignalModel:
     def __maxlen_for(self, duration: float) -> int:
         return max(1, round(duration * self.fs))
 
-    def __make_buffer(self, maxlen: int) -> RollingBuffer:
-        return RingBuffer(maxlen) if self.storage is Storage.ring else deque(maxlen=maxlen)
-
-    def __rebuilt(self, existing: RollingBuffer, maxlen: int) -> RollingBuffer:
+    def __rebuilt(self, existing: RingBuffer, maxlen: int) -> RingBuffer:
         """New empty buffer of `maxlen`, refilled with `existing`'s current tail."""
-        buffer = self.__make_buffer(maxlen)
+        buffer = RingBuffer(maxlen)
         values = np.asarray(existing)
         buffer.extend(values[-maxlen:] if len(values) > maxlen else values)
         return buffer

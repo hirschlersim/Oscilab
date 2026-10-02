@@ -19,7 +19,6 @@ from importlib import metadata
 import pytest
 
 from oscilab import xbox
-from oscilab.benchmarks import buffers
 from oscilab.examples import sensor_logger as sensor_logger_example
 from oscilab.examples import udp as udp_example
 from oscilab.examples import xbox as xbox_example
@@ -142,13 +141,6 @@ def run_module(module: str, *args: str) -> str:
     return result.stdout
 
 
-def test_oscilab_bench_buffers(capsys):
-    assert buffers.main(["--chunks", "50"]) == 0  # No Qt: it can run here
-    lines = capsys.readouterr().out.splitlines()
-    assert "speedup" in lines[0]
-    assert len(lines) == 4  # The header and three buffer sizes
-
-
 def test_oscilab_bench(tmp_path):
     # In a process of its own: it styles the whole application, and quiets its logging
     figure = tmp_path / "figure.png"
@@ -177,7 +169,6 @@ def test_every_command_runs_a_main():
         "oscilab-sensor-logger",
         "oscilab-udp",
         "oscilab-bench",
-        "oscilab-bench-buffers",
     }
     assert expected <= set(commands)
     for name in expected:

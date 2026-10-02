@@ -87,7 +87,7 @@ def build_everything(window: Oscilab):
     window.set_recording_options("recordings/run.h5", max_file_mb=5)
     window.set_window_geometry(30, 40, 700, 500)
 
-    window.attach_producer(SyntheticProducer(fs=100, freq=5.0), "slow", storage=window.storage.deque)
+    window.attach_producer(SyntheticProducer(fs=100, freq=5.0), "slow")
     window.attach_producer(SyntheticProducer(fs=1_000, freq=(1.0, 10.0), noise=0), ["a", "b"], units="V")
     window.attach_producer(AsyncSyntheticProducer(fs=200), "async")
     constant = Constant(3.0)
@@ -147,7 +147,6 @@ def test_the_file_is_plain_readable_json(make_window, tmp_path):
         "type": "oscilab.producers:SyntheticProducer",
         "args": {"fs": 1000, "freq": [1.0, 10.0], "noise": 0},
         "signals": ["a", "b"],
-        "storage": "ring",
         "units": ["V", "V"],
         "toggles": {},
     }
@@ -437,3 +436,27 @@ def test_cancelling_the_open_dialog_opens_nothing(make_window, monkeypatch):
     file_menu = window.menuBar().actions()[0].menu()
     next(a for a in file_menu.actions() if a.text() == "Open Session...").trigger()
     assert not window.workspace.signals
+
+
+def test_a_session_saved_when_there_was_a_choice_of_buffers_still_opens(make_window, tmp_path):
+    # Its producers and signals each name one; the ring buffer is the only one now
+    path = tmp_path / "old.json"
+    path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "producers": [
+                    {
+                        "type": "oscilab.producers:SyntheticProducer",
+                        "args": {"fs": 100},
+                        "signals": ["s"],
+                        "storage": "deque",
+                    }
+                ],
+                "manual_signals": [{"label": "m", "fs": 10, "storage": "ring"}],
+            }
+        )
+    )
+    window = make_window()
+    window.load_session(path)
+    assert set(window.workspace.signals) == {"s", "m"}

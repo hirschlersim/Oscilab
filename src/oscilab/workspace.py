@@ -29,7 +29,6 @@ from oscilab.producers import DataProducer
 from oscilab.signal_controller import SignalController
 from oscilab.signal_model import SignalModel
 from oscilab.spectrogram_plot import SpectrogramPlot
-from oscilab.storage import Storage
 from oscilab.timeseries_plot import TimeseriesPlot
 from oscilab.trigger import TIME_PER_DIV, Acquisition, TriggerSettings
 from oscilab.triggering import Triggering
@@ -195,7 +194,7 @@ class Workspace:
 
     # --- signals ---------------------------------------------------------------------------------
 
-    def register_signal(self, label: str, fs: float, storage: Storage = Storage.ring, unit: str = "") -> SignalModel:
+    def register_signal(self, label: str, fs: float, unit: str = "") -> SignalModel:
         """
         Register a signal you feed yourself, via its `SignalModel.add_data`.
         Producer-fed signals are registered by `attach_producer` instead.
@@ -204,7 +203,7 @@ class Workspace:
         if label in self.signals:
             raise ValueError(f"Signal '{label}' already registered")
 
-        model = SignalModel(label=label, fs=fs, duration=self._duration, storage=storage, unit=unit)
+        model = SignalModel(label=label, fs=fs, duration=self._duration, unit=unit)
         self.signals[label] = model
         return model
 
@@ -300,7 +299,6 @@ class Workspace:
         self,
         producer: DataProducer,
         signals: str | Sequence[str],
-        storage: Storage = Storage.ring,
         units: str | Sequence[str] | None = None,
     ) -> list[SignalModel]:
         """
@@ -327,7 +325,7 @@ class Workspace:
                 raise ValueError(f"Signal '{label}' already registered")
 
         models = [
-            self.register_signal(label, fs=producer.fs, storage=storage, unit=unit)
+            self.register_signal(label, fs=producer.fs, unit=unit)
             for label, unit in zip(labels, channel_units, strict=True)
         ]
 

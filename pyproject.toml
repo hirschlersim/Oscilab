@@ -22,7 +22,6 @@ oscilab-xbox = "oscilab.examples.xbox:main"
 oscilab-sensor-logger = "oscilab.examples.sensor_logger:main"
 oscilab-udp = "oscilab.examples.udp:main"
 oscilab-bench = "oscilab.benchmarks.refresh:main"
-oscilab-bench-buffers = "oscilab.benchmarks.buffers:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

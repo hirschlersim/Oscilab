@@ -27,7 +27,6 @@ from oscilab.producers import (
 from oscilab.replay import RecordingReplayProducer
 from oscilab.sensor_logger import SensorLoggerProducer
 from oscilab.signal_model import SignalModel
-from oscilab.storage import Storage
 from oscilab.toolbar import button, toggle
 from oscilab.udp import UdpProducer
 from oscilab.xbox import XboxControllerProducer
@@ -47,7 +46,6 @@ __all__ = [
     "SensorLoggerProducer",
     "SerialProducer",
     "SignalModel",
-    "Storage",
     "SyncDataProducer",
     "SyntheticProducer",
     "UdpProducer",

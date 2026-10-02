@@ -30,12 +30,10 @@ def run() -> int:
     # Producers. Each registers its own signals — one per channel, at its own
     # sampling rate — and starts feeding them right away.
     #
-    # "channel-1": a single-channel producer, stored in a deque instead of the
-    # default ring buffer, to show both backends behave the same ("ring" is far
-    # cheaper per refresh tick at scale; see oscilab.benchmarks.buffers).
-    # Its unit, "V", shows in the legend, on the Y axis and in its row.
+    # "channel-1": a single-channel producer. Its unit, "V", shows in the
+    # legend, on the Y axis and in its row.
     channel_1 = SyntheticProducer(fs=100, freq=5.0)
-    scope.attach_producer(channel_1, "channel-1", storage=scope.storage.deque, units="V")
+    scope.attach_producer(channel_1, "channel-1", units="V")
     # "channel-2"/"channel-3": ONE two-channel producer — a 1 Hz and a 10 Hz
     # sine sampled together, like a multi-channel DAQ. One unit for both.
     scope.attach_producer(SyntheticProducer(fs=1_000, freq=(1.0, 10.0)), ["channel-2", "channel-3"], units="V")

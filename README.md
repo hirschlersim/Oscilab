@@ -48,9 +48,8 @@ architecture in Python; still under active development (see
   phone's sensors via the Sensor Logger app, samples over UDP (an ESP32 on
   Wi-Fi, a simulation, any program), and templates for serial and `asyncio`
   sources.
-- **Two storage backends** — a plain `collections.deque` or a
-  thread-safe, pre-allocated numpy ring buffer, selectable per signal
-  (`uv run oscilab-bench-buffers` measures the throughput difference).
+- **A ring buffer per signal** — a thread-safe, pre-allocated numpy
+  circular buffer, read as one array every refresh.
 - **Save Stream** — record every sample of every signal to HDF5 files
   while it's on, not just what's still in the buffers; a new file at a
   size you choose. **Replay Recording** plays them back — a file or a
@@ -95,7 +94,7 @@ log.py                 └─ logging: console, log file, status bar
     │
 demo.py               Example usage / `uv run oscilab-demo` entry point
 examples/             The showcases, a command each: xbox, sensor_logger, udp
-benchmarks/           How fast it is: refresh (`oscilab-bench`), buffers
+benchmarks/           How fast it is: refresh (`oscilab-bench`)
 __main__.py           `uv run oscilab [session.json]` entry point
 ```
 
@@ -127,7 +126,6 @@ command's options:
 | `uv run oscilab-sensor-logger` | Your phone's sensors, from the Sensor Logger app ([below](#your-phones-sensors-sensor-logger)) |
 | `uv run oscilab-udp --demo` | Samples over UDP, sending itself some ([below](#samples-over-udp)) |
 | `uv run oscilab-bench` | Where Oscilab keeps up: a figure of channels x sample rate |
-| `uv run oscilab-bench-buffers` | The rolling buffers: `deque` against `RingBuffer` |
 
 [`demo.py`](src/oscilab/demo.py) is a good starting point for the public
 API:
@@ -138,7 +136,7 @@ from oscilab import AsyncSyntheticProducer, Oscilab, SyntheticProducer
 scope = Oscilab()
 
 # Each producer registers its own signals, one per channel, at its own fs
-scope.attach_producer(SyntheticProducer(fs=100, freq=5.0), "channel-1", storage=scope.storage.deque, units="V")
+scope.attach_producer(SyntheticProducer(fs=100, freq=5.0), "channel-1", units="V")
 scope.attach_producer(SyntheticProducer(fs=1_000, freq=(1.0, 10.0)), ["channel-2", "channel-3"])
 scope.attach_producer(AsyncSyntheticProducer(fs=200, freq=2.0), "async")  # "Reset Phase" in the toolbar
 
@@ -539,8 +537,8 @@ or real-time-systems side rather than the UI:
   track elapsed wall-clock time and emit however many samples are due,
   self-correcting each iteration.
 - **Thread-safe ring buffer** ([ring_buffer.py](src/oscilab/ring_buffer.py)) —
-  a pre-allocated numpy circular buffer as a drop-in for
-  `deque(maxlen=...)`, guarded by a lock. Producer data is delivered on
+  every signal's pre-allocated numpy circular buffer, guarded by a lock.
+  Producer data is delivered on
   the GUI thread via queued Qt signals, but a signal fed by hand may be
   written from any thread.
 
