@@ -14,7 +14,7 @@ import pytest
 from PyQt6 import QtWidgets as qtw
 from scipy.io import loadmat
 
-from oscilab import workspace as workspace_module
+from oscilab import plotting
 from oscilab.view import View
 from oscilab.workspace import Workspace
 
@@ -89,7 +89,7 @@ def test_y_axis_button_works_for_every_plot_type(workspace, monkeypatch):
         asked.append((title, kwargs["unit"]))
         return False, 1.0, 2.0  # "pin the range to [1, 2]"
 
-    monkeypatch.setattr(workspace_module, "_ask_range", fake_ask_range)
+    monkeypatch.setattr(plotting, "_ask_range", fake_ask_range)
     workspace.register_signal("s", fs=1_000)
     workspace.add_plot("P")
     workspace.add_spectrogram("s")

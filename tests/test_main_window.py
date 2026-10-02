@@ -6,7 +6,7 @@ from PyQt6 import QtCore as qtc
 from PyQt6 import QtWidgets as qtw
 
 import oscilab
-from oscilab import workspace as workspace_module
+from oscilab import plotting
 from oscilab.dialogs import RangeDialog
 from oscilab.oscilab import Oscilab
 
@@ -73,10 +73,10 @@ def test_export_with_nothing_to_export_skips_the_dialog(window, monkeypatch):
 def test_range_dialog_prefills_what_is_in_effect(qapp, monkeypatch, auto, expected):  # noqa: ARG001
     # Accept the dialog untouched: what comes back is exactly what it was pre-filled with.
     monkeypatch.setattr(RangeDialog, "exec", lambda _self: qtw.QDialog.DialogCode.Accepted)
-    chosen = workspace_module._ask_range(None, "Y", auto=auto, pinned=(0.5, 1.5), live=(-3.0, 3.0))
+    chosen = plotting._ask_range(None, "Y", auto=auto, pinned=(0.5, 1.5), live=(-3.0, 3.0))
     assert chosen == expected
 
 
 def test_range_dialog_cancel_returns_none(qapp, monkeypatch):  # noqa: ARG001
     monkeypatch.setattr(RangeDialog, "exec", lambda _self: qtw.QDialog.DialogCode.Rejected)
-    assert workspace_module._ask_range(None, "Y", auto=True, pinned=(0, 1), live=(0, 1)) is None
+    assert plotting._ask_range(None, "Y", auto=True, pinned=(0, 1), live=(0, 1)) is None

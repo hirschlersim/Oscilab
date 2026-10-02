@@ -24,6 +24,8 @@ MODULES = [
     "oscilab.session",
     "oscilab.view",
     "oscilab.workspace",
+    "oscilab.plotting",
+    "oscilab.triggering",
     "oscilab.log",
     "oscilab.display",
     "oscilab.storage",

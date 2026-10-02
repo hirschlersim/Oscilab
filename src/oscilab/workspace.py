@@ -4,6 +4,10 @@ Domain layer: owns signals, plots, controllers and producers.
 `Oscilab` (the QMainWindow) only builds window chrome and delegates all
 registry/wiring logic here. Keeping this Qt-widget-light makes it possible
 to test linking/producer logic without spinning up a full window.
+
+The workspace keeps the registries; two parts of it do the rest: its plots'
+creation and removal (`oscilab.plotting`), and triggering them
+(`oscilab.triggering`).
 """
 
 from collections.abc import Callable, Sequence
@@ -13,47 +17,26 @@ from typing import TYPE_CHECKING
 import numpy as np
 from loguru import logger as default_logger
 from PyQt6 import QtCore as qtc
-from PyQt6 import QtWidgets as qtw
 
 from oscilab import exporters
-from oscilab.dialogs import HistogramDialog, RangeDialog
 from oscilab.display import TimeMode
 from oscilab.histogram_plot import HistogramPlot
 from oscilab.logic_plot import LogicPlot
 from oscilab.math_signal import MathSignal, derived_unit
+from oscilab.plotting import Plotting
 from oscilab.producers import DataProducer
-from oscilab.signal_controller import SignalController, SignalRow
+from oscilab.signal_controller import SignalController
 from oscilab.signal_model import SignalModel
 from oscilab.spectrogram_plot import SpectrogramPlot
 from oscilab.storage import Storage
 from oscilab.timeseries_plot import TimeseriesPlot
 from oscilab.trigger import Acquisition, TriggerSettings
-from oscilab.view import View
+from oscilab.triggering import Triggering
+from oscilab.view import View  # noqa: TC001 - imported at runtime, so the API docs can resolve `views`
 from oscilab.xy_plot import XYPlot
 
 if TYPE_CHECKING:
     from loguru import Logger
-
-
-def _ask_range(
-    parent: qtw.QWidget | None,
-    title: str,
-    auto: bool,
-    pinned: tuple[float, float],
-    live: tuple[float, float],
-    unit: str = "",
-) -> tuple[bool, float, float] | None:
-    """
-    Ask for an Auto/Min/Max range, pre-filled with what's in effect right
-    now — the `live` auto-fitted range while in Auto, else the `pinned` one —
-    so there's always a real number to start adjusting from, not a stale
-    placeholder. Returns `(auto, lo, hi)`, or None if cancelled.
-    """
-    lo, hi = live if auto else pinned
-    dialog = RangeDialog(title=title, current_auto=auto, current_min=lo, current_max=hi, unit=unit, parent=parent)
-    if dialog.exec() != qtw.QDialog.DialogCode.Accepted:
-        return None
-    return dialog.get_values()
 
 
 def signals_caption(labels: list[str]) -> str:
@@ -107,10 +90,13 @@ class Workspace:
         self._duration = 10.0  # seconds of history kept/displayed, applied to new signals too
         self._time_mode: TimeMode = "global"  # "global" or "relative", applied to new plots too
         self._downsampling = False  # min-max curve downsampling, applied to new plots too
-        self._trigger: Acquisition | None = None  # See `set_trigger`
         self.trigger_changed: Callable[[], None] | None = None  # Told when a level line is dragged
 
-    def _log(self, message: str, level: str = "info") -> None:
+        self.plotting = Plotting(self)
+        self.triggering = Triggering(self)
+
+    def log(self, message: str, level: str = "info") -> None:
+        """Log `message`, as from where this was called — to the window's status bar too, in a window."""
         self._logger.opt(depth=1).log(level.upper(), message)
 
     @property
@@ -127,6 +113,11 @@ class Workspace:
         return self._downsampling
 
     @property
+    def plot_theme(self) -> tuple[str, str]:
+        """The plots' (background, foreground) colors (see `set_theme`)."""
+        return self._plot_theme
+
+    @property
     def plots(self) -> dict[str, TimeseriesPlot]:
         """The time-based plots signals are `link`ed to — time series and logic lanes — keyed by title."""
         return {title: view for title, view in self.views.items() if isinstance(view, TimeseriesPlot)}
@@ -136,44 +127,18 @@ class Workspace:
         """The spectrograms, keyed by their signal's label."""
         return {title: view for title, view in self.views.items() if isinstance(view, SpectrogramPlot)}
 
+    # --- plots (`oscilab.plotting`) --------------------------------------------------------------
+
     def add_plot(self, title: str) -> tuple[TimeseriesPlot, SignalController]:
         """A time-series plot; `link` signals to it."""
-        self.__check_new_title(title)
-        return self.__add_time_plot(title, TimeseriesPlot(title=title))
+        return self.plotting.add_plot(title)
 
     def add_logic_plot(self, title: str, threshold: float = 0.5) -> tuple[LogicPlot, SignalController]:
         """
         Logic lanes (`oscilab.logic_plot`): on/off signals in a lane each,
         high above `threshold`. `link` signals to it, as to a time-series plot.
         """
-        self.__check_new_title(title)
-        plot = LogicPlot(title=title, threshold=threshold)
-        self.__add_time_plot(title, plot)
-        controller = self.controllers[title]
-
-        def ask_threshold() -> None:
-            value, ok = qtw.QInputDialog.getDouble(
-                controller, f"Threshold | {title}", "High above:", plot.threshold, -1e12, 1e12, 6
-            )
-            if ok:
-                plot.set_threshold(value)
-                self._log(f"Logic threshold for '{title}' set to {value:g}")
-
-        controller.add_header_button("Threshold...", "The value above which a signal counts as high", ask_threshold)
-        return plot, controller
-
-    def __add_time_plot[P: TimeseriesPlot](self, title: str, plot: P) -> tuple[P, SignalController]:
-        first_plot = next(iter(self.plots.values()), None)
-        controller = self.__add_view(title, plot)
-        # Fires on every drag, so the readout stays in sync even while
-        # paused (the timer-driven `refresh()` loop covers it while running).
-        plot.cursor_changed.connect(lambda t=title: self.__refresh_cursor_readout(t))
-
-        # Keep every plot's time axis (pan/zoom) in sync with the first one,
-        # so scrubbing/zooming one plot moves them all together.
-        if first_plot is not None:
-            plot.setXLink(first_plot)
-        return plot, controller
+        return self.plotting.add_logic_plot(title, threshold)
 
     def add_spectrogram(
         self, label: str, nperseg: int = 256, noverlap: int = 128
@@ -189,75 +154,14 @@ class Workspace:
         metrics watched — everything except curve color (nothing is drawn as
         a line) and "visible" toggles the whole spectrogram widget instead.
         """
-        self.__check_new_title(label)
-        if label not in self.signals:
-            raise ValueError(f"Unknown signal '{label}'")
-
-        model = self.signals[label]
-        spectrogram = SpectrogramPlot(label=label, model=model, nperseg=nperseg, noverlap=noverlap)
-        controller = self.__add_view(label, spectrogram)
-
-        def open_color_dialog() -> None:
-            levels = spectrogram.img.getLevels()  # None until the first STFT frame is drawn
-            chosen = _ask_range(
-                controller,
-                f"Color Levels | {label}",
-                auto=spectrogram.color_levels_auto,
-                pinned=(spectrogram.color_levels_min, spectrogram.color_levels_max),
-                live=(float(levels[0]), float(levels[1])) if levels is not None else (0.0, 1.0),
-                unit="dB",
-            )
-            if chosen:
-                auto, lo, hi = chosen
-                spectrogram.set_color_levels(auto, lo, hi)
-                self._log(f"Color levels for '{label}' set to {'Auto' if auto else f'[{lo:g}, {hi:g}] dB'}")
-
-        controller.add_header_button(
-            "Color", "Pin exact colormap levels instead of the one-time auto snapshot", open_color_dialog
-        )
-
-        derived = label in self.math_signals
-        row = self._link_row(label, model, derived=derived, has_curve=False)
-        row.visibility_changed.connect(spectrogram.set_visible)
-        return spectrogram, controller
+        return self.plotting.add_spectrogram(label, nperseg, noverlap)
 
     def add_xy_plot(self, title: str, x: str, y: str, trail: float | None = None) -> tuple[XYPlot, SignalController]:
         """
         `y` against `x` (`oscilab.xy_plot`): the last `trail` seconds of
         them, or (None) everything in their buffers.
         """
-        self.__check_new_title(title)
-        for label in (x, y):
-            if label not in self.signals:
-                raise ValueError(f"Unknown signal '{label}'")
-        if x == y:
-            raise ValueError("An XY plot needs two different signals")
-        if trail is not None and trail <= 0:
-            raise ValueError(f"trail must be positive (or None for the whole buffer), got {trail}")
-
-        plot = XYPlot(title, self.signals[x], self.signals[y], trail=trail)
-        controller = self.__add_view(title, plot)
-
-        def ask_x_range() -> None:
-            chosen = _ask_range(
-                controller,
-                f"X-Axis | {title}",
-                auto=plot.x_range_auto,
-                pinned=(plot.x_range_min, plot.x_range_max),
-                live=plot.live_x_range(),
-                unit=plot.x_model.unit,
-            )
-            if chosen:
-                plot.set_x_range(*chosen)
-
-        controller.add_header_button("X-Axis", "Pin an exact X-axis range instead of always auto-fitting", ask_x_range)
-        equal = controller.add_header_button("Equal Axes", "Draw one unit as long on X as on Y", lambda: None)
-        equal.setCheckable(True)
-        equal.toggled.connect(plot.set_equal_axes)
-        for label in (x, y):
-            row = self._link_row(label, self.signals[label], derived=label in self.math_signals, has_curve=False)
-            row.visibility_changed.connect(plot.set_visible)
-        return plot, controller
+        return self.plotting.add_xy_plot(title, x, y, trail)
 
     def add_histogram(
         self, label: str, bins: int = 50, value_range: tuple[float, float] | None = None, title: str | None = None
@@ -267,66 +171,28 @@ class Workspace:
         bars over `value_range` — or the data's own range. Titled
         "Histogram: <label>" unless given one.
         """
-        title = title or f"Histogram: {label}"
-        self.__check_new_title(title)
-        if label not in self.signals:
-            raise ValueError(f"Unknown signal '{label}'")
+        return self.plotting.add_histogram(label, bins, value_range, title)
 
-        plot = HistogramPlot(title, self.signals[label], bins=bins, value_range=value_range)
-        plot.set_bins(bins, value_range)  # Checks them
-        controller = self.__add_view(title, plot)
+    def link(self, plot: str, label: str) -> None:
+        """Show a signal on a time-series plot. It gets one row in `signal_list`, however many plots show it."""
+        self.plotting.link(plot, label)
 
-        def ask_bins() -> None:
-            dialog = HistogramDialog(bins=plot.bins, value_range=plot.value_range, parent=controller)
-            if dialog.exec() == qtw.QDialog.DialogCode.Accepted:
-                _, chosen_bins, chosen_range = dialog.get_values()
-                plot.set_bins(chosen_bins, chosen_range)
-                self._log(f"Histogram '{title}': {chosen_bins} bins")
+    def unlink(self, plot: str, label: str) -> None:
+        """Take a signal off a time-series plot. Its row goes once no plot shows it."""
+        self.plotting.unlink(plot, label)
 
-        controller.add_header_button("Bins...", "How many bars, over which range of values", ask_bins)
-        row = self._link_row(label, self.signals[label], derived=label in self.math_signals, has_curve=False)
-        row.visibility_changed.connect(plot.set_visible)
-        return plot, controller
-
-    def __check_new_title(self, title: str) -> None:
-        if title in self.views:
-            raise ValueError(f"Plot '{title}' already exists")
-
-    def __add_view(self, title: str, view: View) -> SignalController:
+    def remove_plot(self, title: str) -> None:
         """
-        Register `view` under `title` with the current theme, time mode and
-        downsampling applied, and give it a "Plot:" panel with a Y-Axis
-        button. Returns the panel, for any buttons specific to the view.
+        Remove a plot, of any kind. Its signals stay; rows of signals no plot
+        shows anymore go.
         """
-        view.set_theme(*self._plot_theme)
-        view.set_time_mode(self._time_mode)
-        view.set_downsampling(self._downsampling)
+        self.plotting.remove_plot(title)
 
-        controller = SignalController(title=f"Plot: {title}")
-        controller.add_header_button(
-            "Y-Axis",
-            "Pin an exact Y-axis range instead of always auto-fitting",
-            lambda _checked=False: self.__open_y_axis_dialog(title),
-        )
-        self.views[title] = view
-        self.controllers[title] = controller
-        return controller
+    def set_cursors(self, plot: str, enabled: bool) -> None:
+        """Toggle classic two-cursor measurement on `plot` (see `TimeseriesPlot.set_cursors`)."""
+        self.plotting.set_cursors(plot, enabled)
 
-    def __open_y_axis_dialog(self, title: str) -> None:
-        view = self.views[title]
-        chosen = _ask_range(
-            self.controllers[title],
-            f"Y-Axis | {title}",
-            auto=view.y_range_auto,
-            pinned=(view.y_range_min, view.y_range_max),
-            live=view.live_y_range(),
-            unit=view.y_unit,
-        )
-        if chosen:
-            auto, lo, hi = chosen
-            view.set_y_range(auto, lo, hi)
-            unit = f" {view.y_unit}" if view.y_unit else ""
-            self._log(f"Y-axis for '{title}' set to {'Auto' if auto else f'[{lo:g}, {hi:g}]{unit}'}")
+    # --- signals ---------------------------------------------------------------------------------
 
     def register_signal(self, label: str, fs: float, storage: Storage = Storage.ring, unit: str = "") -> SignalModel:
         """
@@ -356,7 +222,7 @@ class Workspace:
 
         self.signals[label] = derived_model
         self.math_signals[label] = MathSignal(label=label, model_a=model_a, model_b=model_b, operator=operator)
-        self._log(f"Created math signal '{label}' = {signal_a} {operator} {signal_b}")
+        self.log(f"Created math signal '{label}' = {signal_a} {operator} {signal_b}")
         return derived_model
 
     def set_unit(self, label: str, unit: str) -> None:
@@ -385,88 +251,7 @@ class Workspace:
         for changed_label in changed:
             if changed_label in self.signal_list.rows:
                 self.signal_list.rows[changed_label].update_unit()
-        self._log(f"Unit of '{label}' set to {unit}" if unit else f"Unit of '{label}' removed")
-
-    def __set_unit_from_row(self, label: str, unit: str) -> None:
-        try:
-            self.set_unit(label, unit)
-        except ValueError as e:  # A Qt slot: report it, don't raise
-            self._log(str(e), level="warning")
-
-    def link(self, plot: str, label: str) -> None:
-        if plot not in self.views:
-            raise ValueError(f"Unknown plot '{plot}'")
-        if plot not in self.plots:
-            raise ValueError(f"'{plot}' isn't a time-series plot; signals can only be linked to those")
-        if label not in self.signals:
-            raise ValueError(f"Unknown signal '{label}'")
-
-        model = self.signals[label]
-        target_plot = self.plots[plot]
-        if label in target_plot.curves:
-            raise ValueError(f"'{label}' is already shown in '{plot}'")
-        derived = label in self.math_signals
-
-        color = target_plot.add_signal(label=label, model=model)
-        row = self._link_row(label, model, derived=derived, has_curve=True)
-        row.visibility_changed.connect(target_plot.set_visible)
-        row.color_changed.connect(target_plot.set_color)
-        row.set_color(color)  # Sync the row's swatch to the color the plot assigned
-
-    def _link_row(self, label: str, model: SignalModel, derived: bool, has_curve: bool) -> SignalRow:
-        """
-        Return this signal's one row in the flat `signal_list`, creating
-        it on first use. A signal linked to a second/third plot reuses the
-        same row rather than getting another one — that row's toggles just
-        end up wired to every plot it's linked to (see `link`/`add_spectrogram`).
-        """
-        if label in self.signal_list.rows:
-            row = self.signal_list.rows[label]
-            if has_curve:
-                row.enable_curve()  # e.g. was spectrogram-only, now also plotted as a curve
-            return row
-
-        row = self.signal_list.add_signal(label=label, model=model, derived=derived, has_curve=has_curve)
-        row.restart_requested.connect(self.restart_producer)
-        row.remove_requested.connect(self.__remove_signal_from_row)
-        row.unit_requested.connect(self.__set_unit_from_row)
-        if label in self._producer_errors:
-            row.set_error(self._producer_errors[label])
-        return row
-
-    def unlink(self, plot: str, label: str) -> None:
-        """Take a signal off a time-series plot. Its row goes once no plot shows it."""
-        if plot not in self.plots:
-            raise ValueError(f"Unknown time-series plot '{plot}'")
-        target = self.plots[plot]
-        if label not in target.curves:
-            raise ValueError(f"'{label}' isn't shown in '{plot}'")
-        self.__disconnect_row(label, target)
-        target.remove_signal(label)
-        self.__drop_row_if_unshown(label)
-
-    def remove_plot(self, title: str) -> None:
-        """
-        Remove a plot, of any kind. Its signals stay; rows of signals no plot
-        shows anymore go.
-        """
-        if title not in self.views:
-            raise ValueError(f"Unknown plot '{title}'")
-        view = self.views.pop(title)
-        controller = self.controllers.pop(title)
-
-        shown = view.signals
-        for label in shown:
-            self.__disconnect_row(label, view)
-        if isinstance(view, TimeseriesPlot):
-            view.setXLink(None)
-            self.__relink_x_axes()
-        for widget in (view, controller):
-            widget.hide()
-            widget.deleteLater()
-        for label in shown:
-            self.__drop_row_if_unshown(label)
-        self._log(f"Removed plot '{title}'")
+        self.log(f"Unit of '{label}' set to {unit}" if unit else f"Unit of '{label}' removed")
 
     def remove_signal(self, label: str) -> None:
         """
@@ -481,7 +266,7 @@ class Workspace:
         self.__refuse_if_used_by_math([label])
 
         self.__drop_signal(label)
-        self._log(f"Removed signal '{label}'")
+        self.log(f"Removed signal '{label}'")
 
     def __refuse_if_used_by_math(self, labels: list[str]) -> None:
         users = [m.label for m in self.math_signals.values() if {m.model_a.label, m.model_b.label} & set(labels)]
@@ -502,36 +287,13 @@ class Workspace:
                 self.unlink(title, label)
             else:
                 self.remove_plot(title)
-        if self._trigger is not None and self._trigger.settings.source == label:
+        if self.trigger is not None and self.trigger.settings.source == label:
             self.set_trigger(None)  # Nothing left to trigger on
-            self._log(f"Trigger turned off: its source '{label}' was removed", level="warning")
+            self.log(f"Trigger turned off: its source '{label}' was removed", level="warning")
         self.math_signals.pop(label, None)
         del self.signals[label]
 
-    def __remove_signal_from_row(self, label: str) -> None:
-        try:
-            self.remove_signal(label)
-        except ValueError as e:  # E.g. another math signal uses it: say so (this is a Qt slot)
-            self._log(str(e), level="warning")
-
-    def __disconnect_row(self, label: str, view: View) -> None:
-        row = self.signal_list.rows[label]
-        row.visibility_changed.disconnect(view.set_visible)
-        if isinstance(view, TimeseriesPlot):
-            row.color_changed.disconnect(view.set_color)
-
-    def __drop_row_if_unshown(self, label: str) -> None:
-        shown = any(label in view.signals for view in self.views.values())
-        if not shown and label in self.signal_list.rows:
-            self.signal_list.remove_signal(label)
-
-    def __relink_x_axes(self) -> None:
-        """Link every time-series plot's X axis to the first one again (e.g. after the first was removed)."""
-        plots = list(self.plots.values())
-        for plot in plots:
-            plot.setXLink(None)
-        for plot in plots[1:]:
-            plot.setXLink(plots[0])
+    # --- producers -------------------------------------------------------------------------------
 
     def attach_producer(
         self,
@@ -573,7 +335,7 @@ class Workspace:
             self.producers[label] = producer
 
         producer.start()
-        self._log(f"Started {type(producer).__name__} for {', '.join(repr(label) for label in labels)}")
+        self.log(f"Started {type(producer).__name__} for {', '.join(repr(label) for label in labels)}")
         return models
 
     @staticmethod
@@ -593,7 +355,7 @@ class Workspace:
     def __on_producer_error(self, labels: list[str], message: str) -> None:
         # Named briefly, so the reason still fits the status bar for a producer of many channels
         producer = type(self.producers[labels[0]]).__name__
-        self._log(f"{producer} for {signals_caption(labels)} stopped: {message}", level="error")
+        self.log(f"{producer} for {signals_caption(labels)} stopped: {message}", level="error")
         for label in labels:
             self._producer_errors[label] = message
             if label in self.signal_list.rows:
@@ -610,7 +372,7 @@ class Workspace:
         producer = self.__producer_feeding(label)
         if producer.running:
             producer.stop()
-            self._log(f"Stopped {self.__describe(producer)}")
+            self.log(f"Stopped {self.__describe(producer)}")
 
     def restart_producer(self, label: str) -> None:
         """
@@ -628,7 +390,7 @@ class Workspace:
             if name in self.signal_list.rows:
                 self.signal_list.rows[name].clear_error()
         producer.start()
-        self._log(f"{verb} {self.__describe(producer)}")
+        self.log(f"{verb} {self.__describe(producer)}")
 
     def producer_state(self, label: str) -> str:
         """The producer feeding `label`: "running", "stopped", or "error" (stopped by one)."""
@@ -636,6 +398,10 @@ class Workspace:
         if producer.running:
             return "running"
         return "error" if label in self._producer_errors else "stopped"
+
+    def producer_error(self, label: str) -> str | None:
+        """Why the producer feeding `label` stopped, if an error stopped it — else None."""
+        return self._producer_errors.get(label)
 
     def __producer_feeding(self, label: str) -> DataProducer:
         if label not in self.producers:
@@ -667,19 +433,19 @@ class Workspace:
             self.__drop_signal(fed)
             del self.producers[fed]
             self._producer_errors.pop(fed, None)
-        self._log(f"Removed {self.__describe(producer)}")
+        self.log(f"Removed {self.__describe(producer)}")
         return labels
 
     def stop_producers(self) -> None:
         for producer in dict.fromkeys(self.producers.values()):  # a multi-channel producer is listed once per signal
             producer.stop()
 
-    # --- triggering ------------------------------------------------------------------------------
+    # --- triggering (`oscilab.triggering`) -------------------------------------------------------
 
     @property
     def trigger(self) -> Acquisition | None:
         """The trigger's acquisition while triggering is on (see `set_trigger`), else None."""
-        return self._trigger
+        return self.triggering.acquisition
 
     def set_trigger(self, settings: TriggerSettings | None) -> Acquisition | None:
         """
@@ -690,89 +456,16 @@ class Workspace:
         None turns triggering off, back to scrolling live. Returns the
         acquisition, to Run, Single, Stop or Force.
         """
-        if settings is None:
-            self._trigger = None
-            for plot in self.plots.values():
-                plot.show_live()
-                plot.set_trigger_levels([])
-            return None
-        if settings.source not in self.signals:
-            raise ValueError(f"Unknown trigger source '{settings.source}'")
-        if settings.span > self._duration:
-            raise ValueError(
-                f"A record of {settings.span:g} s doesn't fit the {self._duration:g} s of history kept: "
-                "choose less time per division, or a longer duration"
-            )
-        if self._trigger is not None:
-            self._trigger.apply(settings)  # Checks them
-        else:
-            self._trigger = Acquisition(settings)  # Checks them
-            self._trigger.run()
-        self.__update_trigger_levels()
-        return self._trigger
+        return self.triggering.set(settings)
 
-    def __trigger_tick(self) -> None:
-        acquisition = self._trigger
-        if acquisition is None or acquisition.settings.source not in self.signals:
-            return
-        event = acquisition.tick(*self.signals[acquisition.settings.source].snapshot())
-        if event is not None:
-            self.__show_record(acquisition.settings, event)
-        self.__update_trigger_levels()
-
-    def __show_record(self, settings: TriggerSettings, event: float) -> None:
-        """Every time-based plot shows the record around `event`: the same one, as a scope's channels."""
-        start, end = settings.window(event)
-        for plot in self.plots.values():
-            record = {}
-            for label in plot.signals:
-                t, x = self.signals[label].snapshot()
-                # One sample past each end, so the curves run right to the edges
-                first = max(int(np.searchsorted(t, start)) - 1, 0)
-                last = int(np.searchsorted(t, end, side="right")) + 1
-                record[label] = (t[first:last].copy(), x[first:last].copy())
-            plot.show_record(record, event, start, end)
-
-    def __update_trigger_levels(self) -> None:
-        """The trigger level(s) as dashed lines on the plots showing its source, where values are drawn."""
-        acquisition = self._trigger
-        for plot in self.plots.values():
-            shows_source = acquisition is not None and acquisition.settings.source in plot.signals
-            if not shows_source or isinstance(plot, LogicPlot) or acquisition is None:
-                plot.set_trigger_levels([])
-                continue
-            s = acquisition.settings
-            offset = acquisition.detector.offset  # AC coupling: the level is relative to the average
-            if s.type == "window":
-                levels = [s.low + offset, s.high + offset]
-            elif s.type in ("edge", "hysteresis"):
-                levels = [s.level + offset]
-            else:
-                levels = []
-            plot.set_trigger_levels(levels, self.__level_moved)
-
-    def __level_moved(self, index: int, value: float) -> None:
-        """A level line was dragged: the trigger takes its new level."""
-        acquisition = self._trigger
-        if acquisition is None:
-            return
-        s = acquisition.settings
-        value -= acquisition.detector.offset
-        if s.type == "window":
-            low, high = (value, s.high) if index == 0 else (s.low, value)
-            s.low, s.high = min(low, high), max(low, high)
-        else:
-            s.level = value
-        self._log(f"Trigger level set to {value:g}")
-        if self.trigger_changed is not None:
-            self.trigger_changed()
+    # --- refresh and view settings ---------------------------------------------------------------
 
     def refresh(self) -> None:
         for math_signal in self.math_signals.values():
             t, x = math_signal.compute()
             self.signals[math_signal.label].set_data(t, x)
 
-        self.__trigger_tick()
+        self.triggering.tick()
         self.__refresh_views()
         self.signal_list.refresh()
 
@@ -780,8 +473,7 @@ class Workspace:
         now = self.__newest_shown_time()
         for view in self.views.values():
             view.refresh(now)
-        for title in self.plots:
-            self.__refresh_cursor_readout(title)
+        self.plotting.refresh_cursor_readouts()
 
     def __newest_shown_time(self) -> float | None:
         """
@@ -797,35 +489,6 @@ class Workspace:
     def reset_views(self) -> None:
         for view in self.views.values():
             view.reset_view()
-
-    def set_cursors(self, plot: str, enabled: bool) -> None:
-        """Toggle classic two-cursor measurement on `plot` (see `TimeseriesPlot.set_cursors`)."""
-        if plot not in self.plots:
-            raise ValueError(f"Unknown plot '{plot}'")
-        self.plots[plot].set_cursors(enabled)
-        if enabled:
-            self.__refresh_cursor_readout(plot)  # Show a reading immediately, not just on the next tick/drag
-        else:
-            self.controllers[plot].set_cursor_readout(None)
-        self._log(f"Cursors {'enabled' if enabled else 'disabled'} on '{plot}'")
-
-    def __refresh_cursor_readout(self, title: str) -> None:
-        """
-        Recompute and display `title`'s cursor readout, if cursors are on.
-        Called every refresh tick and also directly on every cursor drag, so
-        it stays live even while the refresh timer is stopped (paused).
-        """
-        readout = self.plots[title].cursor_readout()
-        if readout is not None:
-            self.controllers[title].set_cursor_readout(self.__format_cursor_readout(readout))
-
-    def __format_cursor_readout(self, readout: dict) -> str:
-        freq_text = f"{readout['freq']:.3f} Hz" if readout["freq"] is not None else "—"
-        lines = [f"Cursors  ΔT: {readout['dt']:+.4f} s   1/ΔT: {freq_text}"]
-        for label, v in readout["signals"].items():
-            name = self.signals[label].display_name
-            lines.append(f"  {name}: A={v['value_a']:+.3f}  B={v['value_b']:+.3f}  Δ={v['delta']:+.3f}")
-        return "\n".join(lines)
 
     def set_theme(self, bg: str, fg: str) -> None:
         """Apply a plot color theme now, and remember it for plots added later."""
@@ -852,7 +515,7 @@ class Workspace:
         self._downsampling = enabled
         for view in self.views.values():
             view.set_downsampling(enabled)
-        self._log(f"Downsampling {'enabled' if enabled else 'disabled'}")
+        self.log(f"Downsampling {'enabled' if enabled else 'disabled'}")
 
     def set_duration(self, duration: float) -> None:
         """
@@ -862,7 +525,9 @@ class Workspace:
         self._duration = duration
         for model in self.signals.values():
             model.set_duration(duration)
-        self._log(f"Display duration set to {duration:g}s")
+        self.log(f"Display duration set to {duration:g}s")
+
+    # --- exports ---------------------------------------------------------------------------------
 
     def __plot_items(self) -> dict:
         """Every view's `PlotItem`, keyed by title — what the image exporters render."""
@@ -872,8 +537,8 @@ class Workspace:
         written, failed = exporters.export_images(self.__plot_items(), base_path, suffix)
         format_name = suffix.lstrip(".").upper()
         for title, error in failed.items():
-            self._log(f"Failed to export '{title}' to {format_name}: {error}", level="error")
-        self._log(f"Exported {len(written)} plot(s) to {format_name}", level="success")
+            self.log(f"Failed to export '{title}' to {format_name}: {error}", level="error")
+        self.log(f"Exported {len(written)} plot(s) to {format_name}", level="success")
         return written
 
     def export_png(self, base_path: str | Path) -> list[Path]:
@@ -891,17 +556,17 @@ class Workspace:
     def export_csv(self, base_path: str | Path) -> list[Path]:
         """Export every signal's (time, value) buffer to a CSV next to `base_path`."""
         written = exporters.export_csv(self.signals, base_path)
-        self._log(f"Exported {len(written)} signal(s) to CSV", level="success")
+        self.log(f"Exported {len(written)} signal(s) to CSV", level="success")
         return written
 
     def export_mat(self, path: str | Path) -> Path:
         """Export every signal's (time, value) buffer into one MATLAB .mat file."""
         written = exporters.export_mat(self.signals, path)
-        self._log(f"Exported {len(self.signals)} signal(s) to {written.name}", level="success")
+        self.log(f"Exported {len(self.signals)} signal(s) to {written.name}", level="success")
         return written
 
     def export_h5(self, path: str | Path) -> Path:
         """Export every signal's (time, value) buffer into one HDF5 .h5 file."""
         written = exporters.export_h5(self.signals, path)
-        self._log(f"Exported {len(self.signals)} signal(s) to {written.name}", level="success")
+        self.log(f"Exported {len(self.signals)} signal(s) to {written.name}", level="success")
         return written
