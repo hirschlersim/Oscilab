@@ -12,7 +12,7 @@ way math signals line their operands up.
 import numpy as np
 import pyqtgraph as pg
 
-from oscilab.display import TimeMode
+from oscilab.display import CURVE_WIDTH, TimeMode
 from oscilab.grid import GridPlotWidget
 from oscilab.signal_model import SignalModel
 
@@ -40,7 +40,7 @@ class XYPlot(GridPlotWidget):
         self.setMenuEnabled(False)
         for axis in ("left", "bottom"):
             self.getAxis(axis).enableAutoSIPrefix(False)  # Values as they are, like everywhere else
-        self.curve = self.plot(pen=pg.mkPen(_CURVE, width=1.5), antialias=False)
+        self.curve = self.plot(pen=pg.mkPen(_CURVE, width=CURVE_WIDTH), antialias=False)
         self.head = self.plot(pen=None, symbol="o", symbolSize=9, antialias=True)  # The newest point
         self.set_theme(bg="#202f46", fg="#ffffff")
         self.update_units()

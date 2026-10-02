@@ -123,6 +123,20 @@ def test_a_refresh_paints_the_plot_once(qapp, workspace, kind):
     plot.hide()
 
 
+def test_curves_are_one_pixel_wide(workspace):
+    # Qt draws only 1-pixel lines the fast way: at 1.5, curves took twice as long
+    for label in ("a", "b"):
+        workspace.register_signal(label, fs=10)
+    plot, _ = workspace.add_plot("P")
+    workspace.link(plot="P", label="a")
+    xy, _ = workspace.add_xy_plot("XY", "a", "b")
+    assert plot.curves["a"].opts["pen"].widthF() == 1
+    assert xy.curve.opts["pen"].widthF() == 1
+
+    plot.set_color("a", "#00ff00")
+    assert plot.curves["a"].opts["pen"].widthF() == 1
+
+
 # --- downsampling ------------------------------------------------------------------------------
 
 

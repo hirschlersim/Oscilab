@@ -4,7 +4,7 @@ import numpy as np
 import pyqtgraph as pg
 from PyQt6 import QtCore as qtc
 
-from oscilab.display import TIME_MODES, TimeMode
+from oscilab.display import CURVE_WIDTH, TIME_MODES, TimeMode
 from oscilab.grid import GridPlotWidget
 from oscilab.signal_model import SignalModel
 
@@ -118,7 +118,7 @@ class TimeseriesPlot(GridPlotWidget):
     def add_signal(self, label: str, model: SignalModel) -> str:
         color = self.colors[len(self.curves) % len(self.colors)]
         curve = self.plot(
-            pen=pg.mkPen(color, width=1.5),
+            pen=pg.mkPen(color, width=CURVE_WIDTH),
             name=model.display_name,
             antialias=False,
             autoDownsampleFactor=_GROUPS_PER_PIXEL,
@@ -187,7 +187,7 @@ class TimeseriesPlot(GridPlotWidget):
 
     def set_color(self, label: str, color: str) -> None:
         if label in self.curves:
-            self.curves[label].setPen(pg.mkPen(color, width=1.5))
+            self.curves[label].setPen(pg.mkPen(color, width=CURVE_WIDTH))
 
     @property
     def plot_item(self) -> pg.PlotItem:

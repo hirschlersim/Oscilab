@@ -147,7 +147,8 @@ def lagging_pair(workspace: Workspace, fs: float = 10.0):
 
 
 def newest_x(plot, label: str) -> float:
-    return float(plot.curves[label].getData()[0][-1])
+    # As set, before downsampling: that may leave out the last few samples, depending on the plot's width
+    return float(plot.curves[label].getOriginalDataset()[0][-1])
 
 
 def test_relative_time_puts_signals_on_one_clock(workspace):

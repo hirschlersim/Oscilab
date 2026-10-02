@@ -24,6 +24,7 @@ Leave it be: covering or minimizing it changes what gets painted.
 """
 
 import argparse
+import ctypes
 import math
 import sys
 import time
@@ -223,7 +224,7 @@ def outline(ok: np.ndarray) -> list[tuple[list[int], list[int]]]:
     return segments
 
 
-def figure(results: list[Result], args: argparse.Namespace, size: str, idle: tuple[float, float]) -> plt.Figure:
+def figure(results: list[Result], args: argparse.Namespace, window: str, idle: tuple[float, float]) -> plt.Figure:
     channels = sorted({r.channels for r in results})
     rates = sorted({r.fs for r in results})
     share = np.full((len(rates), len(channels)), np.nan)
@@ -257,7 +258,7 @@ def figure(results: list[Result], args: argparse.Namespace, size: str, idle: tup
     ax.set_xlabel(f"Channels ({args.per_plot} per plot)")
     ax.set_ylabel("Sample rate per channel [Hz]")
     settings = (
-        f"{args.fps} FPS, {args.duration:g} s of history, {size} window, "
+        f"{args.fps} FPS, {args.duration:g} s of history, {window}, "
         f"{'full detail' if args.full_detail else 'downsampled'}, {args.block_rate:g} blocks/s\n"
         f"Empty window: {idle[0]:.0f} ms per frame, {idle[1]:.0f} FPS"
     )
@@ -299,6 +300,27 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+class _PowerStatus(ctypes.Structure):
+    """Windows' SYSTEM_POWER_STATUS."""
+
+    _fields_ = (
+        ("ACLineStatus", ctypes.c_ubyte),
+        ("BatteryFlag", ctypes.c_ubyte),
+        ("BatteryLifePercent", ctypes.c_ubyte),
+        ("SystemStatusFlag", ctypes.c_ubyte),
+        ("BatteryLifeTime", ctypes.c_ulong),
+        ("BatteryFullLifeTime", ctypes.c_ulong),
+    )
+
+
+def on_battery() -> bool:
+    """Whether the computer runs on battery, as far as it can tell: then the CPU's likely slowed down."""
+    if sys.platform != "win32":
+        return False
+    status = _PowerStatus()
+    return bool(ctypes.windll.kernel32.GetSystemPowerStatus(ctypes.byref(status))) and status.ACLineStatus == 0
+
+
 def main() -> None:
     args = parse_args()
     bench = Bench(args)
@@ -306,12 +328,16 @@ def main() -> None:
     if args.no_show or offscreen:
         mpl.use("Agg")  # Nothing to show it on, or not wanted
     print(f"Measuring {len(args.channels)} x {len(args.rates)} setups, {args.warmup + args.seconds:g} s each ...")
+    window = f"{bench.size} window"
+    if on_battery():
+        window += ", on battery"
+        print("On battery: the CPU likely runs slower than on mains power, and so does Oscilab")
     print(f"Window: {bench.size}")
     idle = bench.idle()
     print(f"Empty window: {idle[0]:.1f} ms per frame, {idle[1]:.1f} FPS")
     results = bench.run()
 
-    fig = figure(results, args, bench.size, idle)
+    fig = figure(results, args, window, idle)
     fig.savefig(args.output, dpi=150)
     print(f"Saved {args.output.resolve()}")
     if not (args.no_show or offscreen):
