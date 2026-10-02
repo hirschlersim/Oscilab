@@ -64,5 +64,7 @@ class GridPlotWidget(pg.PlotWidget):
         painting, as pyqtgraph otherwise does: moved during a paint, they're
         all painted again right after, twice the painting every frame.
         Subclasses call this once their refresh has set the new data.
+        Hidden, a plot isn't painted: it's left for when it's shown.
         """
-        self.getViewBox().prepareForPaint()
+        if self.isVisible():
+            self.getViewBox().prepareForPaint()
