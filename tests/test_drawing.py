@@ -1,5 +1,5 @@
 """
-What keeps drawing fast (see scripts/benchmark_refresh.py): the grid drawn
+What keeps drawing fast (see oscilab.benchmarks.refresh): the grid drawn
 solid behind the data, downsampling by default, a precise refresh timer, the
 toolbar left alone while nothing changes — and the Load bar, which counts
 everything the GUI thread does, painting included.

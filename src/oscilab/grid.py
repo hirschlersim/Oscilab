@@ -4,7 +4,7 @@ The plots' grid, drawn fast: in solid colors, behind the data.
 pyqtgraph draws grid lines in the axis's color made translucent, over the
 data — and Qt's raster engine draws translucent lines many times slower
 than solid ones: the grid took about 25 ms of every frame, per plot, in a
-1280 x 650 window (see `scripts/benchmark_refresh.py`). `GridPlotWidget`'s
+1280 x 650 window (see `oscilab.benchmarks.refresh`). `GridPlotWidget`'s
 axes draw the same lines in solid colors — each one the translucent color as
 it looks over the plot's background — and behind the data, so the curves
 stay on top of them, as on a scope's graticule.

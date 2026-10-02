@@ -113,3 +113,6 @@ lint.pep8-naming.extend-ignore-names = [
     "INP001",  # standalone scripts, not a package
     "T201",    # print is their output
 ]
+"src/oscilab/{examples,benchmarks}/**" = [
+    "T201",    # commands: print is their output
+]

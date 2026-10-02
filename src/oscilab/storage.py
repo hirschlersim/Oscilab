@@ -13,5 +13,5 @@ class Storage(Enum):
     # collections.deque(maxlen=...) — simple, no pre-allocation
     deque = "deque"
     # RingBuffer — pre-allocated numpy circular buffer, much faster np.asarray()
-    # reads; see scripts/benchmark_buffers.py
+    # reads; see oscilab.benchmarks.buffers
     ring = "ring"

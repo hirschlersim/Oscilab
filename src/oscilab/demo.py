@@ -32,7 +32,7 @@ def run() -> int:
     #
     # "channel-1": a single-channel producer, stored in a deque instead of the
     # default ring buffer, to show both backends behave the same ("ring" is far
-    # cheaper per refresh tick at scale; see scripts/benchmark_buffers.py).
+    # cheaper per refresh tick at scale; see oscilab.benchmarks.buffers).
     # Its unit, "V", shows in the legend, on the Y axis and in its row.
     channel_1 = SyntheticProducer(fs=100, freq=5.0)
     scope.attach_producer(channel_1, "channel-1", storage=scope.storage.deque, units="V")

@@ -15,14 +15,21 @@ dependencies = [
 ]
 
 [project.scripts]
-oscilab-demo = "oscilab.demo:run"
 oscilab = "oscilab.__main__:main"
+oscilab-demo = "oscilab.demo:run"
+# The showcases (oscilab.examples) and benchmarks (oscilab.benchmarks)
+oscilab-xbox = "oscilab.examples.xbox:main"
+oscilab-sensor-logger = "oscilab.examples.sensor_logger:main"
+oscilab-udp = "oscilab.examples.udp:main"
+oscilab-bench = "oscilab.benchmarks.refresh:main"
+oscilab-bench-buffers = "oscilab.benchmarks.buffers:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.uv]
 package = true
+default-groups = ["dev", "bench"]  # So `uv run oscilab-bench` has its matplotlib
 
 [build-system]
 requires = ["setuptools>=68"]

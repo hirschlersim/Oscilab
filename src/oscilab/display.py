@@ -15,5 +15,5 @@ TIME_MODES: tuple[TimeMode, ...] = get_args(TimeMode)
 FPS_CHOICES: tuple[Fps, ...] = get_args(Fps)
 
 # The curves' line width, in pixels: Qt draws only 1-pixel lines the fast
-# way; at 1.5, curves took twice as long (see scripts/benchmark_refresh.py).
+# way; at 1.5, curves took twice as long (see oscilab.benchmarks.refresh).
 CURVE_WIDTH = 1

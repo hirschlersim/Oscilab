@@ -1,7 +1,7 @@
 """
 Correctness tests for RingBuffer: it must behave like deque(maxlen=...)
 for the same sequence of writes, including wraparound. Performance is
-covered separately by scripts/benchmark_buffers.py, not here — timing
+covered separately by oscilab.benchmarks.buffers, not here — timing
 numbers make flaky pass/fail assertions.
 """
 

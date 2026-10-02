@@ -15,9 +15,12 @@ data doesn't pile up waiting to be taken in.
 The result is a figure of the time per frame over channels x sample rate,
 with the fast-enough area outlined, saved as a PNG (`--output`) and shown.
 
-    uv run --group bench scripts/benchmark_refresh.py
-    uv run --group bench scripts/benchmark_refresh.py --full-detail --fps 60
-    uv run --group bench scripts/benchmark_refresh.py --help
+    uv run oscilab-bench
+    uv run oscilab-bench --full-detail --fps 60
+    uv run oscilab-bench --help
+
+It draws the figure with matplotlib, which `uv run` installs with the
+"bench" dependency group; elsewhere, `pip install matplotlib`.
 
 The window is on screen while it runs, maximized unless given a `--size`.
 Leave it be: covering or minimizing it changes what gets painted.
@@ -28,20 +31,25 @@ import ctypes
 import math
 import sys
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass
 from importlib import resources
 from pathlib import Path
 
-import matplotlib as mpl
 import numpy as np
 from loguru import logger
-from matplotlib import pyplot as plt
-from matplotlib.lines import Line2D
 from PyQt6 import QtCore as qtc
 from PyQt6 import QtWidgets as qtw
 
 from oscilab import Oscilab, SyncDataProducer
 from oscilab.display import FPS_CHOICES
+
+try:
+    import matplotlib as mpl
+    from matplotlib import pyplot as plt
+    from matplotlib.lines import Line2D
+except ImportError as e:  # Not one of Oscilab's own dependencies
+    raise SystemExit("oscilab-bench draws its figure with matplotlib: pip install matplotlib") from e
 
 BACKLOG_LIMIT = 0.25  # Seconds of data sent but not taken in yet: more, and it's falling behind
 OVERLOADED = 3.0  # Frame budgets per frame: so far from keeping up that a bigger setup can't either
@@ -274,7 +282,7 @@ def figure(results: list[Result], args: argparse.Namespace, window: str, idle: t
     return fig
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0].strip())
     parser.add_argument("--channels", type=int, nargs="+", default=[1, 2, 4, 8, 16, 32], help="channel counts")
     parser.add_argument(
@@ -297,7 +305,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--output", type=Path, default=Path("benchmark_refresh.png"), help="the figure's PNG")
     parser.add_argument("--no-show", action="store_true", help="only save the figure, don't show it")
-    return parser.parse_args()
+    return parser.parse_args(argv)
 
 
 class _PowerStatus(ctypes.Structure):
@@ -321,8 +329,8 @@ def on_battery() -> bool:
     return bool(ctypes.windll.kernel32.GetSystemPowerStatus(ctypes.byref(status))) and status.ACLineStatus == 0
 
 
-def main() -> None:
-    args = parse_args()
+def main(argv: Sequence[str] | None = None) -> int:
+    args = parse_args(argv)
     bench = Bench(args)
     offscreen = bench.app.platformName() == "offscreen"
     if args.no_show or offscreen:
@@ -342,7 +350,8 @@ def main() -> None:
     print(f"Saved {args.output.resolve()}")
     if not (args.no_show or offscreen):
         plt.show()
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

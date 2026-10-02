@@ -1,5 +1,5 @@
 """
-Samples over UDP, live: `uv run scripts/udp_example.py`.
+Samples over UDP, live: `uv run oscilab-udp`.
 
 Listens on port 9000 for lines of three comma-separated values —
 "1.23,4.56,7.89" — and plots them over time, and x against y. Send them from
@@ -8,8 +8,8 @@ script; the window's title shows the address to send to. (The first time,
 Windows asks whether to let Python through its firewall: allow it on
 private networks.)
 
-    uv run scripts/udp_example.py --demo    # sends itself a Lissajous figure, to try it without a sender
-    uv run scripts/udp_example.py --rate 500 --port 9001
+    uv run oscilab-udp --demo    # sends itself a Lissajous figure, to try it without a sender
+    uv run oscilab-udp --rate 500 --port 9001
 """
 
 import argparse
@@ -17,6 +17,7 @@ import math
 import socket
 import threading
 import time
+from collections.abc import Sequence
 
 from oscilab import Oscilab, UdpProducer
 from oscilab.network import local_address
@@ -38,12 +39,12 @@ def send_demo(port: int, rate: float) -> None:
                 sender.sendto(("\n".join(lines) + "\n").encode(), ("127.0.0.1", port))
 
 
-def main() -> int:
+def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Plot comma-separated samples arriving over UDP")
     parser.add_argument("--port", type=int, default=9000, help="the UDP port to listen on (9000)")
     parser.add_argument("--rate", type=float, default=100.0, help="the rate the sender samples at, Hz (100)")
     parser.add_argument("--demo", action="store_true", help="send ourselves a Lissajous figure")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     scope = Oscilab()
     scope.attach_producer(UdpProducer(port=args.port, channels=("x", "y", "z"), fs=args.rate), ["x", "y", "z"])

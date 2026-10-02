@@ -50,7 +50,7 @@ architecture in Python; still under active development (see
   sources.
 - **Two storage backends** — a plain `collections.deque` or a
   thread-safe, pre-allocated numpy ring buffer, selectable per signal
-  (see `scripts/benchmark_buffers.py` for the throughput difference).
+  (`uv run oscilab-bench-buffers` measures the throughput difference).
 - **Save Stream** — record every sample of every signal to HDF5 files
   while it's on, not just what's still in the buffers; a new file at a
   size you choose. **Replay Recording** plays them back — a file or a
@@ -94,6 +94,8 @@ session.py             ├─ save/restore a whole setup as JSON
 log.py                 └─ logging: console, log file, status bar
     │
 demo.py               Example usage / `uv run oscilab-demo` entry point
+examples/             The showcases, a command each: xbox, sensor_logger, udp
+benchmarks/           How fast it is: refresh (`oscilab-bench`), buffers
 __main__.py           `uv run oscilab [session.json]` entry point
 ```
 
@@ -113,6 +115,19 @@ Requires Python 3.12+ and [uv](https://docs.astral.sh/uv/).
 uv sync
 uv run oscilab-demo
 ```
+
+Every showcase and benchmark is a command of its own; `--help` lists a
+command's options:
+
+| Command | What it does |
+| --- | --- |
+| `uv run oscilab [session.json]` | An empty window — or a saved session |
+| `uv run oscilab-demo` | Synthetic signals: plots, a spectrogram, math, toolbar controls |
+| `uv run oscilab-xbox` | An Xbox controller's sticks, triggers and buttons ([below](#an-xbox-controller)) |
+| `uv run oscilab-sensor-logger` | Your phone's sensors, from the Sensor Logger app ([below](#your-phones-sensors-sensor-logger)) |
+| `uv run oscilab-udp --demo` | Samples over UDP, sending itself some ([below](#samples-over-udp)) |
+| `uv run oscilab-bench` | Where Oscilab keeps up: a figure of channels x sample rate |
+| `uv run oscilab-bench-buffers` | The rolling buffers: `deque` against `RingBuffer` |
 
 [`demo.py`](src/oscilab/demo.py) is a good starting point for the public
 API:
@@ -187,7 +202,7 @@ Wireless Adapter. It reads the controller through Windows' XInput, so it
 needs no extra packages, and works on Windows only.
 
 ```bash
-uv run scripts/xbox_controller.py   # plots of its sticks, triggers and buttons
+uv run oscilab-xbox   # plots of its sticks, triggers and buttons
 ```
 
 ```python
@@ -214,8 +229,8 @@ and iOS) can push its sensors' readings to a URL while it records — and
 Oscilab can be that URL:
 
 ```bash
-uv run scripts/sensor_logger.py              # the app sampling at 100 Hz
-uv run scripts/sensor_logger.py --rate 400   # or whatever you've set it to
+uv run oscilab-sensor-logger              # the app sampling at 100 Hz
+uv run oscilab-sensor-logger --rate 400   # or whatever you've set it to
 ```
 
 1. Phone and PC on the same Wi-Fi. The window's title shows the URL to push
@@ -256,8 +271,8 @@ any program. The sender needs no connection and no library, and doesn't
 care whether Oscilab is running; a lost packet is just a gap.
 
 ```bash
-uv run scripts/udp_example.py          # plots lines of "x,y,z" sent to port 9000
-uv run scripts/udp_example.py --demo   # ...and sends itself some, to try it
+uv run oscilab-udp          # plots lines of "x,y,z" sent to port 9000
+uv run oscilab-udp --demo   # ...and sends itself some, to try it
 ```
 
 ```python

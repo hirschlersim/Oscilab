@@ -1,5 +1,5 @@
 """
-An Xbox controller, live: `uv run scripts/xbox_controller.py`.
+An Xbox controller, live: `uv run oscilab-xbox`.
 
 Pair the controller first — Windows' Settings > Bluetooth & devices > Add
 device > Bluetooth, holding its pair button until the Xbox logo flashes fast
@@ -7,11 +7,15 @@ device > Bluetooth, holding its pair button until the Xbox logo flashes fast
 Started without one, the rows say so: connect it, and press Restart on one.
 """
 
+import argparse
+from collections.abc import Sequence
+
 from oscilab import Oscilab, XboxControllerProducer
 from oscilab.xbox import BUTTONS, STICKS, TRIGGERS
 
 
-def main() -> int:
+def main(argv: Sequence[str] | None = None) -> int:
+    argparse.ArgumentParser(description="Plot an Xbox controller's sticks, triggers and buttons live").parse_args(argv)
     scope = Oscilab()
     pad = XboxControllerProducer()
     scope.attach_producer(pad, pad.channels)  # One signal per channel, named like it: "left_x", "a", ...

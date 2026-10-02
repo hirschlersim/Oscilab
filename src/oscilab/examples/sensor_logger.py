@@ -1,8 +1,8 @@
 """
 Your phone's sensors, live, from the Sensor Logger app:
 
-    uv run scripts/sensor_logger.py              # the app sampling at 100 Hz
-    uv run scripts/sensor_logger.py --rate 400   # ...or whatever you've set it to
+    uv run oscilab-sensor-logger              # the app sampling at 100 Hz
+    uv run oscilab-sensor-logger --rate 400   # ...or whatever you've set it to
 
 1. Phone and PC on the same Wi-Fi. Run this; the window's title shows the
    URL to push to, e.g. http://192.168.1.23:8000/data. (The first time,
@@ -21,6 +21,7 @@ it measured.
 
 import argparse
 import math
+from collections.abc import Sequence
 
 from PyQt6 import QtCore as qtc
 
@@ -28,11 +29,11 @@ from oscilab import Oscilab
 from oscilab.sensor_logger import SensorLoggerProducer, attach_sensor_logger, push_url
 
 
-def main() -> int:
+def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Plot Sensor Logger's HTTP Push live")
     parser.add_argument("--rate", type=float, default=100.0, help="the sampling rate set in the app, Hz (100)")
     parser.add_argument("--port", type=int, default=8000, help="the port to listen on (8000)")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     scope = Oscilab()
     attach_sensor_logger(scope, ["accelerometer", "gyroscope", "orientation"], port=args.port, fs=args.rate)

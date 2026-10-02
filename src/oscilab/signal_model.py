@@ -27,7 +27,7 @@ class SignalModel:
     `extend`/`clear`/`len`/`[0]`/`[-1]`/`np.asarray()` surface, so the rest of
     this class doesn't need to care which one is in use — `ring` defaults on
     because it measures 12-126x faster at exactly the operation every
-    consumer below does every tick; see `scripts/benchmark_buffers.py`.
+    consumer below does every tick; see `oscilab.benchmarks.buffers`.
 
     `snapshot()` caches that `np.asarray()` conversion for the tick: every
     consumer (a plot's curve, `compute_metrics()`, a `MathSignal`, a
