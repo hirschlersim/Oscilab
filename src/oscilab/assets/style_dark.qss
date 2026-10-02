@@ -48,6 +48,25 @@ QPushButton:checked {
     border: 1px solid #9fd0ff;
 }
 
+/* The toolbar's buttons: a toggle that's on (Downsampled, Stopped, Save
+   Stream, Trigger, your @toggle controls) pressed in, like a button above.
+   The same border either way, transparent when off, so nothing shifts. */
+QToolBar QToolButton {
+    border: 1px solid transparent;
+    border-radius: 4px;
+    padding: 2px 4px;
+}
+
+QToolBar QToolButton:hover {
+    background-color: #2d2d2d;
+}
+
+QToolBar QToolButton:checked {
+    background-color: #00457a;
+    border: 1px solid #9fd0ff;
+    color: #ffffff;
+}
+
 /* Disabled state — without this, disabled widgets look identical to enabled
    ones, since the explicit colors above override Qt's native dimming.
    Covers e.g. Auto-locked Min/Max spinboxes and derived-signal buttons. */

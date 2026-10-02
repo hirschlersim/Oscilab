@@ -1,5 +1,7 @@
 """The main window: run(), package exports, File-menu exports, range dialog pre-fill."""
 
+from importlib import resources
+
 import numpy as np
 import pytest
 from PyQt6 import QtCore as qtc
@@ -80,3 +82,11 @@ def test_range_dialog_prefills_what_is_in_effect(qapp, monkeypatch, auto, expect
 def test_range_dialog_cancel_returns_none(qapp, monkeypatch):  # noqa: ARG001
     monkeypatch.setattr(RangeDialog, "exec", lambda _self: qtw.QDialog.DialogCode.Rejected)
     assert plotting._ask_range(None, "Y", auto=True, pinned=(0, 1), live=(0, 1)) is None
+
+
+@pytest.mark.parametrize("theme", ["dark", "light"])
+def test_a_toolbar_toggle_thats_on_looks_pressed_in(theme):
+    # Without a rule of its own, the style sheet's plain background hides a checked
+    # toolbar button's state: Downsampled, on from the start, looked off
+    qss = resources.files("oscilab.assets").joinpath(f"style_{theme}.qss").read_text("utf-8")
+    assert "QToolBar QToolButton:checked {" in qss
