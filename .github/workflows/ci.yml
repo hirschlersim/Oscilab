@@ -55,7 +55,7 @@ jobs:
       - uses: astral-sh/setup-uv@v10
       - run: uv run --locked --group docs scripts/docs.py -o site
       # The HTML, under this run's Artifacts: download, open index.html
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: api-docs
           path: site/
