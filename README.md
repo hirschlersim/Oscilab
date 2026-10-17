@@ -598,6 +598,16 @@ readout, the menus, toolbar and dialogs, Save Stream and replay, sessions
 and the window's state, logging, workspace rules, the File-menu exports,
 what keeps drawing fast, and every command.
 
+## How this was built
+
+Oscilab was built with an AI coding assistant, Claude (Anthropic); the
+commits it worked on say so, with a `Co-Authored-By: Claude` line.
+
+- **Me**: the software design, and the direction the project developed
+  in; reviewing the code, with a final proofread of what went in; testing
+  it, and the final validation on real hardware.
+- **Claude**: writing the code, to that design.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
