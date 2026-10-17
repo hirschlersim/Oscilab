@@ -73,11 +73,25 @@ disallow_untyped_defs = false
 disallow_incomplete_defs = false
 disable_error_code = ["union-attr"]
 
+# uv run coverage run -m pytest, then uv run coverage report
+[tool.coverage.run]
+source_pkgs = ["oscilab"]
+omit = ["*/oscilab/benchmarks/*"]  # Measured by running it (oscilab-bench), not by the tests
+# sys.monitoring sees every thread; the default core misses the producers'
+# QThreads, and the code that runs on them
+core = "sysmon"
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true
+skip_covered = true
+
 [dependency-groups]
 bench = [
     "matplotlib>=3.11.2",
 ]
 dev = [
+    "coverage>=7.16.2",
     "mypy>=2.3.1",
     "pytest>=9.1.1",
     "ruff>=0.16.4",

@@ -546,6 +546,7 @@ or real-time-systems side rather than the UI:
 
 ```bash
 uv run pytest
+uv run coverage run -m pytest && uv run coverage report   # ...and what they leave out
 ```
 
 Lint and formatting (config in `ruff.toml`), and type checking (config in
@@ -559,7 +560,10 @@ uv run mypy
 
 The code is fully type-annotated; mypy checks it strictly, and checks the
 tests' use of it. Tests run headless (Qt's offscreen platform), so they work
-without a display, and CI runs them plus ruff and mypy on every pull request.
+without a display. CI runs them on every push and pull request, with ruff
+and mypy; it fails below 90 % coverage, and opens a window from the built
+wheel, as a fork or a `git+https://` install gets it.
+
 They cover the ring buffer, signal model (filter/scaling/resize), math
 signals, the spectrogram's incremental STFT cache, the producer base classes
 (threads, errors, actions, multi-channel data, keeping up with real time),
