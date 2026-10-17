@@ -26,6 +26,11 @@ oscilab-bench = "oscilab.benchmarks.refresh:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+# Not Python, so not in the wheel unless named: without them an installed
+# Oscilab (not the editable install `uv run` uses) can't start
+[tool.setuptools.package-data]
+"oscilab.assets" = ["*.png", "*.qss"]
+
 [tool.uv]
 package = true
 default-groups = ["dev", "bench"]  # So `uv run oscilab-bench` has its matplotlib
