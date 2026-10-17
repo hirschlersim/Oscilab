@@ -74,6 +74,11 @@ class _ProducerLink(qtc.QObject):
 
 
 class Workspace:
+    """
+    A window's signals, math signals, plots and producers, and the wiring
+    between them — see the module docstring. `Oscilab.workspace`.
+    """
+
     def __init__(self, logger: "Logger | None" = None) -> None:
         # Oscilab passes its window's logger, so messages reach its status bar
         self._logger = logger or default_logger
@@ -106,10 +111,12 @@ class Workspace:
 
     @property
     def time_mode(self) -> TimeMode:
+        """The plots' time axis mode (see `set_time_mode`)."""
         return self._time_mode
 
     @property
     def downsampling(self) -> bool:
+        """Whether the plots downsample their curves (see `set_downsampling`)."""
         return self._downsampling
 
     @property
@@ -436,6 +443,7 @@ class Workspace:
         return labels
 
     def stop_producers(self) -> None:
+        """Stop every producer; `DataProducer.start` runs one again."""
         for producer in dict.fromkeys(self.producers.values()):  # a multi-channel producer is listed once per signal
             producer.stop()
 
@@ -460,6 +468,7 @@ class Workspace:
     # --- refresh and view settings ---------------------------------------------------------------
 
     def refresh(self) -> None:
+        """One tick: recompute the math signals, feed the trigger, redraw every plot and the rows."""
         for math_signal in self.math_signals.values():
             t, x = math_signal.compute()
             self.signals[math_signal.label].set_data(t, x)
@@ -486,6 +495,7 @@ class Workspace:
         return max(newest, default=None)
 
     def reset_views(self) -> None:
+        """Re-fit every plot to its data (View > Reset View)."""
         for view in self.views.values():
             view.reset_view()
 

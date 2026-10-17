@@ -575,6 +575,7 @@ class SerialProducer(SyncDataProducer):
 
     @button("Reconnect", tooltip="Close and reopen the serial port")
     def reconnect(self) -> None:
+        """Close and reopen the serial port."""
         # Runs on this producer's own thread (see `DataProducer.queue_action`),
         # so it can't pull the port out from under an in-progress readline().
         self._connection.close()
@@ -623,7 +624,7 @@ class AsyncSyntheticProducer(AsyncDataProducer):
 
     @button("Reset Phase", tooltip="Restart the sine at phase 0", toolbar=True)
     def reset_phase(self) -> None:
+        """Restart the sine at phase 0 from the next sample; time itself keeps running."""
         # Illustrative custom action — a real one might re-sync a device's
-        # onboard clock, send a calibration command, etc. Restarts the sine
-        # at phase 0 from the next sample; time itself keeps running.
+        # onboard clock, send a calibration command, etc.
         self._phase_origin = self._sample_index / self.fs

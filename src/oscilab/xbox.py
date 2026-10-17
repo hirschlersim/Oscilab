@@ -246,6 +246,7 @@ class XboxControllerProducer(SyncDataProducer):
 
     @button("Rumble", tooltip="A short buzz, to tell which controller this is")
     def rumble(self) -> None:
+        """A short buzz, to tell which controller this is."""
         self._xinput.set_vibration(self.__slot(), 0.5, 0.5)
         self._rumble_until = time.monotonic() + _RUMBLE_S
 

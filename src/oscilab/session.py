@@ -84,6 +84,8 @@ def _without_storage(data: Any) -> Any:
 
 
 class ProducerSpec(_Model):
+    """A producer, rebuilt from its class and constructor arguments, and the signals it feeds."""
+
     type: str = Field(
         description='The producer class as "module:ClassName", e.g. "oscilab.producers:SyntheticProducer"'
     )
@@ -167,6 +169,8 @@ class MathSignalSpec(_Model):
 
 
 class TimeseriesPlotSpec(_Model):
+    """A time-series plot."""
+
     kind: Literal["timeseries"] = "timeseries"
     title: str
     signals: list[str] = Field(default_factory=list, description="Linked signals, in legend order")
@@ -175,6 +179,7 @@ class TimeseriesPlotSpec(_Model):
 
     @property
     def shown(self) -> list[str]:
+        """The signals it shows."""
         return self.signals
 
 
@@ -190,6 +195,7 @@ class LogicPlotSpec(_Model):
 
     @property
     def shown(self) -> list[str]:
+        """The signals it shows."""
         return self.signals
 
 
@@ -207,6 +213,7 @@ class XYPlotSpec(_Model):
 
     @property
     def shown(self) -> list[str]:
+        """The signals it shows: X, then Y."""
         return [self.x, self.y]
 
 
@@ -222,10 +229,13 @@ class HistogramSpec(_Model):
 
     @property
     def shown(self) -> list[str]:
+        """Its one signal."""
         return [self.signal]
 
 
 class SpectrogramSpec(_Model):
+    """A signal's spectrogram."""
+
     kind: Literal["spectrogram"] = "spectrogram"
     signal: str
     nperseg: int = Field(256, gt=1, description="STFT window length in samples")
@@ -235,10 +245,12 @@ class SpectrogramSpec(_Model):
 
     @property
     def title(self) -> str:
-        return self.signal  # A spectrogram is named after its signal
+        """Its signal's label: a spectrogram is named after its signal."""
+        return self.signal
 
     @property
     def shown(self) -> list[str]:
+        """Its one signal."""
         return [self.signal]
 
 
