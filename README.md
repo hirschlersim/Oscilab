@@ -540,6 +540,7 @@ run too: the HTML is in the run's `api-docs` artifact.
 
 ## Notable implementation details
 
+The design, and why it's built that way: [How Oscilab works](docs/how-it-works.md).
 A few things worth reading the source for if you're interested in the DSP
 or real-time-systems side rather than the UI:
 
