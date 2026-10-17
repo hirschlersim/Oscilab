@@ -47,6 +47,12 @@ jobs:
       - run: uv run --locked coverage run -m pytest
       # What the tests leave out; under the floor (pyproject.toml) fails the job
       - run: uv run --locked coverage report
+      # The total, for the README's coverage badge (see the pages job)
+      - run: uv run --locked coverage json -o coverage.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.json
 
   wheel:
     name: Wheel
@@ -91,3 +97,40 @@ jobs:
         with:
           name: api-docs
           path: site/
+
+  pages:
+    name: GitHub Pages
+    # main's API docs, and its coverage for the README's badge, on
+    # hirschlersim.github.io/Oscilab. Pages needs the repo public (and
+    # Settings > Pages > Source: GitHub Actions): until then, it's skipped.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !github.event.repository.private
+    needs: [test, docs]
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: api-docs
+          path: site
+      - uses: actions/download-artifact@v4
+        with:
+          name: coverage
+      # The badge, as shields.io's endpoint badges read it
+      - run: |
+          python3 - <<'EOF'
+          import json
+          percent = json.load(open("coverage.json"))["totals"]["percent_covered"]
+          color = "brightgreen" if percent >= 90 else "yellow" if percent >= 75 else "red"
+          badge = {"schemaVersion": 1, "label": "coverage", "message": f"{percent:.0f}%", "color": color}
+          json.dump(badge, open("site/coverage.json", "w"))
+          EOF
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deploy
+        uses: actions/deploy-pages@v4
