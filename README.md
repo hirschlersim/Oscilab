@@ -22,7 +22,7 @@ architecture in Python.
   per-signal value) measurement.
 - **Live spectrograms** — STFT view per signal, computed incrementally
   (only new samples are transformed each tick, not the whole rolling
-  buffer — see [Notable implementation details](#notable-implementation-details)).
+  buffer — see [How it works](docs/how-it-works.md#4-the-spectrogram-computes-only-whats-new)).
 - **Logic lanes** — on/off signals (buttons, digital lines) in a lane each,
   like a logic analyzer, on the same time axis as the other plots.
 - **XY plots** — one signal against another: a joystick's path, Lissajous
@@ -57,62 +57,6 @@ architecture in Python.
   whole folder, looped if you like.
 - **Light/dark theming**, tooltips throughout, and export to
   PNG/SVG/PDF/CSV/MAT/HDF5.
-
-## Architecture
-
-```
-producers.py          Background QThread data sources (Sync/Async base classes)
-toolbar.py             ├─ @button / @toggle: their functions in the menus and toolbar
-xbox.py                ├─ an Xbox controller, through XInput
-sensor_logger.py       ├─ a phone's sensors, from the Sensor Logger app
-udp.py                 └─ samples over UDP
-    │
-signal_model.py       Rolling buffer, filtering, scaling, metrics per signal
-ring_buffer.py         ├─ the thread-safe numpy circular buffer it keeps them in
-math_signal.py         └─ derived signal (A op B)
-    │
-view.py               The interface every plot type implements
-grid.py                ├─ the base of the plots with a grid: one paint a frame
-timeseries_plot.py     ├─ scrolling time-series plot
-logic_plot.py          ├─ logic lanes (a kind of time-series plot)
-xy_plot.py             ├─ one signal against another
-histogram_plot.py      ├─ a signal's value distribution
-spectrogram_plot.py    └─ live STFT spectrogram
-trigger.py            Triggering: detection and Run/Single/Stop (no Qt)
-trigger_panel.py       └─ its controls, in the sidebar
-    │
-signal_controller.py  Per-signal sidebar controls (SignalRow / SignalController)
-dialogs.py            Modal dialogs: range, filter, scaling, math
-    │
-workspace.py          Domain layer: owns all registries and wiring
-plotting.py            ├─ its plots: creating them, linking signals, removing them
-triggering.py          ├─ the trigger applied to its time plots
-exporters.py           ├─ PNG/SVG/PDF images, CSV/.mat/.h5 data
-recorder.py            ├─ Save Stream: every sample to HDF5, as it arrives
-replay.py              └─ ...and playing those recordings back
-    │
-oscilab.py            QMainWindow: puts the parts together; the API scripts use
-ui/                    ├─ each feature's menus, toolbar entries, panels, dialogs:
-                       │    file_menu, plots_menu, producers_menu, controls,
-                       │    recording (Save Stream, Replay), trigger
-session.py             ├─ save/restore a whole setup as JSON
-log.py                 └─ logging: console, log file, status bar
-    │
-demo.py               Example usage / `uv run oscilab-demo` entry point
-examples/             The showcases, a command each: xbox, sensor_logger, udp
-benchmarks/           How fast it is: refresh (`oscilab-bench`)
-__main__.py           `uv run oscilab [session.json]` entry point
-```
-
-Roughly bottom-up: data model → producers → plots → per-signal controls →
-the `Workspace` layer that wires everything together → the `QMainWindow`
-on top, assembled from one small part per feature in `ui/` — so a new
-feature's menus and panels go in a module of their own. To add a plot
-type (an FFT, say), implement `View` in [view.py](src/oscilab/view.py) and
-add an `add_*` method for it to `Plotting` in
-[plotting.py](src/oscilab/plotting.py), which `Workspace` hands on —
-theming, time modes, Reset View, the Y-Axis button and image export then
-work for it without further changes.
 
 ## Getting started
 
@@ -195,35 +139,6 @@ It covers what `from oscilab import ...` offers plus the modules to read when
 extending Oscilab — producers, toolbar controls, the session format, the
 `View` interface for new plot types, the workspace. CI builds it on every
 run too: the HTML is in the run's `api-docs` artifact.
-
-## Notable implementation details
-
-The design, and why it's built that way: [How Oscilab works](docs/how-it-works.md).
-A few things worth reading the source for if you're interested in the DSP
-or real-time-systems side rather than the UI:
-
-- **Incremental STFT caching** ([spectrogram_plot.py](src/oscilab/spectrogram_plot.py)) —
-  recomputing `scipy.signal.stft` over the entire rolling buffer every
-  frame doesn't scale, so only the new samples (plus enough context for
-  window overlap) are transformed each tick and merged into a persistent
-  column cache. Getting this right required anchoring each recompute a
-  whole number of hops before the last cached column, so new columns land
-  on the same time grid even after the rolling buffer wraps and its
-  indices shift, and permanently excluding the last `ceil(nperseg / hop)`
-  columns of any partial slice from the cache — `scipy`'s edge
-  zero-padding (`padded=True`) silently corrupts them otherwise. A separate, non-cached "preview tail" recomputed
-  every tick keeps the display caught up to "now" without ever caching a
-  wrong value.
-- **Wall-clock-corrected producer pacing** ([producers.py](src/oscilab/producers.py)) —
-  a naive fixed `sleep(interval)` loop drifts badly under OS timer
-  granularity (Windows' default ~15 ms in particular); producers instead
-  track elapsed wall-clock time and emit however many samples are due,
-  self-correcting each iteration.
-- **Thread-safe ring buffer** ([ring_buffer.py](src/oscilab/ring_buffer.py)) —
-  every signal's pre-allocated numpy circular buffer, guarded by a lock.
-  Producer data is delivered on
-  the GUI thread via queued Qt signals, but a signal fed by hand may be
-  written from any thread.
 
 ## Testing
 
