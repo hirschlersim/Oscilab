@@ -65,6 +65,7 @@ class Recorder:
 
     @property
     def recording(self) -> bool:
+        """Whether it's recording: between `start` and `stop`."""
         return self._thread is not None
 
     def start(self) -> Path:

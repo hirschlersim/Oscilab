@@ -62,6 +62,7 @@ def log_file() -> Path | None:
 
 
 def stop_logging_to_file() -> None:
+    """Stop writing the log file; `log_to_file` starts one again."""
     if _file_sink["id"] is not None:
         logger.remove(_file_sink["id"])
         _file_sink.update(id=None, path=None)

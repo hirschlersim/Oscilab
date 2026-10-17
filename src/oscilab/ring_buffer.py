@@ -23,6 +23,8 @@ import numpy.typing as npt
 
 
 class RingBuffer:
+    """The last `maxlen` floats added, oldest first — see the module docstring."""
+
     def __init__(self, maxlen: int) -> None:
         if maxlen <= 0:
             raise ValueError("maxlen must be positive")
@@ -33,6 +35,7 @@ class RingBuffer:
         self._lock = threading.Lock()
 
     def extend(self, values: npt.ArrayLike) -> None:
+        """Add `values` at the end, dropping the oldest once it's full."""
         values = np.asarray(values, dtype=np.float64)
         n = len(values)
         if n == 0:
@@ -60,11 +63,13 @@ class RingBuffer:
             self._count = new_count
 
     def clear(self) -> None:
+        """Empty it; the capacity stays."""
         with self._lock:
             self._start = 0
             self._count = 0
 
     def to_array(self) -> np.ndarray:
+        """A copy of the contents, oldest first — what `np.asarray()` gives too."""
         with self._lock:
             if self._count == 0:
                 return np.empty(0, dtype=np.float64)

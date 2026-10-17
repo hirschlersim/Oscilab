@@ -1,3 +1,11 @@
+"""
+One signal's samples, and what's done to them on the way in.
+
+`SignalModel` keeps a signal's times and values, scales and low-pass
+filters each chunk it takes in, and hands the plots, the metrics and the
+math signals one shared snapshot of it per tick. No Qt.
+"""
+
 import threading
 from collections.abc import Callable
 
@@ -134,6 +142,7 @@ class SignalModel:
         self._listeners.append(listener)
 
     def remove_listener(self, listener: Callable[[np.ndarray, np.ndarray], None]) -> None:
+        """Stop calling a listener added with `add_listener`."""
         self._listeners.remove(listener)
 
     def set_data(self, t: npt.ArrayLike, x: npt.ArrayLike) -> None:
@@ -182,17 +191,21 @@ class SignalModel:
         }
 
     def add_filter(self, cutoff: float = 50.0, order: int = 4) -> None:
+        """A Butterworth low-pass (`cutoff` in Hz) on the samples from now on, after the scaling."""
         sos = signal.butter(N=order, Wn=cutoff, btype="low", analog=False, fs=self.fs, output="sos")
         self.sos, self.zi = sos, None  # The state starts from the next sample filtered, see `add_data`
 
     def remove_filter(self) -> None:
+        """No filter on the samples from now on."""
         self.sos = None
         self.zi = None
 
     def add_scaling(self, gain: float, offset: float) -> None:
+        """Store each sample `x` from now on as `(x - offset) * gain`, before the filter."""
         self.gain = gain
         self.offset = offset
 
     def remove_scaling(self) -> None:
+        """Store the samples from now on as they come."""
         self.gain = None
         self.offset = None
