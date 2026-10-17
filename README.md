@@ -174,46 +174,10 @@ scope.add_spectrogram_plot(label="channel-3")
 scope.run()  # shows the window; blocks until it's closed
 ```
 
-### Writing a producer
+### Your own data source
 
-To feed your own hardware or file source, subclass `SyncDataProducer` (for
-blocking APIs) or `AsyncDataProducer` (for `asyncio`-based ones) from
-`producers.py` and implement its one abstract method:
-
-```python
-from oscilab import SyncDataProducer, button
-
-
-class ImuProducer(SyncDataProducer):
-    channels = ("ax", "ay", "az")
-    units = ("m/s²", "m/s²", "m/s²")  # Optional, one per channel
-
-    def __init__(self, port):
-        super().__init__(fs=500)
-        self.device = open_my_device(port)
-
-    def _generate(self, elapsed):
-        t, samples = self.device.read()  # samples: shape (3, n), one row per channel
-        return t, samples
-
-    def on_start(self):  # runs on the producer's thread before each run, restarts included
-        self.device.open()
-
-    def on_stop(self):  # runs on the producer's thread, however it stops
-        self.device.close()
-
-    @button("Zero", toolbar=True)  # in its Producers-menu entry and the toolbar; runs on its thread
-    def zero(self):
-        self.device.zero()
-
-
-scope.attach_producer(ImuProducer("COM3"), ["acc-x", "acc-y", "acc-z"])
-```
-
-`x` is shaped `(channels, n)`; a single-channel producer can return a 1-D
-array. An exception inside a producer stops only that producer — it's shown
-in the status bar and on its signals' rows instead of taking the app down,
-and the row's **Restart** button starts it again.
+A sensor, an instrument, a file, another program: a producer brings it in,
+in about ten lines. See [Writing a producer](docs/writing-a-producer.md).
 
 The showcases, and every feature in detail (the trigger, Save Stream and
 replay, units, sessions, logging): the [user guide](docs/guide.md).
