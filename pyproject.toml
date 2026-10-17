@@ -1,8 +1,10 @@
 [project]
 name = "oscilab"
 version = "0.2.0"
-description = "Oscilloscope laboratory application"
+description = "A real-time oscilloscope and data-acquisition app in Python/Qt: stream any source into live plots"
 readme = "README.md"
+license = "MIT"
+authors = [{ name = "Simon Hirschler" }]
 requires-python = ">=3.12"
 
 dependencies = [
@@ -23,6 +25,10 @@ oscilab-sensor-logger = "oscilab.examples.sensor_logger:main"
 oscilab-udp = "oscilab.examples.udp:main"
 oscilab-bench = "oscilab.benchmarks.refresh:main"
 
+[project.urls]
+Repository = "https://github.com/hirschlersim/Oscilab"
+Issues = "https://github.com/hirschlersim/Oscilab/issues"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
@@ -36,7 +42,7 @@ package = true
 default-groups = ["dev", "bench"]  # So `uv run oscilab-bench` has its matplotlib
 
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]  # 77: `license` as an SPDX expression
 build-backend = "setuptools.build_meta"
 
 [tool.mypy]
