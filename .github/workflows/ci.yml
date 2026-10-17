@@ -46,6 +46,36 @@ jobs:
       - run: uv sync --locked
       - run: uv run --locked pytest
 
+  wheel:
+    name: Wheel
+    # What a fork or `pip install git+...` installs: a built wheel, not the
+    # editable install `uv run` uses. Catches files left out of it (the icon
+    # and style sheets were, once: the window couldn't open).
+    runs-on: windows-latest
+    timeout-minutes: 10 # A window that hangs instead of opening
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+      - run: uv build --wheel
+      # The wheel and the locked dependencies, in a venv outside the source tree
+      - shell: bash
+        run: |
+          uv export --locked --no-dev --no-default-groups --no-emit-project --no-hashes -o requirements.txt
+          uv venv --python 3.12 ../wheel-env
+          uv pip install --python ../wheel-env -r requirements.txt dist/*.whl
+      - name: Open a window from it
+        shell: bash
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          ../wheel-env/Scripts/python -I -c "
+          from oscilab import Oscilab
+          scope = Oscilab()
+          scope.set_theme('light')  # Both style sheets
+          assert not scope.windowIcon().isNull(), 'no icon.png'
+          scope.close()
+          "
+
   docs:
     name: API docs
     # pdoc imports oscilab, and so PyQt6 (see the test job on Linux)
