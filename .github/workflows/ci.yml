@@ -101,9 +101,10 @@ jobs:
   pages:
     name: GitHub Pages
     # main's API docs, and its coverage for the README's badge, on
-    # hirschlersim.github.io/Oscilab. Pages needs the repo public (and
-    # Settings > Pages > Source: GitHub Actions): until then, it's skipped.
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !github.event.repository.private
+    # hirschlersim.github.io/Oscilab - after a push, or Run workflow by hand.
+    # Pages needs the repo public (and Settings > Pages > Source: GitHub
+    # Actions): until then, it's skipped.
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && !github.event.repository.private
     needs: [test, docs]
     runs-on: ubuntu-latest
     permissions:
