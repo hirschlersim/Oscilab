@@ -1,5 +1,7 @@
 # Oscilab
 
+![Two synthetic signals scrolling live above a spectrogram; then the trigger, turned on, holds them steady](docs/demo.gif)
+
 A desktop oscilloscope / signal-visualization application built with
 PyQt6 and pyqtgraph. Stream live or replayed signals into scrolling
 time-series plots and live STFT spectrograms, with per-signal filtering,
