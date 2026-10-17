@@ -6,8 +6,7 @@ time-series plots and live STFT spectrograms, with per-signal filtering,
 scaling, derived (math) channels, and export to PNG/SVG/PDF/CSV/MAT/HDF5.
 
 Started as a way to explore real-time DSP visualization and signal-chain
-architecture in Python; still under active development (see
-[TODO.md](TODO.md)).
+architecture in Python.
 
 ## Features
 
@@ -596,11 +595,6 @@ localhost), the trigger (detection, acquisition, its panel), the cursor
 readout, the menus, toolbar and dialogs, Save Stream and replay, sessions
 and the window's state, logging, workspace rules, the File-menu exports,
 what keeps drawing fast, and every command.
-
-## Status
-
-Documentation is a work in progress — see [TODO.md](TODO.md) for the
-running list of what's next.
 
 ## License
 
