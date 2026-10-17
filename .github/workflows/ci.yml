@@ -49,7 +49,7 @@ jobs:
       - run: uv run --locked coverage report
       # The total, for the README's coverage badge (see the pages job)
       - run: uv run --locked coverage json -o coverage.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: coverage
           path: coverage.json
@@ -93,7 +93,7 @@ jobs:
       - uses: astral-sh/setup-uv@v10
       - run: uv run --locked --group docs scripts/docs.py -o site
       # The HTML, under this run's Artifacts: download, open index.html
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: api-docs
           path: site/
@@ -113,11 +113,11 @@ jobs:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: api-docs
           path: site
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: coverage
       # The badge, as shields.io's endpoint badges read it
@@ -129,8 +129,8 @@ jobs:
           badge = {"schemaVersion": 1, "label": "coverage", "message": f"{percent:.0f}%", "color": color}
           json.dump(badge, open("site/coverage.json", "w"))
           EOF
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: site
       - id: deploy
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
