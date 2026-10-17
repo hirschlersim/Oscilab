@@ -45,10 +45,12 @@ class HistogramPlot(GridPlotWidget):
 
     @property
     def signals(self) -> list[str]:
+        """Its one signal's label."""
         return [self.model.label]
 
     @property
     def plot_item(self) -> pg.PlotItem:
+        """The `PlotItem` the image exporters render."""
         return self.plotItem
 
     def set_bins(self, bins: int, value_range: tuple[float, float] | None = None) -> None:
@@ -70,6 +72,7 @@ class HistogramPlot(GridPlotWidget):
         return counts.astype(float), edges
 
     def refresh(self, now: float | None = None) -> None:  # noqa: ARG002 — no time axis
+        """Count the buffer again: the bars, and the count, mean and standard deviation in the title."""
         counts, edges = self.counts()
         if counts.size:
             self.bars.setData(edges, counts)
@@ -88,6 +91,7 @@ class HistogramPlot(GridPlotWidget):
         return f"{self._title}  —  {stats}"
 
     def set_theme(self, bg: str, fg: str) -> None:
+        """The background color `bg`, and `fg` for the title and axes."""
         self._fg = fg
         self.setBackground(bg)
         self.setTitle(self.__title_with_stats(), color=fg)
@@ -106,9 +110,11 @@ class HistogramPlot(GridPlotWidget):
         self.setVisible(visible)
 
     def update_units(self) -> None:
+        """The value axis named after the signal, unit included."""
         self.setLabel("bottom", self.model.display_name)  # The value axis
 
     def set_y_range(self, auto: bool, y_min: float = 0.0, y_max: float = 1.0) -> None:
+        """Auto: the count axis keeps fitting the bars. Manual: pinned to [y_min, y_max]."""
         self.y_range_auto, self.y_range_min, self.y_range_max = auto, y_min, y_max
         if auto:
             self.enableAutoRange(axis="y")
@@ -117,10 +123,12 @@ class HistogramPlot(GridPlotWidget):
             self.setYRange(y_min, y_max, padding=0)
 
     def live_y_range(self) -> tuple[float, float]:
+        """The count range currently on screen."""
         y_min, y_max = self.getViewBox().viewRange()[1]
         return y_min, y_max
 
     def reset_view(self) -> None:
+        """Re-fit to the bars, keeping a pinned count range."""
         self.autoRange()
         self.enableAutoRange(axis="x")
         self.set_y_range(self.y_range_auto, self.y_range_min, self.y_range_max)

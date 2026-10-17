@@ -1,3 +1,13 @@
+"""
+Time-series plots: signals against time, scrolling as they arrive.
+
+A curve per signal, downsampled to its peaks for big buffers; time as
+recorded or relative to now; two cursors measuring between them. While the
+trigger runs, each holds the record around the latest trigger instead of
+scrolling (`show_record`), the trigger's level a line to drag. Logic lanes
+(`oscilab.logic_plot`) are a kind of time-series plot.
+"""
+
 from collections.abc import Callable
 
 import numpy as np
@@ -116,6 +126,7 @@ class TimeseriesPlot(GridPlotWidget):
         return max(newest, default=0.0)
 
     def add_signal(self, label: str, model: SignalModel) -> str:
+        """Draw `model` as a curve, `label` in the legend, in the next color: returns that color."""
         color = self.colors[len(self.curves) % len(self.colors)]
         curve = self.plot(
             pen=pg.mkPen(color, width=CURVE_WIDTH),
@@ -186,14 +197,17 @@ class TimeseriesPlot(GridPlotWidget):
             self.curves[label].setVisible(visible)
 
     def set_color(self, label: str, color: str) -> None:
+        """Redraw `label`'s curve in `color`, e.g. "#ff8800"."""
         if label in self.curves:
             self.curves[label].setPen(pg.mkPen(color, width=CURVE_WIDTH))
 
     @property
     def plot_item(self) -> pg.PlotItem:
+        """The `PlotItem` the image exporters render."""
         return self.plotItem
 
     def live_y_range(self) -> tuple[float, float]:
+        """The Y range currently on screen."""
         y_min, y_max = self.getViewBox().viewRange()[1]
         return y_min, y_max
 
@@ -214,6 +228,7 @@ class TimeseriesPlot(GridPlotWidget):
 
     @property
     def showing_record(self) -> bool:
+        """Whether it holds a triggered record (`show_record`), instead of scrolling live."""
         return self._record is not None
 
     def show_record(
@@ -277,6 +292,7 @@ class TimeseriesPlot(GridPlotWidget):
                 line.setValue(level)
 
     def reset_view(self) -> None:
+        """Re-fit to the data (to the record, while one is held), keeping a pinned Y range."""
         if self._record is not None:
             self.enableAutoRange(axis="y", enable=self.y_range_auto)
             self.__fit_record()

@@ -61,6 +61,7 @@ class SpectrogramPlot(qtw.QWidget):
         self.__update_axis_label()
 
     def set_theme(self, bg: str, fg: str) -> None:
+        """The background color `bg`, and `fg` for the title and axes."""
         self.plot.setBackground(bg)
         self._fg = fg
         self.plot.setTitle(self.model.display_name, color=fg)  # Which signal this spectrogram belongs to
@@ -91,9 +92,11 @@ class SpectrogramPlot(qtw.QWidget):
 
     @property
     def plot_item(self) -> pg.PlotItem:
+        """The `PlotItem` the image exporters render."""
         return self.plot.plotItem
 
     def live_y_range(self) -> tuple[float, float]:
+        """The frequency range currently on screen, Hz."""
         y_min, y_max = self.plot.getViewBox().viewRange()[1]
         return y_min, y_max
 
@@ -102,6 +105,7 @@ class SpectrogramPlot(qtw.QWidget):
 
     @property
     def signals(self) -> list[str]:
+        """Its one signal's label."""
         return [self.label]
 
     def update_units(self) -> None:
@@ -282,6 +286,7 @@ class SpectrogramPlot(qtw.QWidget):
         return i
 
     def reset_view(self) -> None:
+        """Re-fit to the image, keeping a pinned frequency range; time then scrolls on."""
         self.plot.autoRange()
         # autoRange() only does a ONE-TIME fit — it actually leaves the
         # ViewBox's continuous auto-range OFF afterward (both axes), which is

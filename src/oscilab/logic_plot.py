@@ -59,6 +59,7 @@ class LogicPlot(TimeseriesPlot):
             self.__fit_lanes()
 
     def reset_view(self) -> None:
+        """Re-fit to the data, every lane in view (unless Y is pinned)."""
         super().reset_view()
         if self.y_range_auto:
             self.__fit_lanes()

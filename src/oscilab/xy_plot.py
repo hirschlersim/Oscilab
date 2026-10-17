@@ -47,14 +47,17 @@ class XYPlot(GridPlotWidget):
 
     @property
     def signals(self) -> list[str]:
+        """X's label, then Y's."""
         return [self.x_model.label, self.y_model.label]
 
     @property
     def y_unit(self) -> str:
+        """Y's unit."""
         return self.y_model.unit
 
     @property
     def plot_item(self) -> pg.PlotItem:
+        """The `PlotItem` the image exporters render."""
         return self.plotItem
 
     def points(self) -> tuple[np.ndarray, np.ndarray]:
@@ -70,12 +73,14 @@ class XYPlot(GridPlotWidget):
         return x[keep], np.interp(t, t_y, y)
 
     def refresh(self, now: float | None = None) -> None:  # noqa: ARG002 — no time axis to shift
+        """Redraw the trace (`points`) and its newest point."""
         x, y = self.points()
         self.curve.setData(x, y)
         self.head.setData(x[-1:], y[-1:])
         self._settle_view()
 
     def set_theme(self, bg: str, fg: str) -> None:
+        """The background color `bg`, and `fg` for the title, axes and the newest point."""
         self.setBackground(bg)
         self.setTitle(self._title, color=fg)
         for axis in ("left", "bottom"):
@@ -110,22 +115,27 @@ class XYPlot(GridPlotWidget):
         self.setAspectLocked(on)
 
     def set_x_range(self, auto: bool, x_min: float = 0.0, x_max: float = 1.0) -> None:
+        """Auto: X keeps fitting the trace. Manual: pinned to [x_min, x_max]."""
         self.x_range_auto, self.x_range_min, self.x_range_max = auto, x_min, x_max
         self.__apply_range("x")
 
     def set_y_range(self, auto: bool, y_min: float = 0.0, y_max: float = 1.0) -> None:
+        """Auto: Y keeps fitting the trace. Manual: pinned to [y_min, y_max]."""
         self.y_range_auto, self.y_range_min, self.y_range_max = auto, y_min, y_max
         self.__apply_range("y")
 
     def live_x_range(self) -> tuple[float, float]:
+        """The X range currently on screen."""
         x_min, x_max = self.getViewBox().viewRange()[0]
         return x_min, x_max
 
     def live_y_range(self) -> tuple[float, float]:
+        """The Y range currently on screen."""
         y_min, y_max = self.getViewBox().viewRange()[1]
         return y_min, y_max
 
     def reset_view(self) -> None:
+        """Re-fit to the trace, keeping pinned ranges."""
         self.autoRange()
         self.__apply_range("x")
         self.__apply_range("y")
