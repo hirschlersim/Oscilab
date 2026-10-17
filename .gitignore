@@ -15,7 +15,7 @@ wheels/
 # API docs (scripts/docs.py -o site)
 site/
 
-# Benchmark figures (scripts/benchmark_refresh.py)
+# Benchmark figures (uv run oscilab-bench)
 benchmark_*.png
 
 # Coverage data (coverage run)
