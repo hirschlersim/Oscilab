@@ -1,7 +1,7 @@
 """
 Your phone's sensors, live, from the Sensor Logger app:
 
-    uv run oscilab-sensor-logger              # the app sampling at 100 Hz
+    uv run oscilab-sensor-logger              # the app sampling at 50 Hz
     uv run oscilab-sensor-logger --rate 400   # ...or whatever you've set it to
 
 1. Phone and PC on the same Wi-Fi. Run this; the window's title shows the
@@ -31,7 +31,7 @@ from oscilab.sensor_logger import SensorLoggerProducer, attach_sensor_logger, pu
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Plot Sensor Logger's HTTP Push live")
-    parser.add_argument("--rate", type=float, default=100.0, help="the sampling rate set in the app, Hz (100)")
+    parser.add_argument("--rate", type=float, default=50.0, help="the sampling rate set in the app, Hz (50)")
     parser.add_argument("--port", type=int, default=8000, help="the port to listen on (8000)")
     args = parser.parse_args(argv)
 

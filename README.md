@@ -227,7 +227,7 @@ and iOS) can push its sensors' readings to a URL while it records — and
 Oscilab can be that URL:
 
 ```bash
-uv run oscilab-sensor-logger              # the app sampling at 100 Hz
+uv run oscilab-sensor-logger              # the app sampling at 50 Hz
 uv run oscilab-sensor-logger --rate 400   # or whatever you've set it to
 ```
 
