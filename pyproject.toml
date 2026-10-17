@@ -1,6 +1,6 @@
 [project]
 name = "oscilab"
-version = "0.2.0"
+version = "1.0.0"
 description = "A real-time oscilloscope and data-acquisition app in Python/Qt: stream any source into live plots"
 readme = "README.md"
 license = "MIT"
