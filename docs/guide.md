@@ -1,0 +1,313 @@
+# Oscilab user guide
+
+The showcases, and each feature in detail. In the code examples, `scope`
+is your window: `scope = Oscilab()`, as in the README's example.
+
+## An Xbox controller
+
+`XboxControllerProducer` turns an Xbox One S / Series controller's sticks,
+triggers and buttons into signals — over Bluetooth (pair it first, in
+Windows' Settings → Bluetooth & devices → Add device), USB or the Xbox
+Wireless Adapter. It reads the controller through Windows' XInput, so it
+needs no extra packages, and works on Windows only.
+
+```bash
+uv run oscilab-xbox   # plots of its sticks, triggers and buttons
+```
+
+```python
+from oscilab import XboxControllerProducer
+
+pad = XboxControllerProducer()  # 20 channels: left_x ... right_y, left_trigger, right_trigger, a, b, ... dpad_right
+scope.attach_producer(pad, pad.channels)  # one signal per channel, named like it
+
+# Or just some, from a given controller (0-3; by default the first connected)
+scope.attach_producer(XboxControllerProducer(slot=1, channels=["left_x", "left_y", "a"]), ["x", "y", "fire"])
+```
+
+Sticks read -1 to 1 (up and right positive) with XInput's recommended dead
+zones (`deadzone=False` for raw values), triggers 0 to 1, buttons 1 while
+held. With no controller connected, or once it goes to sleep, the producer
+stops with an error on its rows; connect it and press **Restart**. Its
+Producers-menu entry has **Rumble**, a short buzz to tell which controller
+it's reading.
+
+## Your phone's sensors (Sensor Logger)
+
+The [Sensor Logger](https://www.tszheichoi.com/sensorlogger) app (Android
+and iOS) can push its sensors' readings to a URL while it records — and
+Oscilab can be that URL:
+
+```bash
+uv run oscilab-sensor-logger              # the app sampling at 50 Hz
+uv run oscilab-sensor-logger --rate 400   # or whatever you've set it to
+```
+
+1. Phone and PC on the same Wi-Fi. The window's title shows the URL to push
+   to, e.g. `http://192.168.1.23:8000/data`. The first time, Windows asks
+   whether to let Python through its firewall: allow it on private networks.
+2. In the app: Settings → Data Streaming → **HTTP Push**, enter that URL.
+   Opening it in the phone's browser tells you whether the phone gets
+   through.
+3. Enable the accelerometer, gyroscope and orientation, and start recording.
+
+The script plots acceleration and rotation rate over time, the phone's tilt
+(roll against pitch), and how the acceleration is spread. The plots trail
+the phone by the push period — a second, by default. The status bar says
+the rate each sensor really arrives at: to go faster, set the app's
+sampling rate higher and run the script with `--rate` at what it measured.
+
+From your own code, one `SensorLoggerProducer` per sensor — the sensors run
+at different rates — sharing one listener on the port:
+
+```python
+from oscilab.sensor_logger import attach_sensor_logger, push_url
+
+attach_sensor_logger(scope, ["accelerometer", "gyroscope", "magnetometer"], fs=100)
+print(push_url())  # the URL to enter in the app
+```
+
+Readings keep the phone's own timestamps, so its sensors stay in step. The
+common sensors' channels and units are built in (accelerometer, gravity,
+gyroscope, magnetometer, orientation, barometer, microphone, location,
+battery); for other values pass `channels=`, e.g.
+`SensorLoggerProducer("orientation", channels=["qx", "qy", "qz", "qw"])`.
+
+## Samples over UDP
+
+`UdpProducer` listens on a port for samples sent as UDP packets — from a
+microcontroller on Wi-Fi (an ESP32, a Pico W), a simulation, a test rig,
+any program. The sender needs no connection and no library, and doesn't
+care whether Oscilab is running; a lost packet is just a gap.
+
+```bash
+uv run oscilab-udp          # plots lines of "x,y,z" sent to port 9000
+uv run oscilab-udp --demo   # ...and sends itself some, to try it
+```
+
+```python
+from oscilab import UdpProducer
+
+scope.attach_producer(UdpProducer(port=9000, channels=("x", "y", "z"), fs=100), ["x", "y", "z"])
+```
+
+Each packet holds one or more samples, as text — a line per sample,
+`"1.23,4.56,7.89\n"`, the easiest to send from anything — or binary, with
+`binary=` a `struct` format for one sample (`"<3f"`: three little-endian
+floats), compact for fast streams. By default the samples are numbered at
+`fs`, as a serial device's are; with `time_column=True` each sample's first
+value is its time in seconds, from the sender's clock. Sending from an
+ESP32 (Arduino):
+
+```cpp
+udp.beginPacket("192.168.1.23", 9000);  // the PC — the window's title says where
+udp.printf("%f,%f,%f\n", ax, ay, az);
+udp.endPacket();
+```
+
+## Custom toolbar buttons and toggles
+
+Write them as methods of your own class, mark them with `@button` or
+`@toggle`, and hand an instance to `add_toolbar`. They appear after the
+built-in controls, next to Downsample:
+
+```python
+from oscilab import button, toggle
+
+
+class LabTools:
+    def __init__(self, device):
+        self.device = device
+
+    @button("Zero", tooltip="Zero the sensor")
+    def zero(self):
+        self.device.zero()
+
+    @toggle("Heater", tooltip="Switch the sample heater")
+    def heater(self, on: bool):  # the new state, on every click
+        self.device.set_heater(on)
+
+
+scope.add_toolbar(LabTools(device))
+```
+
+`@classmethod`s work too; pass the class itself then. A method that raises
+doesn't take the app down: the error shows in the status bar, the traceback
+goes to the log file, and a toggle flips back. For a one-off,
+`scope.add_toolbar_button("Zero", device.zero)` and `add_toolbar_toggle` take
+any callable.
+
+Producers use the same decorators (see the `ImuProducer` in [Writing a producer](writing-a-producer.md)), but their
+functions go in the **Producers** menu: every attached producer has an entry
+there with **Start**, **Stop**, **Remove** and its `@button` / `@toggle` methods, which
+run on the producer's own thread between reads. Add `toolbar=True` to put
+one in the toolbar as well — `@button("Zero", toolbar=True)`. It's the same
+control in both places, so a toggle shows the same state in each; its
+toolbar tooltip names the producer.
+
+## Trigger
+
+Like a digitizer's soft front panel (NI-SCOPE's terms). Turn **Trigger** on
+in the toolbar: it sets itself up on the first signal a plot shows — a
+rising edge through the middle of its range, a timebase showing about two
+periods (**Autoset**) — and the time plots stop scrolling. Each shows the
+*record* around the latest trigger instead, held until the next: time
+counted from the trigger, marked **T**, and the level a dashed line you can
+drag. All of them show the same record, as a scope's channels do; the
+spectrograms, XY plots and histograms carry on live.
+
+The **Trigger** panel, atop the sidebar:
+
+- **Source** and **Type**: *Immediate* (free running), *Edge* (crossing the
+  **Level** on the **Slope**: rising, falling or either), *Hysteresis* (an
+  edge that only counts once the source has been the hysteresis beyond the
+  level — noise can't set it off), *Window* (the source entering or leaving
+  the range from **Low** to **High**)
+- **Coupling**: DC, or AC to trigger relative to the average; **Holdoff**:
+  how long after a trigger before another can count; **Delay**: where the
+  record's reference point is after the trigger
+- **Timebase**: time per division, a record spanning ten; **Reference**:
+  where the trigger sits in it (20 % = a fifth before it)
+- **Auto trigger**: a record anyway when no trigger comes for a while, so
+  the display never freezes; off, it's *Normal*, for rare events
+- **Run** / **Single** (one record, then hold) / **Stop** / **Force** (a
+  record now), and **Autoset** — also in the toolbar button's drop-down,
+  whose dot says **Armed** (amber), **Triggered** (green), **Auto** (blue) or
+  **Stopped** (red)
+
+Trigger times are interpolated between samples, so records line up to
+better than a sample. The cursors measure within the record, from the
+trigger. Sessions save the trigger; from code:
+
+```python
+from oscilab.trigger import TriggerSettings
+
+scope.set_trigger(TriggerSettings(source="channel-1", level=0.5, time_per_div=0.01, reference=0.2))
+scope.workspace.trigger.single_shot()  # .run(), .stop(), .force()
+```
+
+## Save Stream: recording to disk
+
+The File menu's exports write what's still in the rolling buffers — the
+last few seconds. **Save Stream**, in the toolbar, records everything: turn
+it on, and every sample of every signal goes to HDF5 files on disk as it
+arrives, until you turn it off. It keeps recording while the display is
+paused.
+
+Its drop-down (and the File menu) has **Save Stream Settings…**: the file
+to save to, and the size at which it starts a new file (or no limit). Each
+recording gets its own files, named after that path and when it started:
+`recording.h5` → `recording_20260930-101500_001.h5`, then `…_002.h5`. By
+default they go to `Documents\Oscilab`; **Open Stream Folder** gets you
+there. From code:
+
+```python
+scope.set_recording_options("D:/runs/test.h5", max_file_mb=500)  # None: no limit
+scope.set_recording(True)  # ... and False to stop
+```
+
+Each file stands on its own, laid out like the `.h5` export: a group per
+signal with `time` and `data` datasets and `fs`, `label` and `unit`
+attributes. The values are what the signal holds (after its filter and
+scaling); math signals aren't recorded, since they're recomputed from the
+others. The writing happens on a thread of its own, so a slow disk never
+holds up the plots or the producers.
+
+## Replaying a recording
+
+**File → Replay Recording…** plays a recording back. Pick a file, or a
+folder: then every `.h5` file in it plays, in name order, which for Save
+Stream's files is the order they were recorded in (1, 2, … 5). The dialog
+lists the files and the recorded signals to choose from. With **Loop**, after
+the last file it starts again from the first (… 5, 1, 2, …), and time keeps
+going forward.
+
+```python
+scope.replay_recording("D:/runs", loop=True)  # every signal, in a new plot
+scope.replay_recording("D:/runs/test_20260930-101500_003.h5", signals=["channel-1"])
+```
+
+Each signal gets a `RecordingReplayProducer` of its own, with the rate and
+unit it was recorded at — a recording's signals can have different rates,
+and a producer's channels share one. They lay the files out on the same
+timeline, so they stay in step: the parts of one recording keep their
+times, and a separate recording in the same folder follows right after the
+previous one ends. Replays can be stopped, started (from where they
+stopped, or from the top once they've played through) and saved in
+sessions like any producer. A signal whose name is taken already is
+replayed as `name (replay)`.
+
+## Signal units
+
+Give a signal a unit and it shows in the legend (`channel-1 (V)`), on the
+Y axis (`Value (V)`, or `Value (V, A)` for a plot of mixed units), after its
+row's metrics and in the cursor readout. A producer can declare its
+channels' units (`units`, next to `channels`, as the `ImuProducer` in [Writing a producer](writing-a-producer.md)
+does); otherwise pass them when you attach it or register a signal:
+
+```python
+scope.attach_producer(daq, ["u", "i"], units=["V", "A"])  # or one unit for every channel: units="V"
+scope.register_signal("temp", fs=10, unit="°C")
+scope.set_unit("u", "mV")  # later — or with the Unit button in the signal's row
+```
+
+A math signal's unit follows from its operands', and keeps following them:
+`u * i` is in V·A, `u / u` has none.
+
+## Sessions
+
+Set a layout up once, then reopen it without writing Python.
+**File → Save Session…** writes the whole setup to a JSON file: the
+window's size and position, the producers (class, constructor arguments
+and their toggles' states), every plot with its links, pinned ranges and
+cursors, each signal's unit, color, visibility, filter and scaling, the
+display settings, and the states of your own toolbar toggles. Buffered data
+isn't saved; producers start afresh.
+
+```bash
+uv run oscilab my-setup.json   # open a saved session
+uv run oscilab --schema        # print the session file format (JSON Schema)
+```
+
+**File → Open Session…** rebuilds one. In a window that's already in use it
+asks first: **Replace** its setup (producers stopped and removed, along
+with every signal and plot), or open the session in a **New Window**. From
+code, `scope.load_session(path)` loads into an empty window and
+`scope.load_session(path, replace=True)` replaces; `scope.clear()` empties
+a window and `scope.detach_producer(label)` removes one producer.
+
+The file is checked before anything is built: unknown keys (typos), bad
+values and references to signals that nothing provides are reported
+instead of half-loading. Replacing only clears the window once all the
+session's producers have been built; if one can't be, the current setup
+stays and carries on. Its producers do pause while that's tried, so a
+device one of them holds (a serial port, say) is free for the session's.
+
+Your toolbar toggles are saved as `"ClassName.method"`. Loading a session
+before `add_toolbar` adds them is fine: each one switches (calling its
+method) as soon as it's added.
+
+Producers are stored by import path (`"module:ClassName"`), so your own
+producer classes can be saved too, as long as they're defined in an
+importable module (not the script you run) and take JSON-friendly
+constructor arguments. Loading a session imports those modules, so only
+open session files you trust.
+
+## Logging
+
+Everything is logged with [loguru](https://github.com/Delgan/loguru), to
+three places:
+
+- **the console**;
+- **a log file**, when Oscilab starts the application itself (`uv run oscilab-demo`,
+  `uv run oscilab`): in your per-user app data folder
+  (`%LOCALAPPDATA%\Oscilab\logs\oscilab.log` on Windows), rotated at 1 MB
+  with the last 5 kept, producers' tracebacks included. **Help → Open Log
+  Folder** gets you there, and **Help → About** shows the path;
+- **the window's status bar**, styled by severity: info plain, warnings
+  amber with ⚠ (8 s), errors red and bold with ✖ (until the next message).
+  Debug messages go to the file only.
+
+From your own code, log through the window so messages reach its status bar
+too: `scope.log("Calibrated", level="success")`, or
+`scope.logger.warning(...)` with loguru's full API.
