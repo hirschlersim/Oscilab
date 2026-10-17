@@ -21,7 +21,7 @@ from PyQt6 import QtGui as qtg
 from PyQt6 import QtWidgets as qtw
 
 from oscilab import session
-from oscilab.display import FPS_CHOICES, TIME_MODES, Fps, Theme, TimeMode
+from oscilab.display import FPS_CHOICES, THEMES, TIME_MODES, Fps, Theme, TimeMode
 from oscilab.histogram_plot import HistogramPlot
 from oscilab.log import StatusLine, log_file, log_to_file
 from oscilab.logic_plot import LogicPlot
@@ -189,7 +189,7 @@ class Oscilab(qtw.QMainWindow):
         theme_menu.menuAction().setToolTip("Switch between dark and light color schemes")
         self._theme_action_group = qtg.QActionGroup(self)
         self._theme_action_group.setExclusive(True)
-        for theme_name in self._PLOT_THEMES:
+        for theme_name in THEMES:
             theme_action = qtg.QAction(theme_name.capitalize(), self)
             theme_action.setCheckable(True)
             theme_action.setChecked(theme_name == "dark")  # matches the QSS loaded at startup
@@ -594,8 +594,8 @@ class Oscilab(qtw.QMainWindow):
 
     def set_theme(self, theme: Theme) -> None:
         """`"dark"` or `"light"`."""
-        if theme not in self._PLOT_THEMES:
-            raise ValueError(f"Unknown theme {theme!r}; expected one of {list(self._PLOT_THEMES)}")
+        if theme not in THEMES:
+            raise ValueError(f"Unknown theme {theme!r}; expected one of {list(THEMES)}")
         for action in self._theme_action_group.actions():
             action.setChecked(action.text() == theme.capitalize())
         self.__set_theme(theme)
