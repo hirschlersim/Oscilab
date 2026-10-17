@@ -20,7 +20,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10
+      # A whole version: setup-uv publishes no v10-style tags (Dependabot moves it on)
+      - uses: astral-sh/setup-uv@v10.3.0
       # --only-dev: ruff doesn't need PyQt6/scipy/h5py installed.
       - run: uv run --locked --only-dev ruff check --output-format=github
       - run: uv run --locked --only-dev ruff format --check
@@ -30,7 +31,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.3.0
       # Not --only-dev: mypy reads the dependencies' own type information
       # (PyQt6, numpy, pydantic, ...). It only reads them, so Linux is fine.
       - run: uv run --locked mypy
@@ -42,14 +43,14 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.3.0
       - run: uv sync --locked
       - run: uv run --locked coverage run -m pytest
       # What the tests leave out; under the floor (pyproject.toml) fails the job
       - run: uv run --locked coverage report
       # The total, for the README's coverage badge (see the pages job)
       - run: uv run --locked coverage json -o coverage.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: coverage
           path: coverage.json
@@ -63,7 +64,7 @@ jobs:
     timeout-minutes: 10 # A window that hangs instead of opening
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.3.0
       - run: uv build --wheel
       # The wheel and the locked dependencies, in a venv outside the source tree
       - shell: bash
@@ -90,10 +91,10 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.3.0
       - run: uv run --locked --group docs scripts/docs.py -o site
       # The HTML, under this run's Artifacts: download, open index.html
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: api-docs
           path: site/
@@ -114,11 +115,11 @@ jobs:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: api-docs
           path: site
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: coverage
       # The badge, as shields.io's endpoint badges read it
@@ -130,8 +131,8 @@ jobs:
           badge = {"schemaVersion": 1, "label": "coverage", "message": f"{percent:.0f}%", "color": color}
           json.dump(badge, open("site/coverage.json", "w"))
           EOF
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: site
       - id: deploy
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
