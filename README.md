@@ -61,14 +61,17 @@ architecture in Python; still under active development (see
 
 ```
 producers.py          Background QThread data sources (Sync/Async base classes)
+toolbar.py             ├─ @button / @toggle: their functions in the menus and toolbar
 xbox.py                ├─ an Xbox controller, through XInput
 sensor_logger.py       ├─ a phone's sensors, from the Sensor Logger app
 udp.py                 └─ samples over UDP
     │
 signal_model.py       Rolling buffer, filtering, scaling, metrics per signal
+ring_buffer.py         ├─ the thread-safe numpy circular buffer it keeps them in
 math_signal.py         └─ derived signal (A op B)
     │
 view.py               The interface every plot type implements
+grid.py                ├─ the base of the plots with a grid: one paint a frame
 timeseries_plot.py     ├─ scrolling time-series plot
 logic_plot.py          ├─ logic lanes (a kind of time-series plot)
 xy_plot.py             ├─ one signal against another
@@ -81,6 +84,8 @@ signal_controller.py  Per-signal sidebar controls (SignalRow / SignalController)
 dialogs.py            Modal dialogs: range, filter, scaling, math
     │
 workspace.py          Domain layer: owns all registries and wiring
+plotting.py            ├─ its plots: creating them, linking signals, removing them
+triggering.py          ├─ the trigger applied to its time plots
 exporters.py           ├─ PNG/SVG/PDF images, CSV/.mat/.h5 data
 recorder.py            ├─ Save Stream: every sample to HDF5, as it arrives
 replay.py              └─ ...and playing those recordings back
@@ -101,8 +106,10 @@ __main__.py           `uv run oscilab [session.json]` entry point
 Roughly bottom-up: data model → producers → plots → per-signal controls →
 the `Workspace` layer that wires everything together → the `QMainWindow`
 on top, assembled from one small part per feature in `ui/` — so a new
-feature's menus and panels go in a module of their own. To add a plot type (FFT, XY, ...), implement `View` in
-[view.py](src/oscilab/view.py) and add a `Workspace.add_*` method for it —
+feature's menus and panels go in a module of their own. To add a plot
+type (an FFT, say), implement `View` in [view.py](src/oscilab/view.py) and
+add an `add_*` method for it to `Plotting` in
+[plotting.py](src/oscilab/plotting.py), which `Workspace` hands on —
 theming, time modes, Reset View, the Y-Axis button and image export then
 work for it without further changes.
 
@@ -581,11 +588,14 @@ and mypy; it fails below 90 % coverage, and opens a window from the built
 wheel, as a fork or a `git+https://` install gets it.
 
 They cover the ring buffer, signal model (filter/scaling/resize), math
-signals, the spectrogram's incremental STFT cache, the producer base classes
-(threads, errors, actions, multi-channel data, keeping up with real time),
-`SerialProducer` (against a fake port), the trigger (detection, acquisition,
-its panel), the cursor readout, the menus and toolbar, sessions, workspace
-rules, and the File-menu exports.
+signals and units, every plot type, the spectrogram's incremental STFT
+cache, the producer base classes (threads, errors, actions, multi-channel
+data, keeping up with real time), the bundled producers against stand-ins
+(a fake serial port and XInput, HTTP pushes and UDP packets over
+localhost), the trigger (detection, acquisition, its panel), the cursor
+readout, the menus, toolbar and dialogs, Save Stream and replay, sessions
+and the window's state, logging, workspace rules, the File-menu exports,
+what keeps drawing fast, and every command.
 
 ## Status
 
