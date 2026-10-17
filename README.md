@@ -108,9 +108,13 @@ work for it without further changes.
 
 ## Getting started
 
-Requires Python 3.12+ and [uv](https://docs.astral.sh/uv/).
+Requires Python 3.12+ and [uv](https://docs.astral.sh/uv/). Developed and
+tested on Windows, where CI runs too. The Xbox producer needs Windows; the
+rest is plain PyQt6 and should run on Linux and macOS, but that's untested.
 
 ```bash
+git clone https://github.com/hirschlersim/Oscilab
+cd Oscilab
 uv sync
 uv run oscilab-demo
 ```
@@ -126,6 +130,18 @@ command's options:
 | `uv run oscilab-sensor-logger` | Your phone's sensors, from the Sensor Logger app ([below](#your-phones-sensors-sensor-logger)) |
 | `uv run oscilab-udp --demo` | Samples over UDP, sending itself some ([below](#samples-over-udp)) |
 | `uv run oscilab-bench` | Where Oscilab keeps up: a figure of channels x sample rate |
+
+### In your own project
+
+Oscilab isn't on PyPI. Fork it, or add it to your project straight from
+GitHub, or as a git submodule to change it in place:
+
+```bash
+uv add git+https://github.com/hirschlersim/Oscilab   # pip install git+https://... works too
+
+git submodule add https://github.com/hirschlersim/Oscilab oscilab   # or this,
+uv add --editable ./oscilab                                          # its changes live
+```
 
 [`demo.py`](src/oscilab/demo.py) is a good starting point for the public
 API:
