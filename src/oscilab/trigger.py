@@ -330,9 +330,21 @@ def autoset(source: str, t: np.ndarray, x: np.ndarray) -> TriggerSettings:
     low, high = float(x.min()), float(x.max())
     settings.level = (low + high) / 2
     settings.hysteresis = (high - low) * 0.05
-    rising = np.count_nonzero((x[:-1] < settings.level) & (x[1:] >= settings.level))
-    if rising >= 2:
-        period = float(t[-1] - t[0]) / rising
+    # Noise makes a signal cross the level many times on its way through:
+    # counted only once it's been well below since its last rising edge
+    rising = _rising_edges(x, settings.level, band=(high - low) * 0.25)
+    if rising.size >= 2:
+        period = float(t[rising[-1]] - t[rising[0]]) / (rising.size - 1)
         wanted = 2 * period / 10  # Two periods over the ten divisions
         settings.time_per_div = min((step for step in TIME_PER_DIV if step >= wanted), default=TIME_PER_DIV[-1])
     return settings
+
+
+def _rising_edges(x: np.ndarray, level: float, band: float) -> np.ndarray:
+    """Indices where `x` reaches `level` from at least `band` below it: a Schmitt trigger's rising edges."""
+    state = np.zeros(x.size, dtype=np.int8)
+    state[x <= level - band] = -1
+    state[x >= level] = 1
+    changes = np.flatnonzero(state)  # In between, a Schmitt trigger keeps its last state
+    held = state[changes]
+    return changes[1:][(held[:-1] == -1) & (held[1:] == 1)]

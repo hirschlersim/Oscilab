@@ -241,6 +241,13 @@ def test_autoset_puts_the_level_mid_signal_and_shows_about_two_periods():
     assert (settings.type, settings.slope, settings.auto) == ("edge", "rising", True)
 
 
+def test_autoset_counts_a_noisy_signals_periods_not_its_chatter():
+    # A slow signal crosses its middle many times over on each way through, in noise
+    t = np.arange(0, 4, 0.001)
+    x = np.sin(2 * np.pi * 1.5 * t) + np.random.default_rng(0).normal(0, 0.05, t.size)  # As SyntheticProducer makes it
+    assert autoset("s", t, x).time_per_div == 0.2  # Two periods (1.33 s) over ten divisions: 133 ms, up to 200
+
+
 def test_autoset_on_a_flat_or_empty_signal_keeps_the_defaults():
     assert autoset("s", np.array([]), np.array([])).time_per_div == TriggerSettings().time_per_div
     flat = autoset("s", np.arange(10.0), np.ones(10))
